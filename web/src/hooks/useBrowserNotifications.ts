@@ -26,6 +26,22 @@ export function useBrowserNotifications(): UseBrowserNotificationsResult {
     return Notification.permission;
   });
   const lastNotificationIdRef = useRef<string | null>(null);
+  const serviceWorkerReadyRef = useRef<Promise<ServiceWorkerRegistration | null> | null>(null);
+
+  const resolveServiceWorkerRegistration = useCallback(() => {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+      return null;
+    }
+    if (!serviceWorkerReadyRef.current) {
+      serviceWorkerReadyRef.current = navigator.serviceWorker.ready
+        .then((registration) => registration)
+        .catch((error) => {
+          console.warn('Notification service worker not ready', error);
+          return null;
+        });
+    }
+    return serviceWorkerReadyRef.current;
+  }, []);
 
   const requestPermission = useCallback(async (): Promise<NotificationPermissionState> => {
     if (!isSupported) {
@@ -47,18 +63,34 @@ export function useBrowserNotifications(): UseBrowserNotificationsResult {
 
   const showNotification = useCallback(
     (title: string, options?: BrowserNotificationOptions) => {
-      if (!isSupported) {
+      if (!isSupported || permission !== 'granted') {
         return;
       }
-      if (permission !== 'granted') {
+
+      const tag = options?.id;
+      const idChanged = Boolean(tag && lastNotificationIdRef.current !== tag);
+
+      if (tag && !idChanged) {
         return;
       }
-      try {
-        const tag = options?.id;
-        const idChanged = Boolean(tag && lastNotificationIdRef.current !== tag);
-        if (!tag || idChanged) {
-          lastNotificationIdRef.current = tag ?? null;
-          const notification = new Notification(title, options);
+
+      const baseOptions = { ...(options ?? {}) };
+      delete (baseOptions as Partial<BrowserNotificationOptions>).id;
+      if (tag && !baseOptions.tag) {
+        baseOptions.tag = tag;
+      }
+
+      const focusUrl =
+        typeof window !== 'undefined'
+          ? baseOptions?.data?.focusUrl ?? window.location.href
+          : baseOptions?.data?.focusUrl;
+      if (focusUrl) {
+        baseOptions.data = { ...(baseOptions.data as Record<string, unknown>), focusUrl };
+      }
+
+      const showWithWindowNotification = () => {
+        try {
+          const notification = new Notification(title, baseOptions);
           notification.onclick = () => {
             try {
               window.focus();
@@ -67,15 +99,39 @@ export function useBrowserNotifications(): UseBrowserNotificationsResult {
             }
             notification.close();
           };
+        } catch (error) {
+          console.error('Failed to show notification', error);
         }
-        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-          navigator.vibrate?.(50);
-        }
-      } catch (error) {
-        console.error('Failed to show notification', error);
+      };
+
+      lastNotificationIdRef.current = tag ?? null;
+
+      const registrationPromise = resolveServiceWorkerRegistration();
+      if (registrationPromise) {
+        registrationPromise
+          .then((registration) => {
+            if (!registration) {
+              showWithWindowNotification();
+              return;
+            }
+            registration.showNotification(title, baseOptions).catch((error) => {
+              console.warn('Service worker notification failed, falling back to window Notification', error);
+              showWithWindowNotification();
+            });
+          })
+          .catch((error) => {
+            console.warn('Unable to resolve service worker registration for notifications', error);
+            showWithWindowNotification();
+          });
+      } else {
+        showWithWindowNotification();
+      }
+
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        navigator.vibrate?.(50);
       }
     },
-    [isSupported, permission],
+    [isSupported, permission, resolveServiceWorkerRegistration],
   );
 
   return {
@@ -85,4 +141,3 @@ export function useBrowserNotifications(): UseBrowserNotificationsResult {
     showNotification,
   };
 }
-

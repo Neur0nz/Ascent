@@ -1,0 +1,53 @@
+/* eslint-disable no-restricted-globals */
+const FOCUSABLE_CLIENT_TYPES = ['window'];
+
+self.addEventListener('install', () => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
+self.addEventListener('notificationclick', (event) => {
+  const notification = event.notification;
+  const focusUrl = notification?.data?.focusUrl;
+  notification.close();
+
+  if (!focusUrl) {
+    return;
+  }
+
+  event.waitUntil(
+    (async () => {
+      const url = new URL(focusUrl, self.location.origin).href;
+      const allClients = await self.clients.matchAll({
+        type: 'window',
+        includeUncontrolled: true,
+      });
+
+      for (const client of allClients) {
+        if (!FOCUSABLE_CLIENT_TYPES.includes(client.type)) {
+          continue;
+        }
+        const clientUrl = client.url;
+        if (!clientUrl) {
+          continue;
+        }
+        const isSamePage =
+          clientUrl === url ||
+          clientUrl.replace(/\/+$/, '') === url.replace(/\/+$/, '') ||
+          clientUrl.startsWith(`${url}#`) ||
+          clientUrl.startsWith(`${url}?`);
+        if (isSamePage && 'focus' in client) {
+          await client.focus();
+          return;
+        }
+      }
+
+      if (self.clients.openWindow) {
+        await self.clients.openWindow(url);
+      }
+    })(),
+  );
+});

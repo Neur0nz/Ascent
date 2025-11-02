@@ -356,8 +356,6 @@ function ActiveMatchContent({
       opponentRating: Math.round(opponentRating as number),
     };
   }, [lobbyMatch?.rated, role, typedMoves.length, playerRating, opponentRating]);
-  const creatorSideLabel = role === 'creator' ? 'You · Green pieces' : 'Green pieces';
-  const opponentSideLabel = role === 'opponent' ? 'You · Red pieces' : 'Red pieces';
 
   const undoRequestedByMe = undoState && undoState.requestedBy === role;
   const undoPending = undoState?.status === 'pending';
@@ -798,7 +796,6 @@ function ActiveMatchContent({
             active={creatorTurnActive}
             accentColor={accentHeading}
             profile={lobbyMatch?.creator}
-            sideLabel={creatorSideLabel}
             alignment="flex-start"
           />
           <PlayerClockCard
@@ -807,7 +804,6 @@ function ActiveMatchContent({
             active={opponentTurnActive}
             accentColor={accentHeading}
             profile={lobbyMatch?.opponent}
-            sideLabel={opponentSideLabel}
             alignment="flex-end"
           />
         </Stack>
@@ -1036,7 +1032,6 @@ interface PlayerClockCardProps {
   active: boolean;
   accentColor: string;
   profile: PlayerProfile | null | undefined;
-  sideLabel: string;
   alignment: 'flex-start' | 'flex-end';
 }
 
@@ -1046,7 +1041,6 @@ function PlayerClockCard({
   active,
   accentColor,
   profile,
-  sideLabel,
   alignment,
 }: PlayerClockCardProps) {
   const { cardBorder, mutedText, strongText } = useSurfaceTokens();
@@ -1058,7 +1052,6 @@ function PlayerClockCard({
   const cardPadding = useBreakpointValue({ base: 3, md: 4 });
   const clockFontSize = useBreakpointValue({ base: '2xl', md: '3xl' });
   const labelFontSize = useBreakpointValue({ base: 'xs', md: 'sm' });
-  const sideFontSize = useBreakpointValue({ base: '2xs', md: 'xs' });
   const avatarSize = useBreakpointValue<'sm' | 'md' | 'lg'>({ base: 'md', md: 'lg' });
 
   return (
@@ -1095,9 +1088,6 @@ function PlayerClockCard({
           >
             {clock}
           </Heading>
-          <Text fontSize={sideFontSize ?? 'xs'} color={mutedText} textAlign={textAlign}>
-            {sideLabel}
-          </Text>
         </Stack>
       </Stack>
     </Box>
