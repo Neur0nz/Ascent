@@ -45,6 +45,8 @@ interface SyncOptions {
 }
 
 export const syncPushSubscription = async ({ permission, profile }: SyncOptions): Promise<void> => {
+  const supabaseClient = supabase;
+
   if (permission !== 'granted') {
     if (permission !== 'denied') {
       return;
@@ -61,13 +63,17 @@ export const syncPushSubscription = async ({ permission, profile }: SyncOptions)
         console.warn('pushNotifications: failed to unsubscribe push manager', error);
       }
       if (profile?.auth_user_id) {
-        const { error: deleteError } = await supabase
-          .from('web_push_subscriptions')
-          .delete()
-          .eq('auth_user_id', profile.auth_user_id)
-          .eq('endpoint', existing.endpoint);
-        if (deleteError) {
-          console.warn('pushNotifications: failed to remove subscription from database', deleteError);
+        if (!supabaseClient) {
+          console.warn('pushNotifications: Supabase client unavailable; skipping subscription cleanup');
+        } else {
+          const { error: deleteError } = await supabaseClient
+            .from('web_push_subscriptions')
+            .delete()
+            .eq('auth_user_id', profile.auth_user_id)
+            .eq('endpoint', existing.endpoint);
+          if (deleteError) {
+            console.warn('pushNotifications: failed to remove subscription from database', deleteError);
+          }
         }
       }
     }
@@ -97,9 +103,10 @@ export const syncPushSubscription = async ({ permission, profile }: SyncOptions)
   let subscription = await registration.pushManager.getSubscription();
   if (!subscription) {
     try {
+      const vapidKey = base64UrlToUint8Array(VAPID_PUBLIC_KEY);
       subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: base64UrlToUint8Array(VAPID_PUBLIC_KEY),
+        applicationServerKey: vapidKey.buffer,
       });
     } catch (error) {
       console.error('pushNotifications: failed to subscribe to push manager', error);
@@ -117,7 +124,12 @@ export const syncPushSubscription = async ({ permission, profile }: SyncOptions)
     return;
   }
 
-  const { error } = await supabase.from('web_push_subscriptions').upsert(
+  if (!supabaseClient) {
+    console.warn('pushNotifications: Supabase client unavailable; skipping subscription persistence');
+    return;
+  }
+
+  const { error } = await supabaseClient.from('web_push_subscriptions').upsert(
     {
       auth_user_id: profile.auth_user_id,
       profile_id: profile.id,
