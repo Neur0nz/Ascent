@@ -137,7 +137,7 @@ function PracticeToolbar({
                 icon={<TimeIcon />}
                 size="sm"
                 variant="outline"
-                colorScheme="blue"
+                colorScheme="green"
                 onClick={onShowHistory}
                 isDisabled={disableActions}
               />

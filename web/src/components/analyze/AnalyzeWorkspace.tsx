@@ -16,11 +16,22 @@ import {
   Spinner,
   Stack,
   Text,
-  Tooltip,
+  Tooltip as ChakraTooltip,
   useColorModeValue,
   useToast,
   Divider,
 } from '@chakra-ui/react';
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  ReferenceLine,
+} from 'recharts';
+import type { TooltipProps } from 'recharts';
 import { ChevronLeftIcon, ChevronRightIcon, ArrowBackIcon, ArrowForwardIcon } from '@chakra-ui/icons';
 import GameBoard from '@components/GameBoard';
 import EvaluationPanel from '@components/EvaluationPanel';
@@ -34,6 +45,15 @@ import type { LobbyMatch } from '@hooks/useMatchLobby';
 interface LoadedAnalysis {
   match: MatchRecord;
   moves: MatchMoveRecord<SantoriniMoveAction>[];
+}
+
+interface EvaluationSeriesPoint {
+  moveIndex: number;
+  moveNumber: number;
+  evaluation: number;
+  label: string;
+  player: 'creator' | 'opponent' | null;
+  timestamp?: string | null;
 }
 
 function describeMatch(match: LobbyMatch, profile: PlayerProfile | null) {
@@ -69,6 +89,9 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
   const [aiInitialized, setAiInitialized] = useState(false);
   const [replaying, setReplaying] = useState(false);
   const [isExploring, setIsExploring] = useState(false);
+  const [evaluationSeries, setEvaluationSeries] = useState<EvaluationSeriesPoint[] | null>(null);
+  const [evaluationLoading, setEvaluationLoading] = useState(false);
+  const [evaluationError, setEvaluationError] = useState<string | null>(null);
 
   // Initialize AI engine on mount
   useEffect(() => {
@@ -238,6 +261,11 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
     }
   }, [replayToSnapshot, toast]);
 
+  useEffect(() => {
+    setEvaluationSeries(null);
+    setEvaluationError(null);
+  }, [loaded?.match.id]);
+
   const loadMatch = useCallback(() => {
     loadMatchById(matchId);
   }, [loadMatchById, matchId]);
@@ -262,6 +290,131 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
       void replayToSnapshot(currentIndex, loaded);
     }
   }, [currentIndex, loaded, replayToSnapshot]);
+
+  const handleGenerateEvaluationGraph = useCallback(async () => {
+    if (!loaded) {
+      toast({
+        title: 'Load a match first',
+        description: 'Choose a game to analyze before generating the evaluation graph.',
+        status: 'info',
+      });
+      return;
+    }
+
+    if (!aiInitialized) {
+      toast({
+        title: 'AI still loading',
+        description: 'Evaluation tools are not ready yet. Please wait a moment and try again.',
+        status: 'warning',
+      });
+      return;
+    }
+
+    const initialSnapshot = loaded.match.initial_state as SantoriniSnapshot | null;
+    if (!initialSnapshot) {
+      toast({
+        title: 'Match snapshot unavailable',
+        description: 'This match is missing its initial snapshot and cannot be analyzed.',
+        status: 'error',
+      });
+      return;
+    }
+
+    setEvaluationLoading(true);
+    setEvaluationError(null);
+
+    const analysis = loaded;
+    const restoreIndex = currentIndex;
+    let computedSeries: EvaluationSeriesPoint[] | null = null;
+    let failureMessage: string | null = null;
+
+    try {
+      let playbackEngine = SantoriniEngine.fromSnapshot(initialSnapshot);
+      const snapshots: Array<{
+        snapshot: SantoriniSnapshot;
+        moveIndex: number;
+        action: SantoriniMoveAction | null;
+        createdAt: string | null;
+      }> = [
+        {
+          snapshot: playbackEngine.snapshot,
+          moveIndex: -1,
+          action: null,
+          createdAt: analysis.match.created_at ?? null,
+        },
+      ];
+
+      for (const move of analysis.moves) {
+        const action = move.action;
+        if (action && action.kind === 'santorini.move' && typeof action.move === 'number') {
+          try {
+            const result = playbackEngine.applyMove(action.move);
+            snapshots.push({
+              snapshot: result.snapshot,
+              moveIndex: move.move_index,
+              action,
+              createdAt: move.created_at ?? null,
+            });
+            playbackEngine = SantoriniEngine.fromSnapshot(result.snapshot);
+          } catch (moveError) {
+            console.warn('Skipping move during evaluation replay', {
+              moveIndex: move.move_index,
+              action: action.move,
+            }, moveError);
+          }
+        }
+      }
+
+      const points: EvaluationSeriesPoint[] = [];
+
+      for (const entry of snapshots) {
+        await santorini.importState(entry.snapshot as SantoriniStateSnapshot, { waitForEvaluation: false });
+        const evaluation = await santorini.controls.refreshEvaluation();
+        const value = evaluation?.value ?? 0;
+        const label = evaluation?.label ?? (value >= 0 ? `+${value.toFixed(3)}` : value.toFixed(3));
+        points.push({
+          moveIndex: entry.moveIndex,
+          moveNumber: entry.moveIndex === -1 ? 0 : entry.moveIndex + 1,
+          evaluation: value,
+          label,
+          player: entry.action?.by ?? null,
+          timestamp: entry.createdAt ?? null,
+        });
+      }
+
+      computedSeries = points;
+    } catch (error) {
+      failureMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Failed to generate evaluation series', error);
+    } finally {
+      try {
+        await replayToSnapshot(restoreIndex, analysis);
+      } catch (restoreError) {
+        console.warn('Failed to restore analysis position after evaluation calculation', restoreError);
+      }
+      setEvaluationLoading(false);
+    }
+
+    if (failureMessage) {
+      setEvaluationError(failureMessage);
+      toast({
+        title: 'Evaluation graph failed',
+        status: 'error',
+        description: failureMessage,
+      });
+      return;
+    }
+
+    if (computedSeries) {
+      setEvaluationSeries(computedSeries);
+      toast({
+        title: 'Evaluation graph ready',
+        status: 'success',
+        description: `Calculated ${computedSeries.length} positions`,
+        duration: 4000,
+      });
+    }
+  }, [aiInitialized, currentIndex, loaded, replayToSnapshot, santorini, toast]);
 
   const goToMove = useCallback(
     async (index: number) => {
@@ -338,6 +491,39 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
     return p0Score === 1 ? 'Creator' : p1Score === 1 ? 'Opponent' : 'Draw';
   }, [santorini.gameEnded]);
 
+  const evaluationChartData = useMemo(() => {
+    if (!evaluationSeries) {
+      return [];
+    }
+    return evaluationSeries.map((point) => ({
+      ...point,
+      moveLabel: point.moveIndex === -1 ? 'Start' : `${point.moveNumber}`,
+      playerLabel:
+        point.player === 'creator'
+          ? 'Creator (Green)'
+          : point.player === 'opponent'
+            ? 'Opponent (Red)'
+            : 'Initial position',
+    }));
+  }, [evaluationSeries]);
+
+  const evaluationDomain = useMemo(() => {
+    if (!evaluationSeries || evaluationSeries.length === 0) {
+      return [-1, 1];
+    }
+    let min = Infinity;
+    let max = -Infinity;
+    for (const point of evaluationSeries) {
+      min = Math.min(min, point.evaluation);
+      max = Math.max(max, point.evaluation);
+    }
+    if (!Number.isFinite(min) || !Number.isFinite(max)) {
+      return [-1, 1];
+    }
+    const padding = Math.max(0.05, (max - min) * 0.1);
+    return [Math.min(-1, min - padding), Math.max(1, max + padding)];
+  }, [evaluationSeries]);
+
   const canStepBack = currentIndex > -1;
   const canStepForward = loaded ? currentIndex < loaded.moves.length - 1 : false;
   const cardBg = useColorModeValue('white', 'whiteAlpha.100');
@@ -347,6 +533,62 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
   const highlightBorder = useColorModeValue('teal.500', 'teal.300');
   const highlightBg = useColorModeValue('teal.50', 'teal.900');
   const badgeBorder = useColorModeValue('gray.200', 'whiteAlpha.200');
+  const evaluationLineColor = useColorModeValue('teal.500', 'teal.200');
+  const chartGridColor = useColorModeValue('gray.200', 'whiteAlpha.200');
+  const chartAxisColor = useColorModeValue('gray.700', 'whiteAlpha.800');
+  const chartReferenceColor = useColorModeValue('gray.500', 'whiteAlpha.500');
+  const tooltipBg = useColorModeValue('white', 'gray.700');
+
+  const renderEvaluationTooltip = useCallback(
+    ({ active, payload }: TooltipProps<number, string>) => {
+      if (!active || !payload || payload.length === 0) {
+        return null;
+      }
+      const point = payload[0]?.payload as
+        | (EvaluationSeriesPoint & { moveLabel: string; playerLabel: string })
+        | undefined;
+      if (!point) {
+        return null;
+      }
+
+      const timestamp =
+        point.timestamp && typeof point.timestamp === 'string'
+          ? new Date(point.timestamp)
+          : null;
+      const timestampLabel =
+        timestamp && !Number.isNaN(timestamp.valueOf())
+          ? timestamp.toLocaleString()
+          : null;
+
+      return (
+        <Box
+          bg={tooltipBg}
+          borderRadius="md"
+          px={3}
+          py={2}
+          borderWidth="1px"
+          borderColor={cardBorder}
+          boxShadow="md"
+        >
+          <Text fontWeight="semibold" fontSize="sm">
+            {point.moveIndex === -1 ? 'Initial position' : `Move ${point.moveNumber}`}
+          </Text>
+          <Text fontSize="sm" color={evaluationLineColor} fontWeight="semibold">
+            {point.label}
+          </Text>
+          <Text fontSize="xs" color={mutedText}>
+            {point.playerLabel}
+          </Text>
+          {timestampLabel && (
+            <Text fontSize="xs" color={mutedText}>
+              {timestampLabel}
+            </Text>
+          )}
+        </Box>
+      );
+    },
+    [cardBorder, evaluationLineColor, mutedText, tooltipBg],
+  );
 
   const analyzeButtons = useMemo(() => {
     const totalMoves = loaded?.moves.length ?? 0;
@@ -373,9 +615,25 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
     <Stack spacing={6} py={{ base: 6, md: 10 }}>
       <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder}>
         <CardHeader>
-          <Heading size="md">Analyze a completed match</Heading>
+          <Flex align="center" justify="space-between" gap={3} flexWrap="wrap">
+            <Heading size="md">Analyze a completed match</Heading>
+            <Button
+              size="sm"
+              colorScheme="teal"
+              onClick={handleGenerateEvaluationGraph}
+              isLoading={evaluationLoading}
+              isDisabled={!loaded || loading || !aiInitialized}
+            >
+              {evaluationSeries ? 'Recalculate eval graph' : 'Generate eval graph'}
+            </Button>
+          </Flex>
         </CardHeader>
         <CardBody as={Stack} spacing={4}>
+          {evaluationError && (
+            <Text color="red.400" fontSize="sm">
+              {evaluationError}
+            </Text>
+          )}
           {/* Your Completed Games */}
           {auth?.profile && (
             <>
@@ -417,7 +675,7 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
                                   {game.rated ? 'Rated' : 'Casual'}
                                 </Badge>
                                 {game.clock_initial_seconds > 0 && (
-                                  <Badge colorScheme="blue" fontSize="xs">
+                                  <Badge colorScheme="green" fontSize="xs">
                                     {Math.round(game.clock_initial_seconds / 60)}+{game.clock_increment_seconds}
                                   </Badge>
                                 )}
@@ -478,7 +736,7 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
               <Badge colorScheme={summary.rated ? 'purple' : 'gray'}>
                 {summary.rated ? 'Rated' : 'Casual'}
               </Badge>
-              <Badge colorScheme="blue">
+              <Badge colorScheme="green">
                 {summary.visibility === 'public' ? 'Public' : 'Private'}
               </Badge>
               <Badge colorScheme={summary.status === 'completed' ? 'green' : 'gray'}>
@@ -526,38 +784,38 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
                       : `Move ${currentIndex + 1} of ${loaded.moves.length}`}
                   </Text>
                   <ButtonGroup size="sm" isAttached variant="outline">
-                    <Tooltip label="Go to start (Home)" hasArrow>
+                    <ChakraTooltip label="Go to start (Home)" hasArrow>
                       <IconButton
                         aria-label="Go to start"
                         icon={<ArrowBackIcon />}
                         onClick={goToStart}
                         isDisabled={!canStepBack || replaying}
                       />
-                    </Tooltip>
-                    <Tooltip label="Previous move (←)" hasArrow>
+                    </ChakraTooltip>
+                    <ChakraTooltip label="Previous move (←)" hasArrow>
                       <IconButton
                         aria-label="Previous move"
                         icon={<ChevronLeftIcon />}
                         onClick={stepBack}
                         isDisabled={!canStepBack || replaying}
                       />
-                    </Tooltip>
-                    <Tooltip label="Next move (→)" hasArrow>
+                    </ChakraTooltip>
+                    <ChakraTooltip label="Next move (→)" hasArrow>
                       <IconButton
                         aria-label="Next move"
                         icon={<ChevronRightIcon />}
                         onClick={stepForward}
                         isDisabled={!canStepForward || replaying}
                       />
-                    </Tooltip>
-                    <Tooltip label="Go to end (End)" hasArrow>
+                    </ChakraTooltip>
+                    <ChakraTooltip label="Go to end (End)" hasArrow>
                       <IconButton
                         aria-label="Go to end"
                         icon={<ArrowForwardIcon />}
                         onClick={goToEnd}
                         isDisabled={!canStepForward || replaying}
                       />
-                    </Tooltip>
+                    </ChakraTooltip>
                   </ButtonGroup>
                 </Flex>
               </Stack>
@@ -689,6 +947,68 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
               </Flex>
             </CardBody>
           </Card>
+
+          {(evaluationLoading || (evaluationSeries && evaluationSeries.length > 0)) && (
+            <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder}>
+              <CardHeader>
+                <Heading size="sm">Evaluation graph</Heading>
+              </CardHeader>
+              <CardBody>
+                {evaluationLoading && (!evaluationSeries || evaluationSeries.length === 0) ? (
+                  <Center py={8}>
+                    <Stack spacing={3} align="center">
+                      <Spinner size="lg" color="teal.400" />
+                      <Text color={mutedText} fontSize="sm">
+                        Computing evaluation for each move...
+                      </Text>
+                    </Stack>
+                  </Center>
+                ) : (
+                  <Stack spacing={4}>
+                    <Box w="100%" h={{ base: '260px', md: '320px' }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart
+                          data={evaluationChartData}
+                          margin={{ top: 10, right: 16, bottom: 0, left: -10 }}
+                        >
+                          <CartesianGrid stroke={chartGridColor} strokeDasharray="4 4" />
+                          <XAxis
+                            dataKey="moveNumber"
+                            stroke={chartAxisColor}
+                            tickFormatter={(value) => (value === 0 ? 'Start' : String(value))}
+                            fontSize={12}
+                            tickMargin={8}
+                            minTickGap={12}
+                          />
+                          <YAxis
+                            domain={evaluationDomain}
+                            stroke={chartAxisColor}
+                            tickFormatter={(value) => value.toFixed(2)}
+                            width={48}
+                            fontSize={12}
+                          />
+                          <ReferenceLine y={0} stroke={chartReferenceColor} strokeDasharray="4 4" />
+                          <RechartsTooltip content={renderEvaluationTooltip} />
+                          <Line
+                            type="monotone"
+                            dataKey="evaluation"
+                            stroke={evaluationLineColor}
+                            strokeWidth={2}
+                            dot={{ r: 2.5, stroke: evaluationLineColor, strokeWidth: 1 }}
+                            activeDot={{ r: 4 }}
+                            isAnimationActive={false}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </Box>
+                    <Text fontSize="xs" color={mutedText}>
+                      Positive values indicate an advantage for Green (creator). Negative values favour Red (opponent).
+                    </Text>
+                  </Stack>
+                )}
+              </CardBody>
+            </Card>
+          )}
 
           {/* Keyboard shortcuts hint */}
           <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder}>

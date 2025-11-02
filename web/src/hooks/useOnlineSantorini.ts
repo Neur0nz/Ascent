@@ -159,6 +159,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
     expectedMoveIndex: number; 
     moveAction?: number;
   } | null>(null);
+  const nextLocalMoveIndexRef = useRef<number>(0);
   const [pendingMoveVersion, setPendingMoveVersion] = useState(0); // Trigger submission effect
   const gameCompletedRef = useRef<string | null>(null);
   const submissionLockRef = useRef<boolean>(false);
@@ -219,10 +220,11 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       };
       pendingLocalMoveRef.current = null;
       setClock(deriveInitialClocks(match));
+      nextLocalMoveIndexRef.current = moves.length;
     } catch (error) {
       console.error('Failed to reset match to server snapshot', error);
     }
-  }, [match, role, updateEngineState]);
+  }, [match, moves.length, role, updateEngineState]);
 
   const previousMatchRef = useRef<{
     id: string | null;
@@ -329,12 +331,20 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
           // Atomically update all state
           const myTurn = isRoleTurn(newEngine, role);
           updateEngineState(newEngine, myTurn);
+
+          if (action.clocks) {
+            setClock({
+              creatorMs: action.clocks.creatorMs,
+              opponentMs: action.clocks.opponentMs,
+            });
+          }
           
           lastSyncedStateRef.current = { 
             matchId: match.id, 
             snapshotMoveIndex: lastSynced.snapshotMoveIndex,
             appliedMoveCount: moves.length
           };
+          nextLocalMoveIndexRef.current = moves.length;
           
           syncInProgressRef.current = false;
           
@@ -416,6 +426,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
         snapshotMoveIndex,
         appliedMoveCount: moves.length
       };
+      nextLocalMoveIndexRef.current = moves.length;
       
       syncInProgressRef.current = false;
       
@@ -542,6 +553,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
     if (serverHasThisMove) {
       console.log('useOnlineSantorini: Move already received from server, skipping submission');
       pendingLocalMoveRef.current = null;
+      nextLocalMoveIndexRef.current = Math.max(nextLocalMoveIndexRef.current - 1, moves.length);
       return;
     }
 
@@ -588,6 +600,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
           description: error instanceof Error ? error.message : 'Unknown error',
         });
         pendingLocalMoveRef.current = null;
+        nextLocalMoveIndexRef.current = Math.max(nextLocalMoveIndexRef.current - 1, moves.length);
       })
       .finally(() => {
         submissionLockRef.current = false;
@@ -697,10 +710,9 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
           const myTurn = isRoleTurn(newEngine, role);
           updateEngineState(newEngine, myTurn);
           
-          // Calculate the correct move index
-          const pendingCount = pendingLocalMoveRef.current ? 1 : 0;
-          const nextMoveIndex = moves.length + pendingCount;
-          
+          const nextMoveIndex = nextLocalMoveIndexRef.current;
+          nextLocalMoveIndexRef.current += 1;
+
           // Store pending move (server will compute state)
           pendingLocalMoveRef.current = { 
             expectedHistoryLength: 0, // Not used in TS version
@@ -783,10 +795,9 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
             const myTurn = isRoleTurn(newEngine, role);
             updateEngineState(newEngine, myTurn);
             
-            // Calculate move index and submit (server will compute state)
-            const pendingCount = pendingLocalMoveRef.current ? 1 : 0;
-            const nextMoveIndex = moves.length + pendingCount;
-            
+            const nextMoveIndex = nextLocalMoveIndexRef.current;
+            nextLocalMoveIndexRef.current += 1;
+
             pendingLocalMoveRef.current = {
               expectedHistoryLength: 0,
               expectedMoveIndex: nextMoveIndex,
@@ -896,7 +907,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
   const redo = useCallback(async () => {}, []);
 
   const moveHistory = useMemo(() => {
-    const creatorName = match?.creator?.display_name ?? 'Player 1 (Blue)';
+    const creatorName = match?.creator?.display_name ?? 'Player 1 (Green)';
     const opponentName = match?.opponent?.display_name ?? 'Player 2 (Red)';
     return moves
       .filter((move) => isSantoriniMoveAction(move.action))

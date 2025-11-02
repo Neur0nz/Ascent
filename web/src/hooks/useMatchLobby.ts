@@ -45,6 +45,15 @@ export interface AbortRequestState {
   respondedBy?: 'creator' | 'opponent';
 }
 
+export interface EmojiReaction {
+  id: string;
+  matchId: string;
+  emoji: string;
+  playerId: string;
+  role: 'creator' | 'opponent' | 'spectator' | null;
+  createdAt: number;
+}
+
 export type ConnectionQuality = 'connecting' | 'offline' | 'weak' | 'moderate' | 'strong';
 
 export interface PlayerConnectionState {
@@ -164,7 +173,7 @@ function createLocalMatch(): LobbyMatch {
   const createdAt = new Date().toISOString();
   return {
     id: LOCAL_MATCH_ID,
-    creator_id: 'local-blue',
+    creator_id: 'local-green',
     opponent_id: 'local-red',
     visibility: 'private',
     rated: false,
@@ -192,6 +201,10 @@ function normalizeAction(action: unknown): MatchAction {
     return action as MatchAction;
   }
   return { kind: 'unknown' } as MatchAction;
+}
+
+function isSantoriniMoveAction(action: MatchAction | null | undefined): action is SantoriniMoveAction {
+  return Boolean(action && (action as SantoriniMoveAction).kind === 'santorini.move');
 }
 
 function upsertMatch(list: LobbyMatch[], match: LobbyMatch): LobbyMatch[] {
@@ -238,6 +251,7 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
     }
     return INITIAL_STATE;
   });
+  const [emojiReactions, setEmojiReactions] = useState<EmojiReaction[]>([]);
   const [onlineEnabled, setOnlineEnabled] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -264,6 +278,8 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
   const presenceHeartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const presenceMonitorRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const channelStatusRef = useRef<'INIT' | 'SUBSCRIBED' | 'ERROR' | 'CLOSED'>('INIT');
+  const emojiTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const emojiCounterRef = useRef(0);
 
   const matchId = state.activeMatchId;
   
@@ -285,7 +301,7 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
     activeMatchRef.current = state.activeMatch ?? null;
   }, [state.activeMatch]);
 
-  const mergePlayers = useCallback((records: PlayerProfile[]): void => {
+const mergePlayers = useCallback((records: PlayerProfile[]): void => {
     if (!records.length) return;
     const next = { ...playersRef.current };
     let changed = false;
@@ -302,6 +318,49 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
       setPlayersVersion((prev) => prev + 1);
     }
   }, []);
+
+  const removeEmojiReaction = useCallback((id: string) => {
+    setEmojiReactions((prev) => prev.filter((reaction) => reaction.id !== id));
+    if (emojiTimeoutsRef.current[id]) {
+      clearTimeout(emojiTimeoutsRef.current[id]!);
+      delete emojiTimeoutsRef.current[id];
+    }
+  }, []);
+
+  const pushEmojiReaction = useCallback((reaction: EmojiReaction) => {
+    const currentMatchId = activeMatchRef.current?.id;
+    if (!currentMatchId || currentMatchId !== reaction.matchId) {
+      return;
+    }
+
+    setEmojiReactions((prev) => {
+      const filtered = prev.filter((item) => item.id !== reaction.id);
+      const next = [...filtered, reaction];
+      // Keep recent reactions to avoid overflow
+      return next.slice(-12);
+    });
+
+    if (emojiTimeoutsRef.current[reaction.id]) {
+      clearTimeout(emojiTimeoutsRef.current[reaction.id]!);
+    }
+
+    const timeout = setTimeout(() => {
+      removeEmojiReaction(reaction.id);
+    }, 2500);
+    emojiTimeoutsRef.current[reaction.id] = timeout;
+  }, [removeEmojiReaction]);
+
+  const clearEmojiReactions = useCallback(() => {
+    Object.values(emojiTimeoutsRef.current).forEach((timeout) => {
+      clearTimeout(timeout);
+    });
+    emojiTimeoutsRef.current = {};
+    setEmojiReactions([]);
+  }, []);
+
+  useEffect(() => {
+    clearEmojiReactions();
+  }, [clearEmojiReactions, state.activeMatchId]);
 
   const ensurePlayersLoaded = useCallback(
     async (ids: Array<string | null | undefined>): Promise<void> => {
@@ -637,6 +696,45 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
               return { ...prev, matches: matches.filter((m) => m.id !== (payload.old as MatchRecord).id) };
             }
             return { ...prev, matches };
+          });
+        },
+      )
+      .on(
+        'broadcast',
+        { event: 'emoji' },
+        (payload: { type: string; event: string; payload: any }) => {
+          const data = payload?.payload ?? {};
+          const matchId = typeof data.match_id === 'string' ? data.match_id : activeMatchRef.current?.id ?? null;
+          if (!matchId || activeMatchRef.current?.id !== matchId) {
+            return;
+          }
+          const emojiValue = typeof data.emoji === 'string' ? data.emoji : null;
+          const playerId = typeof data.player_id === 'string' ? data.player_id : null;
+          if (!emojiValue || !playerId) {
+            return;
+          }
+          const roleFromPayload = data.role === 'creator' || data.role === 'opponent' ? data.role : null;
+          const resolvedRole = roleFromPayload
+            ?? (activeMatchRef.current?.creator_id === playerId
+              ? 'creator'
+              : activeMatchRef.current?.opponent_id === playerId
+                ? 'opponent'
+                : null);
+          const timestamp =
+            typeof data.timestamp === 'number' && Number.isFinite(data.timestamp)
+              ? data.timestamp
+              : Date.now();
+          const id =
+            typeof data.id === 'string'
+              ? data.id
+              : `emoji-${matchId}-${timestamp}-${emojiCounterRef.current++}`;
+          pushEmojiReaction({
+            id,
+            matchId,
+            emoji: emojiValue,
+            playerId,
+            role: resolvedRole,
+            createdAt: timestamp,
           });
         },
       )
@@ -1183,16 +1281,38 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
         (payload: RealtimePostgresChangesPayload<MatchRecord>) => {
           const updated = payload.new as MatchRecord;
           setState((prev) => {
-            if (prev.activeMatchId !== matchId) {
-              return prev;
+            const existingActive = prev.activeMatch && prev.activeMatch.id === updated.id ? prev.activeMatch : null;
+            const baseMatch = existingActive ? { ...existingActive, ...updated } : { ...updated, creator: null, opponent: null };
+            const enriched = attachProfiles(baseMatch) ?? baseMatch;
+            const shouldTrack = TRACKED_MATCH_STATUSES.includes(updated.status as MatchStatus);
+            const nextMyMatches = shouldTrack
+              ? upsertMatch(prev.myMatches, enriched)
+              : removeMatch(prev.myMatches, updated.id);
+            const nextLobbyMatches = shouldTrack
+              ? upsertMatch(prev.matches, enriched)
+              : removeMatch(prev.matches, updated.id);
+
+            if (prev.activeMatchId === updated.id && !shouldTrack) {
+              const nextUndo = { ...prev.undoRequests };
+              delete nextUndo[updated.id];
+              return {
+                ...prev,
+                sessionMode: prev.sessionMode === 'local' ? prev.sessionMode : null,
+                activeMatchId: null,
+                activeMatch: null,
+                moves: [],
+                joinCode: null,
+                undoRequests: nextUndo,
+                myMatches: nextMyMatches,
+                matches: nextLobbyMatches,
+              };
             }
+
             return {
               ...prev,
-              activeMatch:
-                attachProfiles({ ...prev.activeMatch, ...updated }) ??
-                (prev.activeMatch
-                  ? { ...prev.activeMatch, ...updated }
-                  : { ...updated, creator: null, opponent: null }),
+              activeMatch: prev.activeMatchId === updated.id ? enriched : prev.activeMatch,
+              myMatches: nextMyMatches,
+              matches: nextLobbyMatches,
             };
           });
           void ensurePlayersLoaded([updated.creator_id, updated.opponent_id ?? undefined]);
@@ -1367,7 +1487,7 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
       channelStatusRef.current = 'CLOSED';
       updateConnectionStatesFromPresence();
     };
-  }, [attachProfiles, ensurePlayersLoaded, hydrateActiveMatch, matchId, mergePlayers, onlineEnabled, profile]);
+  }, [attachProfiles, ensurePlayersLoaded, hydrateActiveMatch, matchId, mergePlayers, onlineEnabled, profile, pushEmojiReaction]);
 
   useEffect(() => {
     if (typeof document === 'undefined') {
@@ -1407,6 +1527,11 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
         throw new Error('Authentication required.');
       }
 
+      const selectedStartingPlayer: 'creator' | 'opponent' =
+        payload.startingPlayer === 'random'
+          ? (Math.random() < 0.5 ? 'creator' : 'opponent')
+          : payload.startingPlayer;
+
       const { data, error } = await client.functions.invoke('create-match', {
         body: {
           visibility: payload.visibility,
@@ -1414,7 +1539,7 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
           hasClock: payload.hasClock,
           clockInitialMinutes: payload.clockInitialMinutes,
           clockIncrementSeconds: payload.clockIncrementSeconds,
-          startingPlayer: payload.startingPlayer,
+          startingPlayer: selectedStartingPlayer,
         },
       });
 
@@ -1513,18 +1638,9 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
         throw new Error('Match is no longer available or has already been joined by another player.');
       }
 
-      const selfMatch = attachProfiles(targetMatch) ?? { ...targetMatch, creator: null, opponent: null };
+      const hydratedTarget = attachProfiles(targetMatch) ?? { ...targetMatch, creator: null, opponent: null };
       if (targetMatch.creator_id === profile.id) {
-        setState((prev) => ({
-          ...prev,
-          activeMatchId: selfMatch.id,
-          activeMatch: selfMatch,
-          joinCode: targetMatch.private_join_code,
-          moves: [],
-          myMatches: upsertMatch(prev.myMatches, selfMatch),
-        }));
-        void ensurePlayersLoaded([targetMatch.creator_id, targetMatch.opponent_id ?? undefined]);
-        return selfMatch;
+        throw new Error('You cannot join your own game.');
       }
 
       const { data, error } = await client
@@ -1551,7 +1667,7 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
       mergePlayers(mergedProfiles);
       const enriched = attachProfiles(joined) ?? {
         ...joined,
-        creator: selfMatch.creator,
+        creator: hydratedTarget.creator,
         opponent: profile,
       };
       setState((prev) => ({
@@ -1660,10 +1776,11 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
         });
       }
 
+      const statusToSet: MatchStatus = opponentId ? 'completed' : 'abandoned';
       const { error } = await client.functions.invoke('update-match-status', {
         body: {
           matchId: targetId,
-          status: 'abandoned',
+          status: statusToSet,
           winnerId: opponentId ?? null,
         },
       });
@@ -1972,8 +2089,7 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
       if (!profile) {
         throw new Error('Authentication required.');
       }
-      const moveIndex = state.moves.length - 1;
-      if (moveIndex < 0) {
+      if (state.moves.length === 0) {
         throw new Error('There are no moves to undo yet.');
       }
       const role =
@@ -1985,6 +2101,13 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
       if (!role) {
         throw new Error('Only participants may request an undo.');
       }
+      const lastMoveForRole = [...state.moves]
+        .reverse()
+        .find((move) => isSantoriniMoveAction(move.action) && move.action.by === role);
+      if (!lastMoveForRole) {
+        throw new Error('You have not made a move to undo yet.');
+      }
+      const targetMoveIndex = lastMoveForRole.move_index;
       const existing = state.undoRequests[match.id];
       if (existing && existing.status === 'pending') {
         throw new Error('Undo request already pending.');
@@ -1992,7 +2115,7 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
       const requestedAt = new Date().toISOString();
       const payload = {
         match_id: match.id,
-        move_index: moveIndex,
+        move_index: targetMoveIndex,
         requested_by_role: role,
         requested_by_user_id: profile.id,
         requested_at: requestedAt,
@@ -2003,7 +2126,7 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
           ...prev.undoRequests,
           [match.id]: {
             matchId: match.id,
-            moveIndex,
+            moveIndex: targetMoveIndex,
             requestedBy: role,
             requestedAt,
             status: 'pending',
@@ -2341,6 +2464,48 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
     [onlineEnabled, profile, state.abortRequests, state.activeMatch, state.sessionMode],
   );
 
+  const sendEmojiReaction = useCallback(
+    async (emoji: string) => {
+      if (!emoji || typeof emoji !== 'string') {
+        return;
+      }
+      const match = activeMatchRef.current;
+      const channel = channelRef.current;
+      if (!channel || !match || state.sessionMode !== 'online' || !profile) {
+        return;
+      }
+      const timestamp = Date.now();
+      const role = activeRoleRef.current ?? null;
+      const id = `emoji-${match.id}-${timestamp}-${emojiCounterRef.current++}`;
+      const reaction: EmojiReaction = {
+        id,
+        matchId: match.id,
+        emoji,
+        playerId: profile.id,
+        role,
+        createdAt: timestamp,
+      };
+      pushEmojiReaction(reaction);
+      try {
+        await channel.send({
+          type: 'broadcast',
+          event: 'emoji',
+          payload: {
+            id,
+            match_id: match.id,
+            emoji,
+            player_id: profile.id,
+            role,
+            timestamp,
+          },
+        });
+      } catch (error) {
+        console.warn('useMatchLobby: Failed to send emoji reaction', error);
+      }
+    },
+    [profile, pushEmojiReaction, state.sessionMode],
+  );
+
   const clearAbortRequest = useCallback((matchId: string) => {
     setState((prev) => {
       if (!prev.abortRequests[matchId]) {
@@ -2490,6 +2655,15 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
     }));
   }, []);
 
+  useEffect(() => {
+    return () => {
+      Object.values(emojiTimeoutsRef.current).forEach((timeout) => {
+        clearTimeout(timeout);
+      });
+      emojiTimeoutsRef.current = {};
+    };
+  }, []);
+
   return {
     matches: matchesWithProfiles,
     myMatches: myMatchesWithProfiles,
@@ -2506,6 +2680,7 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
     abortRequests: state.abortRequests,
     rematchOffers: state.rematchOffers,
     connectionStates: state.connectionStates,
+    emojiReactions,
     setActiveMatch,
     createMatch,
     joinMatch,
@@ -2525,6 +2700,7 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
     requestAbort,
     respondAbort,
     clearAbortRequest,
+    sendEmojiReaction,
   };
 }
 

@@ -40,8 +40,9 @@ import {
   Wrap,
   WrapItem,
 } from '@chakra-ui/react';
+import { AnimatePresence, motion } from 'framer-motion';
 import type { SupabaseAuthState } from '@hooks/useSupabaseAuth';
-import type { LobbyMatch, UndoRequestState, UseMatchLobbyReturn } from '@hooks/useMatchLobby';
+import type { EmojiReaction, LobbyMatch, UndoRequestState, UseMatchLobbyReturn } from '@hooks/useMatchLobby';
 import { useMatchLobbyContext } from '@hooks/matchLobbyContext';
 import { useOnlineSantorini } from '@hooks/useOnlineSantorini';
 import { SantoriniProvider } from '@hooks/useSantorini';
@@ -54,9 +55,11 @@ import ConnectionIndicator from '@components/play/ConnectionIndicator';
 import type { SantoriniMoveAction, MatchStatus, PlayerProfile } from '@/types/match';
 import type { PlayerConnectionState } from '@hooks/useMatchLobby';
 import { useSurfaceTokens } from '@/theme/useSurfaceTokens';
+import EmojiPicker from '@components/EmojiPicker';
 
 const K_FACTOR = 32;
 const NOTIFICATION_PROMPT_STORAGE_KEY = 'santorini:notificationsPrompted';
+const MotionBox = motion.create(Box);
 
 const formatNameWithRating = (profile: PlayerProfile | null | undefined, fallback: string): string => {
   if (profile?.display_name) {
@@ -127,8 +130,8 @@ function LocalMatchContent({
     };
   }, [controls, initialize]);
 
-  const currentPlayer = nextPlayer === 0 ? 'Blue (Player 1)' : 'Red (Player 2)';
-  const turnHighlightColor = nextPlayer === 0 ? 'blue.400' : 'red.400';
+  const currentPlayer = nextPlayer === 0 ? 'Green (Player 1)' : 'Red (Player 2)';
+  const turnHighlightColor = nextPlayer === 0 ? 'green.400' : 'red.400';
 
   return (
     <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder} w="100%">
@@ -179,7 +182,7 @@ function LocalMatchContent({
             <Button variant="outline" onClick={redo} isDisabled={loading || !buttons.canRedo}>
               Redo
             </Button>
-            <Badge colorScheme={nextPlayer === 0 ? 'blue' : 'red'}>{currentPlayer}</Badge>
+            <Badge colorScheme={nextPlayer === 0 ? 'green' : 'red'}>{currentPlayer}</Badge>
           </HStack>
         </Stack>
       </CardBody>
@@ -202,6 +205,10 @@ function ActiveMatchContent({
   profileId,
   connectionStates,
   currentUserId,
+  creatorReactions = [],
+  opponentReactions = [],
+  canSendEmoji = false,
+  onSendEmoji,
 }: {
   match: LobbyMatch | null;
   role: 'creator' | 'opponent' | null;
@@ -217,6 +224,10 @@ function ActiveMatchContent({
   profileId: string | null;
   connectionStates?: Record<string, PlayerConnectionState>;
   currentUserId: string | null;
+  creatorReactions?: EmojiReaction[];
+  opponentReactions?: EmojiReaction[];
+  canSendEmoji?: boolean;
+  onSendEmoji?: (emoji: string) => void;
 }) {
   const toast = useToast();
   const [leaveBusy, setLeaveBusy] = useBoolean();
@@ -825,6 +836,9 @@ function ActiveMatchContent({
             profile={lobbyMatch?.creator}
             alignment="flex-start"
             connectionState={creatorConnection}
+            reactions={creatorReactions}
+            showEmojiPicker={Boolean(canSendEmoji && role === 'creator')}
+            onSendEmoji={onSendEmoji}
           />
           <PlayerClockCard
             label={opponentClockLabel}
@@ -834,6 +848,9 @@ function ActiveMatchContent({
             profile={lobbyMatch?.opponent}
             alignment="flex-end"
             connectionState={opponentConnection}
+            reactions={opponentReactions}
+            showEmojiPicker={Boolean(canSendEmoji && role === 'opponent')}
+            onSendEmoji={onSendEmoji}
           />
         </Stack>
         <Flex
@@ -864,7 +881,7 @@ function ActiveMatchContent({
             </WrapItem>
             {lobbyMatch && lobbyMatch.clock_initial_seconds > 0 && (
               <WrapItem>
-                <Badge colorScheme="blue">
+                <Badge colorScheme="green">
                   {Math.round(lobbyMatch.clock_initial_seconds / 60)}+{lobbyMatch.clock_increment_seconds}
                 </Badge>
               </WrapItem>
@@ -1013,6 +1030,18 @@ function CompletedMatchSummary({
       }
       return 'The game ended early.';
     }
+    if (match.status === 'completed') {
+      if (isDraw) {
+        return 'Neither player could secure a win.';
+      }
+      if (isWinnerUser) {
+        return 'Match completed. You won!';
+      }
+      if (winnerProfile) {
+        return `${winnerProfile.display_name ?? 'Opponent'} won the match.`;
+      }
+      return 'The match has completed.';
+    }
     if (isDraw) {
       return 'Neither player could secure a win.';
     }
@@ -1033,7 +1062,7 @@ function CompletedMatchSummary({
           <HStack spacing={2} flexWrap="wrap">
             {match.rated && <Badge colorScheme="purple">Rated match</Badge>}
             {match.clock_initial_seconds > 0 && (
-              <Badge colorScheme="blue">
+              <Badge colorScheme="green">
                 {Math.round(match.clock_initial_seconds / 60)}+{match.clock_increment_seconds}
               </Badge>
             )}
@@ -1063,6 +1092,9 @@ interface PlayerClockCardProps {
   profile: PlayerProfile | null | undefined;
   alignment: 'flex-start' | 'flex-end';
   connectionState?: PlayerConnectionState | null;
+  reactions?: EmojiReaction[];
+  showEmojiPicker?: boolean;
+  onSendEmoji?: (emoji: string) => void;
 }
 
 function PlayerClockCard({
@@ -1073,6 +1105,9 @@ function PlayerClockCard({
   profile,
   alignment,
   connectionState,
+  reactions,
+  showEmojiPicker,
+  onSendEmoji,
 }: PlayerClockCardProps) {
   const { cardBorder, mutedText, strongText } = useSurfaceTokens();
   const activeBg = useColorModeValue('teal.50', 'teal.900');
@@ -1084,6 +1119,8 @@ function PlayerClockCard({
   const clockFontSize = useBreakpointValue({ base: '2xl', md: '3xl' });
   const labelFontSize = useBreakpointValue({ base: 'xs', md: 'sm' });
   const avatarSize = useBreakpointValue<'sm' | 'md' | 'lg'>({ base: 'md', md: 'lg' });
+  const emojiFontSize = useBreakpointValue({ base: '2xl', md: '3xl' });
+  const activeReactions = reactions ?? [];
 
   return (
     <Box
@@ -1096,17 +1133,47 @@ function PlayerClockCard({
       bg={active ? activeBg : inactiveBg}
       transition="all 0.3s ease"
       boxShadow={active ? `0 0 0 1px ${accentColor}` : 'none'}
+      position="relative"
     >
+      {showEmojiPicker && onSendEmoji ? (
+        <Box position="absolute" top={2} right={2} zIndex={2}>
+          <EmojiPicker onSelect={onSendEmoji} />
+        </Box>
+      ) : null}
       <Stack spacing={3} align={alignItems}>
-        <Avatar
-          size={avatarSize ?? 'md'}
-          name={profile?.display_name ?? label}
-          src={profile?.avatar_url ?? undefined}
-          alignSelf={alignItems}
-        >
-          {active ? <AvatarBadge boxSize="1.1em" bg={accentColor} borderColor="white" /> : null}
-        </Avatar>
-      <Stack spacing={1} align={alignItems} w="100%">
+        <Box position="relative" display="inline-flex" alignSelf={alignItems} minH="60px">
+          <Avatar
+            size={avatarSize ?? 'md'}
+            name={profile?.display_name ?? label}
+            src={profile?.avatar_url ?? undefined}
+          >
+            {active ? <AvatarBadge boxSize="1.1em" bg={accentColor} borderColor="white" /> : null}
+          </Avatar>
+          <AnimatePresence initial={false}>
+            {activeReactions.map((reaction, index) => {
+              const offset = (index - (activeReactions.length - 1) / 2) * 22;
+              return (
+                <MotionBox
+                  key={reaction.id}
+                  position="absolute"
+                  left="50%"
+                  top="-12px"
+                  initial={{ opacity: 0, y: 0, x: offset, scale: 0.9 }}
+                  animate={{ opacity: [0, 1, 1, 0], y: -70, x: offset, scale: [1.15, 1, 1, 0.95] }}
+                  exit={{ opacity: 0, y: -80, x: offset, scale: 0.8 }}
+                  transition={{ duration: 2.5, times: [0, 0.08, 0.82, 1], ease: 'easeOut' }}
+                  pointerEvents="none"
+                  zIndex={1}
+                >
+                  <Text fontSize={emojiFontSize ?? '2xl'} textShadow="0 0 8px rgba(0,0,0,0.45)">
+                    {reaction.emoji}
+                  </Text>
+                </MotionBox>
+              );
+            })}
+          </AnimatePresence>
+        </Box>
+        <Stack spacing={1} align={alignItems} w="100%">
           <HStack spacing={1.5} justify={alignment === 'flex-end' ? 'flex-end' : 'flex-start'} align="center">
             <Text fontSize={labelFontSize ?? 'sm'} fontWeight="semibold" color={mutedText} textAlign={textAlign}>
               {label}
@@ -1206,7 +1273,7 @@ function WaitingForOpponentState({
   isCancelling?: boolean;
 }) {
   const { cardBg, cardBorder, mutedText, accentHeading } = useSurfaceTokens();
-  const gradientBg = useColorModeValue('linear(to-r, teal.50, blue.50)', 'linear(to-r, teal.900, blue.900)');
+  const gradientBg = useColorModeValue('linear(to-r, teal.50, green.50)', 'linear(to-r, teal.900, green.900)');
   const linkBackground = useColorModeValue('white', 'whiteAlpha.100');
   const joinKey = match.private_join_code ?? joinCode ?? match.id;
   const joinLink = joinKey ? buildMatchJoinLink(joinKey) : '';
@@ -1352,7 +1419,15 @@ function WaitingForOpponentState({
   );
 }
 
-function GamePlayWorkspace({ auth, onNavigateToLobby }: { auth: SupabaseAuthState; onNavigateToLobby: () => void }) {
+function GamePlayWorkspace({
+  auth,
+  onNavigateToLobby,
+  onNavigateToAnalyze,
+}: {
+  auth: SupabaseAuthState;
+  onNavigateToLobby: () => void;
+  onNavigateToAnalyze: () => void;
+}) {
   const lobby = useMatchLobbyContext();
   const workspaceToast = useToast();
   const rematchOffers = useMemo(
@@ -1364,6 +1439,52 @@ function GamePlayWorkspace({ auth, onNavigateToLobby }: { auth: SupabaseAuthStat
   const [cancellingActiveMatch, setCancellingActiveMatch] = useBoolean(false);
   const [requestingSummaryRematch, setRequestingSummaryRematch] = useBoolean(false);
   const [lastCancelledMatchId, setLastCancelledMatchId] = useState<string | null>(null);
+  const myRole = lobby.activeRole;
+  const canSendEmoji = Boolean(lobby.activeMatch && lobby.sessionMode === 'online' && myRole);
+  const creatorReactions = useMemo(() => {
+    const match = lobby.activeMatch;
+    if (!match) {
+      return [] as EmojiReaction[];
+    }
+    return lobby.emojiReactions.filter((reaction) => {
+      if (reaction.matchId !== match.id) {
+        return false;
+      }
+      if (reaction.role === 'creator') {
+        return true;
+      }
+      if (!reaction.role) {
+        return reaction.playerId === match.creator_id;
+      }
+      return false;
+    });
+  }, [lobby.activeMatch, lobby.emojiReactions]);
+
+  const opponentReactions = useMemo(() => {
+    const match = lobby.activeMatch;
+    if (!match) {
+      return [] as EmojiReaction[];
+    }
+    return lobby.emojiReactions.filter((reaction) => {
+      if (reaction.matchId !== match.id) {
+        return false;
+      }
+      if (reaction.role === 'opponent') {
+        return true;
+      }
+      if (!reaction.role) {
+        return reaction.playerId === match.opponent_id;
+      }
+      return false;
+    });
+  }, [lobby.activeMatch, lobby.emojiReactions]);
+
+  const handleSendEmoji = useCallback(
+    (emoji: string) => {
+      void lobby.sendEmojiReaction(emoji);
+    },
+    [lobby],
+  );
 
   useEffect(() => {
     if (!auth.profile) {
@@ -1518,12 +1639,13 @@ function GamePlayWorkspace({ auth, onNavigateToLobby }: { auth: SupabaseAuthStat
       console.warn('Unable to store last analyzed match', error);
     }
     workspaceToast({
-      title: 'Ready for analysis',
-      description: 'Open the Analyze tab to review this game.',
-      status: 'info',
-      duration: 4000,
+      title: 'Opening Analyze tab',
+      description: 'Loading the completed game for review.',
+      status: 'success',
+      duration: 3000,
     });
-  }, [lobby.activeMatch, workspaceToast]);
+    onNavigateToAnalyze();
+  }, [lobby.activeMatch, onNavigateToAnalyze, workspaceToast]);
 
   return (
     <Stack spacing={6} py={{ base: 6, md: 10 }}>
@@ -1635,6 +1757,10 @@ function GamePlayWorkspace({ auth, onNavigateToLobby }: { auth: SupabaseAuthStat
             profileId={auth.profile?.id ?? null}
             connectionStates={lobby.connectionStates}
             currentUserId={auth.profile?.id ?? null}
+            creatorReactions={creatorReactions}
+            opponentReactions={opponentReactions}
+            canSendEmoji={canSendEmoji}
+            onSendEmoji={handleSendEmoji}
           />
         </SantoriniProvider>
       )}

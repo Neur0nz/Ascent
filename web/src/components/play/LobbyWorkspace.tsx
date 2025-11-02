@@ -568,7 +568,7 @@ function PublicLobbies({
               if (match.clock_initial_seconds > 0) {
                 badges.push({
                   label: `${Math.round(match.clock_initial_seconds / 60)}+${match.clock_increment_seconds}`,
-                  colorScheme: 'blue',
+                  colorScheme: 'green',
                 });
               }
 
@@ -675,7 +675,7 @@ function PendingMatches({
             if (match.clock_initial_seconds > 0) {
               badges.push({
                 label: `${Math.round(match.clock_initial_seconds / 60)}+${match.clock_increment_seconds}`,
-                colorScheme: 'blue',
+                colorScheme: 'green',
               });
             }
 

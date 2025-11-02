@@ -671,7 +671,7 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
                 <Badge colorScheme="teal" variant="subtle" px={2} py={1} borderRadius="md">
                   Rating: {profile.rating}
                 </Badge>
-                <Badge colorScheme="blue" variant="subtle" px={2} py={1} borderRadius="md">
+                <Badge colorScheme="green" variant="subtle" px={2} py={1} borderRadius="md">
                   Games: {profile.games_played}
                 </Badge>
               </HStack>

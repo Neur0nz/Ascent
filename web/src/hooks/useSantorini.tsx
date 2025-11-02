@@ -193,7 +193,7 @@ export type Controls = {
   changeDifficulty: (sims: number) => void;
   toggleEdit: () => void;
   setEditMode: (mode: number) => void;
-  refreshEvaluation: () => Promise<void>;
+  refreshEvaluation: () => Promise<EvaluationState | null>;
   calculateOptions: () => Promise<void>;
   updateEvaluationDepth: (depth: number | null) => void;
   updateOptionsDepth: (depth: number | null) => void;
@@ -507,7 +507,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         const currentPlayer = snapshot.player; // 0 or 1
         
         if (game.gameMode === 'P0') {
-          // Human is Player 0 (Blue)
+          // Human is Player 0 (Green)
           isHumanTurn = currentPlayer === 0;
         } else if (game.gameMode === 'P1') {
           // Human is Player 1 (Red)
@@ -858,7 +858,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       let status = prev.status;
       if (placement.phase === 'placement') {
         const pieceNumber = placement.workerId === 1 || placement.workerId === -1 ? 1 : 2;
-        const playerLabel = placement.player === 0 ? 'Blue' : 'Red';
+        const playerLabel = placement.player === 0 ? 'Green' : 'Red';
         status = `Place ${playerLabel} worker ${pieceNumber}`;
       } else {
         if (stage <= 0) {
@@ -910,7 +910,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         const targetX = actionValue % GAME_CONSTANTS.BOARD_SIZE;
         const workerId = boardBefore ? nextPlacementWorkerId(player, boardBefore) : player === 0 ? 1 : -1;
         const workerLabel = workerId === 1 || workerId === -1 ? 'Worker 1' : 'Worker 2';
-        const playerLabel = player === 0 ? 'Blue' : 'Red';
+        const playerLabel = player === 0 ? 'Green' : 'Red';
         const description = `${playerLabel} ${workerLabel} placed on ${formatCoordinate([targetY, targetX])}.`;
         return {
           description,
@@ -936,7 +936,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
           : ([destination[0] + SANTORINI_CONSTANTS.DIRECTIONS[buildDirection][0],
               destination[1] + SANTORINI_CONSTANTS.DIRECTIONS[buildDirection][1]] as [number, number]);
       const workerLabel = workerIndex === 0 ? 'Worker 1' : 'Worker 2';
-      const playerLabel = player === 0 ? 'Blue' : 'Red';
+      const playerLabel = player === 0 ? 'Green' : 'Red';
       const fromLabel = formatCoordinate(origin);
       const toLabel = formatCoordinate(destination);
       const buildLabel = build ? formatCoordinate(build) : null;
@@ -964,14 +964,19 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     setHistory(summaries);
   }, []);
 
-  const refreshEvaluation = useCallback(async () => {
+  const refreshEvaluation = useCallback(async (): Promise<EvaluationState | null> => {
+    const balancedEvaluation: EvaluationState = { value: 0, advantage: 'Balanced', label: '0.00' };
+
     if (!evaluationEnabled) {
-      setEvaluation({ value: 0, advantage: 'Balanced', label: '0.00' });
+      setEvaluation(balancedEvaluation);
       setTopMoves([]);
-      return;
+      return balancedEvaluation;
     }
+
     const game = gameRef.current;
-    if (!game || !game.py) return;
+    if (!game || !game.py) {
+      return null;
+    }
 
     const requestId = ++evaluationRequestIdRef.current;
     let nextEvaluation: EvaluationState | undefined;
@@ -1030,14 +1035,18 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         if (nextTopMoves !== undefined) {
           setTopMoves(nextTopMoves);
         }
+        return nextEvaluation ?? null;
       }
+      return null;
     } catch (error) {
       console.error('Failed to refresh evaluation:', error);
       if (requestId === evaluationRequestIdRef.current) {
-        // Set default evaluation on error
-        setEvaluation({ value: 0, advantage: 'Error', label: '0.00' });
+        const errorEvaluation: EvaluationState = { value: 0, advantage: 'Error', label: '0.00' };
+        setEvaluation(errorEvaluation);
         setTopMoves([]);
+        return errorEvaluation;
       }
+      return null;
     }
   }, [evaluationDepthOverride, evaluationEnabled, optionsDepthOverride]);
 
@@ -1330,7 +1339,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         let isHumanTurn = false;
         
         if (game.gameMode === 'P0') {
-          // Human is Player 0 (Blue)
+          // Human is Player 0 (Green)
           isHumanTurn = currentPlayer === 0;
         } else if (game.gameMode === 'P1') {
           // Human is Player 1 (Red)

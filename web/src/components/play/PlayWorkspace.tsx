@@ -255,7 +255,7 @@ function PublicLobbies({
                     <Heading size="sm">{match.creator?.display_name ?? 'Unknown player'}</Heading>
                     <Badge colorScheme={match.rated ? 'purple' : 'gray'}>{match.rated ? 'Rated' : 'Casual'}</Badge>
                     {match.clock_initial_seconds > 0 && (
-                      <Badge colorScheme="blue">
+                      <Badge colorScheme="green">
                         {Math.round(match.clock_initial_seconds / 60)}+{match.clock_increment_seconds}
                       </Badge>
                     )}
@@ -382,7 +382,7 @@ function LocalMatchContent({
     };
   }, [controls, initialize]);
 
-  const currentPlayer = nextPlayer === 0 ? 'Blue (Player 1)' : 'Red (Player 2)';
+  const currentPlayer = nextPlayer === 0 ? 'Green (Player 1)' : 'Red (Player 2)';
 
   return (
     <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder} w="100%">
@@ -430,7 +430,7 @@ function LocalMatchContent({
             <Button variant="outline" onClick={redo} isDisabled={loading || !buttons.canRedo}>
               Redo
             </Button>
-            <Badge colorScheme={nextPlayer === 0 ? 'blue' : 'red'}>{currentPlayer}</Badge>
+            <Badge colorScheme={nextPlayer === 0 ? 'green' : 'red'}>{currentPlayer}</Badge>
           </HStack>
         </Stack>
       </CardBody>
@@ -592,7 +592,7 @@ function ActiveMatchContent({
     onSubmitMove: onSubmitMove,
     onGameComplete: handleGameComplete,
   });
-  const creatorName = lobbyMatch?.creator?.display_name ?? 'Player 1 (Blue)';
+  const creatorName = lobbyMatch?.creator?.display_name ?? 'Player 1 (Green)';
   const opponentName = lobbyMatch?.opponent?.display_name ?? 'Player 2 (Red)';
   const creatorClock = santorini.formatClock(santorini.creatorClockMs);
   const opponentClock = santorini.formatClock(santorini.opponentClockMs);
@@ -714,7 +714,7 @@ function ActiveMatchContent({
               {lobbyMatch?.rated ? 'Rated' : 'Casual'}
             </Badge>
             {lobbyMatch && lobbyMatch.clock_initial_seconds > 0 && (
-              <Badge colorScheme="blue">
+              <Badge colorScheme="green">
                 {Math.round(lobbyMatch.clock_initial_seconds / 60)}+{lobbyMatch.clock_increment_seconds}
               </Badge>
             )}
@@ -764,7 +764,7 @@ function ActiveMatchContent({
                 >
                   <VStack spacing={1} align={{ base: 'center', sm: 'flex-start' }} w="100%">
                     <Text fontSize="sm" color={mutedText}>
-                      {role === 'creator' ? 'Your clock' : 'Player 1 (Blue)'}
+                      {role === 'creator' ? 'Your clock' : 'Player 1 (Green)'}
                     </Text>
                     <Heading size="lg" color={creatorTurnActive ? accentHeading : strongText}>
                       {creatorClock}
@@ -815,7 +815,7 @@ function ActiveMatchContent({
                   </Heading>
                   <Text fontSize="sm" color={strongText}>
                     {role === 'creator'
-                      ? 'You are playing as Player 1 (Blue)'
+                      ? 'You are playing as Player 1 (Green)'
                       : role === 'opponent'
                       ? 'You are playing as Player 2 (Red)'
                       : 'Spectating this match'}
@@ -823,7 +823,7 @@ function ActiveMatchContent({
                   <Text fontSize="sm" color={helperText}>
                     {typedMoves.length} moves played · Turn:{' '}
                     {santorini.currentTurn === 'creator'
-                      ? `Player 1 (Blue) – ${creatorName}`
+                      ? `Player 1 (Green) – ${creatorName}`
                       : `Player 2 (Red) – ${opponentName}`}
                   </Text>
                 </Box>

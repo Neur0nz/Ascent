@@ -58,7 +58,7 @@ function GameBoard({
   const cellBg = useColorModeValue('gray.50', 'gray.700');
   const selectableBg = useColorModeValue('teal.100', 'teal.700');
   const cancelSelectableBg = useColorModeValue('orange.200', 'orange.700');
-  const setupSelectableBg = useColorModeValue('blue.100', 'blue.700');
+  const setupSelectableBg = useColorModeValue('green.100', 'green.700');
   const labelColor = useColorModeValue('gray.600', 'whiteAlpha.700');
   const subtleLabelColor = useColorModeValue('gray.500', 'whiteAlpha.600');
   const boardFrameBg = useColorModeValue('gray.100', 'blackAlpha.500');
@@ -67,8 +67,8 @@ function GameBoard({
   const actionBorderColor = useColorModeValue('gray.200', 'whiteAlpha.200');
   const panelTextColor = useColorModeValue('gray.800', 'whiteAlpha.800');
   const buildingColor = useColorModeValue('gray.900', 'whiteAlpha.900');
-  const setupPanelBg = useColorModeValue('blue.500', 'blue.600');
-  const setupPanelBorder = useColorModeValue('blue.300', 'blue.500');
+  const setupPanelBg = useColorModeValue('green.500', 'green.600');
+  const setupPanelBorder = useColorModeValue('green.300', 'green.500');
   const setupPrimaryTextColor = useColorModeValue('white', 'white');
   const setupSecondaryTextColor = useColorModeValue('whiteAlpha.900', 'whiteAlpha.800');
   const loadingStatusColor = useColorModeValue('teal.600', 'teal.200');
@@ -251,7 +251,7 @@ function GameBoard({
           onClick={undo}
           isDisabled={undoDisabledOverride ?? !buttons.canUndo}
           isLoading={undoIsLoading}
-          colorScheme="blue"
+          colorScheme="green"
           boxShadow="lg"
         >
             {undoLabel ?? 'Undo'}

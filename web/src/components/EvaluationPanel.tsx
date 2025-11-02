@@ -23,7 +23,7 @@ interface EvaluationPanelProps {
   calcOptionsBusy: boolean;
   evaluationDepth: number | null;
   optionsDepth: number | null;
-  refreshEvaluation: () => Promise<void>;
+  refreshEvaluation: () => Promise<EvaluationState | null>;
   calculateOptions: () => Promise<void>;
   updateEvaluationDepth: (depth: number | null) => void;
   updateOptionsDepth: (depth: number | null) => void;

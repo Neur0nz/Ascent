@@ -118,7 +118,7 @@ function PracticeTabContent({ onShowHistory }: { onShowHistory: () => void }) {
     }
     return false;
   })();
-  const practiceTurnColor = nextPlayer === 0 ? 'blue.400' : 'red.400';
+  const practiceTurnColor = nextPlayer === 0 ? 'green.400' : 'red.400';
 
   useEffect(() => {
     // Initialize game engine in background without blocking urgent UI updates
@@ -451,7 +451,11 @@ function App() {
                   />
                 </TabPanel>
                 <TabPanel px={0}>
-                  <GamePlayWorkspace auth={auth} onNavigateToLobby={() => setActiveTab('lobby')} />
+                  <GamePlayWorkspace
+                    auth={auth}
+                    onNavigateToLobby={() => setActiveTab('lobby')}
+                    onNavigateToAnalyze={() => setActiveTab('analyze')}
+                  />
                 </TabPanel>
                 <TabPanel px={0}>
                   <LeaderboardWorkspace

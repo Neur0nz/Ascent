@@ -128,7 +128,7 @@ function HistoryModal({ isOpen, onClose, history, jumpToMove }: HistoryModalProp
           <Stack spacing={4}>
             {history.length === 0 && <Text color={secondaryTextColor}>No moves recorded yet.</Text>}
             {history.map((move, index) => {
-              const playerLabel = move.player === 0 ? 'Blue' : 'Red';
+              const playerLabel = move.player === 0 ? 'Green' : 'Red';
               const phaseLabel = move.phase === 'placement' ? 'Placement' : move.phase === 'move' ? 'Move' : 'State';
               const metadata: string[] = [];
               if (move.phase === 'placement') {
@@ -146,7 +146,7 @@ function HistoryModal({ isOpen, onClose, history, jumpToMove }: HistoryModalProp
                   <Stack spacing={2}>
                     <HStack justify="space-between">
                       <Text fontWeight="semibold">Move {index + 1}</Text>
-                      <Tag colorScheme={move.player === 0 ? 'blue' : 'red'}>
+                      <Tag colorScheme={move.player === 0 ? 'green' : 'red'}>
                         <TagLabel>{playerLabel}</TagLabel>
                       </Tag>
                     </HStack>
