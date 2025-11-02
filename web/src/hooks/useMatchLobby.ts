@@ -1095,6 +1095,42 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
       )
       .on(
         'broadcast',
+        { event: 'emoji' },
+        (payload: { type: string; event: string; payload: any }) => {
+          const data = payload?.payload ?? {};
+          const emojiValue = typeof data.emoji === 'string' ? data.emoji : null;
+          const playerId = typeof data.player_id === 'string' ? data.player_id : null;
+          if (!emojiValue || !playerId) {
+            return;
+          }
+          const roleFromPayload =
+            data.role === 'creator' || data.role === 'opponent' || data.role === 'spectator'
+              ? data.role
+              : activeMatchRef.current?.creator_id === playerId
+                ? 'creator'
+                : activeMatchRef.current?.opponent_id === playerId
+                  ? 'opponent'
+                  : null;
+          const timestamp =
+            typeof data.timestamp === 'number' && Number.isFinite(data.timestamp)
+              ? data.timestamp
+              : Date.now();
+          const id =
+            typeof data.id === 'string'
+              ? data.id
+              : `emoji-${matchId}-${timestamp}-${emojiCounterRef.current++}`;
+          pushEmojiReaction({
+            id,
+            matchId,
+            emoji: emojiValue,
+            playerId,
+            role: roleFromPayload,
+            createdAt: timestamp,
+          });
+        },
+      )
+      .on(
+        'broadcast',
         { event: 'move-rejected' },
         (payload: { type: string; event: string; payload: any }) => {
           console.error('❌ BROADCAST: Move rejected by server!', payload.payload);
