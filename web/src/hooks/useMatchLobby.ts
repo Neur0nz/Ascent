@@ -1288,6 +1288,8 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
         },
       );
 
+    updateConnectionStatesFromPresence();
+
     const sendPresenceUpdate = async (reason: string) => {
       if (!profile) {
         return;
@@ -2396,6 +2398,10 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
     if (state.activeMatch.opponent_id === profile.id) return 'opponent';
     return null;
   }, [profile, state.activeMatch, state.sessionMode]);
+
+  useEffect(() => {
+    activeRoleRef.current = activeRole ?? null;
+  }, [activeRole]);
 
   const hasActiveGame = useMemo(() => {
     return state.myMatches.some(m => 
