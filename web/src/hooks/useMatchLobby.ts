@@ -2505,6 +2505,7 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
     undoRequests: state.undoRequests,
     abortRequests: state.abortRequests,
     rematchOffers: state.rematchOffers,
+    connectionStates: state.connectionStates,
     setActiveMatch,
     createMatch,
     joinMatch,
