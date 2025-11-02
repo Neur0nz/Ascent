@@ -330,31 +330,36 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
 
     const fetchMatches = async () => {
       setState((prev) => ({ ...prev, loading: true }));
-      const { data, error } = await client
-        .from('matches')
-        .select(MATCH_WITH_PROFILES)
-        .eq('status', 'waiting_for_opponent')
-        .order('created_at', { ascending: true });
+      try {
+        const { data, error } = await client
+          .from('matches')
+          .select(MATCH_WITH_PROFILES)
+          .eq('status', 'waiting_for_opponent')
+          .order('created_at', { ascending: true });
 
-      if (error) {
+        if (error) {
+          throw error;
+        }
+
+        const rawRecords = Array.isArray(data) ? data : [];
+        const records = rawRecords as unknown as Array<MatchRecord & Partial<LobbyMatch>>;
+        const profilesToCache: PlayerProfile[] = [];
+        records.forEach((record) => {
+          if (record.creator) profilesToCache.push(record.creator);
+          if (record.opponent) profilesToCache.push(record.opponent);
+        });
+        mergePlayers(profilesToCache);
+        const hydrated = records.map(
+          (record) => attachProfiles(record) ?? { ...record, creator: null, opponent: null },
+        );
+        setState((prev) => ({ ...prev, loading: false, matches: hydrated }));
+        void ensurePlayersLoaded(
+          records.flatMap((match) => [match.creator_id, match.opponent_id ?? undefined]),
+        );
+      } catch (error) {
         console.error('Failed to fetch matches', error);
         setState((prev) => ({ ...prev, loading: false }));
-        return;
       }
-
-      const rawRecords = Array.isArray(data) ? data : [];
-      const records = rawRecords as unknown as Array<MatchRecord & Partial<LobbyMatch>>;
-      const profilesToCache: PlayerProfile[] = [];
-      records.forEach((record) => {
-        if (record.creator) profilesToCache.push(record.creator);
-        if (record.opponent) profilesToCache.push(record.opponent);
-      });
-      mergePlayers(profilesToCache);
-      const hydrated = records.map((record) => attachProfiles(record) ?? { ...record, creator: null, opponent: null });
-      setState((prev) => ({ ...prev, loading: false, matches: hydrated }));
-      void ensurePlayersLoaded(
-        records.flatMap((match) => [match.creator_id, match.opponent_id ?? undefined]),
-      );
     };
 
     fetchMatches();
