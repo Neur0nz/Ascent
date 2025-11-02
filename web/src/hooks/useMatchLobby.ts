@@ -267,6 +267,75 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
     [], // Stable - reads from playersRef.current which is always up-to-date
   );
 
+  const hydrateActiveMatch = useCallback(
+    async (reason: string = 'manual'): Promise<void> => {
+      if (!onlineEnabled) return;
+      const client = supabase;
+      if (!client || !matchId || matchId === LOCAL_MATCH_ID) return;
+
+      console.log('useMatchLobby: Hydrating active match', { matchId, reason });
+
+      hydratingRef.current = true;
+      processingMovesRef.current = new Set();
+
+      try {
+        const [{ data: matchData, error: matchError }, { data: movesData, error: movesError }] = await Promise.all([
+          client
+            .from('matches')
+            .select(MATCH_WITH_PROFILES)
+            .eq('id', matchId)
+            .maybeSingle(),
+          client
+            .from('match_moves')
+            .select('*')
+            .eq('match_id', matchId)
+            .order('move_index', { ascending: true }),
+        ]);
+
+        if (matchError) {
+          console.error('useMatchLobby: Failed to refresh match record', matchError);
+        }
+        if (movesError) {
+          console.error('useMatchLobby: Failed to refresh match moves', movesError);
+        }
+
+        const record = matchError ? null : ((matchData ?? null) as MatchRecord & Partial<LobbyMatch> | null);
+        if (record?.creator) mergePlayers([record.creator]);
+        if (record?.opponent) mergePlayers([record.opponent]);
+        const hydratedMatch = record ? attachProfiles(record) : null;
+
+        const mappedMoves =
+          movesError || !Array.isArray(movesData)
+            ? null
+            : (movesData as MatchMoveRecord<MatchAction>[]).map((move) => ({
+                ...move,
+                action: normalizeAction(move.action),
+              }));
+
+        setState((prev) => {
+          if (prev.activeMatchId !== matchId) {
+            return prev;
+          }
+          return {
+            ...prev,
+            activeMatch: hydratedMatch ?? prev.activeMatch,
+            joinCode: record?.private_join_code ?? prev.joinCode,
+            moves: mappedMoves ?? prev.moves,
+          };
+        });
+
+        if (record) {
+          void ensurePlayersLoaded([record.creator_id, record.opponent_id ?? undefined]);
+        }
+      } catch (error) {
+        console.error('useMatchLobby: Hydration error', error);
+      } finally {
+        hydratingRef.current = false;
+      }
+    },
+    [attachProfiles, ensurePlayersLoaded, matchId, mergePlayers, onlineEnabled],
+  );
+
   useEffect(() => {
     if (profile) {
       mergePlayers([profile]);
@@ -596,70 +665,7 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
       return undefined;
     }
 
-    const fetchMatch = async () => {
-      const { data, error } = await client
-        .from('matches')
-        .select(MATCH_WITH_PROFILES)
-        .eq('id', matchId)
-        .maybeSingle();
-
-      if (error) {
-        console.error('Failed to load active match', error);
-        return;
-      }
-
-      const record = (data ?? null) as unknown as (MatchRecord & Partial<LobbyMatch>) | null;
-      if (record?.creator) mergePlayers([record.creator]);
-      if (record?.opponent) mergePlayers([record.opponent]);
-      const hydrated = attachProfiles(record);
-      setState((prev) => {
-        if (prev.activeMatchId !== matchId) {
-          return prev;
-        }
-        return {
-          ...prev,
-          activeMatch: hydrated,
-          joinCode: record?.private_join_code ?? prev.joinCode,
-        };
-      });
-      if (record) {
-        void ensurePlayersLoaded([record.creator_id, record.opponent_id ?? undefined]);
-      }
-    };
-
-    const fetchMoves = async () => {
-      const { data, error } = await client
-        .from('match_moves')
-        .select('*')
-        .eq('match_id', matchId)
-        .order('move_index', { ascending: true });
-
-      if (error) {
-        console.error('Failed to load match moves', error);
-        return;
-      }
-
-      setState((prev) => {
-        if (prev.activeMatchId !== matchId) {
-          return prev;
-        }
-        return {
-          ...prev,
-          moves: (data ?? []).map((move: MatchMoveRecord) => ({
-            ...move,
-            action: normalizeAction(move.action),
-          })),
-        };
-      });
-    };
-
-    // Hydrate match and moves together
-    hydratingRef.current = true;
-    Promise.all([fetchMatch(), fetchMoves()])
-      .catch((e) => console.warn('Hydration fetch failed', e))
-      .finally(() => {
-        hydratingRef.current = false;
-      });
+    void hydrateActiveMatch('initial-load');
 
     const channel = client
       .channel(`match-${matchId}`, {
@@ -1090,14 +1096,7 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
         
         if (status === 'SUBSCRIBED') {
           console.log('useMatchLobby: Real-time subscription active, refreshing match state', { matchId });
-          // Clear any pending processing and hydrate fresh before allowing optimistic applies
-          processingMovesRef.current = new Set();
-          hydratingRef.current = true;
-          Promise.all([fetchMatch(), fetchMoves()])
-            .catch((e) => console.warn('Hydration fetch failed', e))
-            .finally(() => {
-              hydratingRef.current = false;
-            });
+          void hydrateActiveMatch('re-subscribed');
         }
       });
 
@@ -1107,7 +1106,35 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
       client.removeChannel(channel);
       channelRef.current = null;
     };
-  }, [attachProfiles, ensurePlayersLoaded, matchId, mergePlayers, onlineEnabled, profile]);
+  }, [attachProfiles, ensurePlayersLoaded, hydrateActiveMatch, matchId, mergePlayers, onlineEnabled, profile]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return undefined;
+    }
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void hydrateActiveMatch('visibilitychange');
+      }
+    };
+
+    const handleFocus = () => {
+      void hydrateActiveMatch('window-focus');
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', handleFocus);
+    }
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', handleFocus);
+      }
+    };
+  }, [hydrateActiveMatch]);
 
   const createMatch = useCallback(
     async (payload: CreateMatchPayload) => {

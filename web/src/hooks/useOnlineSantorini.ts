@@ -439,6 +439,31 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
   }, [role, currentTurn]);
 
   useEffect(() => {
+    if (!match || !role || !isMyTurn) {
+      return;
+    }
+    const selector = moveSelectorRef.current;
+    if (selector.stage !== 0) {
+      return;
+    }
+    const hasSelectable = selectable.some((row) => row.some(Boolean));
+    if (hasSelectable) {
+      return;
+    }
+
+    const engine = engineRef.current;
+    const refreshedSelectable = computeSelectable(
+      engine.getValidMoves(),
+      engine.snapshot,
+      selector,
+      true,
+      engine.getPlacementContext(),
+    );
+    setSelectable(refreshedSelectable);
+    setCancelSelectable(Array.from({ length: 5 }, () => Array(5).fill(false)));
+  }, [isMyTurn, match, role, selectable]);
+
+  useEffect(() => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
@@ -690,6 +715,22 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
           player: engine.player,
           board_at_click: engine.snapshot.board[y][x],
         });
+
+        if (moveSelector.stage === 0) {
+          const hasSelectable = selectable.some((row) => row.some(Boolean));
+          if (!hasSelectable) {
+            const refreshedSelectable = computeSelectable(
+              validMoves,
+              engine.snapshot,
+              moveSelector,
+              true,
+              engine.getPlacementContext(),
+            );
+            setSelectable(refreshedSelectable);
+            setCancelSelectable(Array.from({ length: 5 }, () => Array(5).fill(false)));
+          }
+        }
+
         const clicked = moveSelector.click(y, x, engine.snapshot.board, validMoves, engine.player);
         console.log('🎮 Click result:', clicked, 'New stage:', moveSelector.stage);
         
@@ -761,7 +802,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
         processingMoveRef.current = false;
       }
     },
-    [currentTurn, isMyTurn, match, moves.length, role, toast, updateEngineState],
+    [currentTurn, isMyTurn, match, moves.length, role, selectable, toast, updateEngineState],
   );
 
   // Game completion detection
