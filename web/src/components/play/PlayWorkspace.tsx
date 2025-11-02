@@ -44,12 +44,20 @@ import {
 } from '@chakra-ui/react';
 import { AddIcon } from '@chakra-ui/icons';
 import type { SupabaseAuthState } from '@hooks/useSupabaseAuth';
-import { useMatchLobby, type CreateMatchPayload, type LobbyMatch, type StartingPlayer } from '@hooks/useMatchLobby';
+import {
+  useMatchLobby,
+  type CreateMatchPayload,
+  type LobbyMatch,
+  type StartingPlayer,
+  type PlayerConnectionState,
+  type ConnectionQuality,
+} from '@hooks/useMatchLobby';
 import { useOnlineSantorini } from '@hooks/useOnlineSantorini';
 import { SantoriniProvider, useSantorini } from '@hooks/useSantorini';
 import { useLocalSantorini } from '@hooks/useLocalSantorini';
 import GameBoard from '@components/GameBoard';
 import GoogleIcon from '@components/auth/GoogleIcon';
+import ConnectionIndicator from '@components/play/ConnectionIndicator';
 import type { SantoriniMoveAction, MatchStatus } from '@/types/match';
 import MyMatchesPanel from './MyMatchesPanel';
 import { useSurfaceTokens } from '@/theme/useSurfaceTokens';
@@ -979,6 +987,39 @@ function PlayWorkspace({ auth }: { auth: SupabaseAuthState }) {
     return opponent?.display_name ?? 'Opponent';
   }, [auth.profile, lobby.activeMatch]);
   const showActiveStatusBanner = Boolean(auth.profile) && sessionMode === 'online' && inProgressMatches.length > 0;
+
+  const resolveConnectionState = useCallback(
+    (playerId: string | null | undefined, fallbackStatus: ConnectionQuality = 'offline'): PlayerConnectionState | null => {
+      if (!playerId) return null;
+      const existing = lobby.connectionStates[playerId];
+      if (existing) return existing;
+      const resolvedRole =
+        lobby.activeMatch?.creator_id === playerId
+          ? 'creator'
+          : lobby.activeMatch?.opponent_id === playerId
+            ? 'opponent'
+            : null;
+      const isSelf = auth.profile?.id === playerId;
+      const status: ConnectionQuality = isSelf && lobby.onlineEnabled ? 'connecting' : fallbackStatus;
+      return {
+        playerId,
+        role: resolvedRole,
+        status,
+        lastSeen: null,
+        isSelf,
+      };
+    },
+    [auth.profile?.id, lobby.activeMatch, lobby.connectionStates, lobby.onlineEnabled],
+  );
+
+  const creatorConnection = useMemo(
+    () => resolveConnectionState(lobby.activeMatch?.creator_id),
+    [lobby.activeMatch?.creator_id, resolveConnectionState],
+  );
+  const opponentConnection = useMemo(
+    () => resolveConnectionState(lobby.activeMatch?.opponent_id),
+    [lobby.activeMatch?.opponent_id, resolveConnectionState],
+  );
 
   useEffect(() => {
     // Auto-enable online mode by default
