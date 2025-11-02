@@ -28,20 +28,20 @@
 
   <g fill="#FFFFFF" stroke="#FFFFFF" stroke-opacity="1" stroke-linejoin="round" transform="translate(4, 8)">
 
-    <!-- Level 0 (bottom) - higher opacity and thicker stroke for visibility -->
+    <!-- Level 0 (bottom) - lower opacity for more natural look at small sizes -->
     <!-- Tower base uses 56 width, centered in 56x48 space -->
 
-    <polygon fill-opacity="0.4" stroke-width="2" points="0,48 0,38 56,38 56,48"/>
+    <polygon fill-opacity="0.25" stroke-width="2" points="0,48 0,38 56,38 56,48"/>
 
-    <!-- Level 1 (middle) - higher opacity for better contrast -->
+    <!-- Level 1 (middle) - balanced opacity for better contrast -->
 
-    <polygon fill-opacity="0.65" stroke-width="2" points="7,38 7,28 49,28 49,38"/>
+    <polygon fill-opacity="0.52" stroke-width="2" points="7,38 7,28 49,28 49,38"/>
 
-    <!-- Level 2 (top) - full opacity for maximum visibility -->
+    <!-- Level 2 (top) - high opacity for visibility -->
 
-    <polygon fill-opacity="0.85" stroke-width="2" points="14,28 14,18 42,18 42,28"/>
+    <polygon fill-opacity="0.75" stroke-width="2" points="14,28 14,18 42,18 42,28"/>
 
-    <!-- Dome (level 3) - full opacity and thicker stroke for prominence -->
+    <!-- Dome (level 3) - high opacity for prominence -->
     <!-- Arc curves upward, closes along base line -->
     <path fill-opacity="1" fill="#FFFFFF" stroke="#FFFFFF" stroke-opacity="1" stroke-width="2" d="M 16 18 A 12 12 0 0 1 40 18 Z" stroke-linecap="round"/>
 
