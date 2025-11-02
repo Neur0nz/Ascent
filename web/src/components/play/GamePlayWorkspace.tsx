@@ -56,6 +56,7 @@ import { buildMatchJoinLink } from '@/utils/joinLinks';
 import { scheduleAutoOpenCreate } from '@/utils/lobbyStorage';
 import { useBrowserNotifications } from '@hooks/useBrowserNotifications';
 import { usePushSubscription } from '@hooks/usePushSubscription';
+import { useMatchVisibilityReporter } from '@hooks/useMatchVisibilityReporter';
 import GameBoard from '@components/GameBoard';
 import ConnectionIndicator from '@components/play/ConnectionIndicator';
 import type { SantoriniMoveAction, MatchStatus, PlayerProfile } from '@/types/match';
@@ -1641,6 +1642,8 @@ function GamePlayWorkspace({
     onNavigateToLobby();
   }, [onNavigateToLobby]);
   const sessionMode = lobby.sessionMode ?? 'online';
+  const activeOnlineMatchId = sessionMode === 'online' && lobby.activeMatch ? lobby.activeMatch.id : null;
+  useMatchVisibilityReporter(activeOnlineMatchId);
   const completedMatch =
     sessionMode === 'online' &&
     lobby.activeMatch &&

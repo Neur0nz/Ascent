@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Ascent favicon">
+
+  <defs>
+
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+
+      <stop offset="0%" stop-color="#1E66FF"/>
+
+      <stop offset="100%" stop-color="#27C3FF"/>
+
+    </linearGradient>
+
+  </defs>
+
+
+
+  <!-- Rounded square background -->
+
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+
+
+
+  <!-- Extra-large 'A' for clarity at 16px -->
+
+  <path fill="#FFFFFF" d="M12 52 L32 8 L52 52 L45 52 L39.5 39 H24.5 L19 52 Z M27 34h10l-5-11z"/>
+
+</svg>

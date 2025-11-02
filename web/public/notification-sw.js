@@ -1,5 +1,67 @@
 /* eslint-disable no-restricted-globals */
 const FOCUSABLE_CLIENT_TYPES = ['window'];
+const clientMatchVisibility = new Map();
+
+const normalizeMatchId = (value) => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+self.addEventListener('message', (event) => {
+  const data = event.data;
+  if (!data || typeof data !== 'object') {
+    return;
+  }
+  if (data.type !== 'santorini:match-visibility') {
+    return;
+  }
+  const source = event.source;
+  if (!source || typeof source.id !== 'string') {
+    return;
+  }
+
+  const matchId = normalizeMatchId(data.matchId);
+  const visible = Boolean(data.visible);
+  const timestamp =
+    typeof data.timestamp === 'number' && Number.isFinite(data.timestamp) ? data.timestamp : Date.now();
+
+  if (!matchId) {
+    clientMatchVisibility.delete(source.id);
+    return;
+  }
+
+  clientMatchVisibility.set(source.id, { matchId, visible, timestamp });
+});
+
+const shouldSuppressNotification = async (matchId) => {
+  if (!matchId) {
+    return false;
+  }
+  const allClients = await self.clients.matchAll({
+    type: 'window',
+    includeUncontrolled: true,
+  });
+  const activeIds = new Set(allClients.map((client) => client.id));
+  for (const knownId of Array.from(clientMatchVisibility.keys())) {
+    if (!activeIds.has(knownId)) {
+      clientMatchVisibility.delete(knownId);
+    }
+  }
+
+  for (const client of allClients) {
+    const visibility = clientMatchVisibility.get(client.id);
+    if (!visibility) {
+      continue;
+    }
+    if (visibility.matchId === matchId && visibility.visible) {
+      return true;
+    }
+  }
+  return false;
+};
 
 self.addEventListener('install', () => {
   self.skipWaiting();
@@ -57,25 +119,33 @@ self.addEventListener('push', (event) => {
     return;
   }
 
-  let payload = {};
-  try {
-    payload = event.data.json();
-  } catch (_error) {
-    payload = { title: 'Santorini', body: event.data.text() };
-  }
+  event.waitUntil(
+    (async () => {
+      let payload = {};
+      try {
+        payload = event.data.json();
+      } catch (_error) {
+        payload = { title: 'Santorini', body: event.data.text() };
+      }
 
-  const title = payload.title ?? 'Santorini';
-  const options = {
-    body: payload.body ?? '',
-    tag: payload.tag,
-    data: payload.data ?? {},
-    requireInteraction: Boolean(payload.requireInteraction),
-    renotify: Boolean(payload.renotify),
-    icon: payload.icon,
-    badge: payload.badge,
-    vibrate: payload.vibrate ?? [100, 50, 100],
-    actions: payload.actions ?? undefined,
-  };
+      const title = payload.title ?? 'Santorini';
+      const options = {
+        body: payload.body ?? '',
+        tag: payload.tag,
+        data: payload.data ?? {},
+        requireInteraction: Boolean(payload.requireInteraction),
+        renotify: Boolean(payload.renotify),
+        icon: payload.icon,
+        badge: payload.badge,
+        vibrate: payload.vibrate ?? [100, 50, 100],
+        actions: payload.actions ?? undefined,
+      };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+      const matchId = normalizeMatchId(options.data?.matchId);
+      const suppress = await shouldSuppressNotification(matchId);
+      if (!suppress) {
+        await self.registration.showNotification(title, options);
+      }
+    })(),
+  );
 });
