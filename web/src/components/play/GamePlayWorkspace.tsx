@@ -39,6 +39,11 @@ import {
   VStack,
   Wrap,
   WrapItem,
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+  PopoverArrow,
+  PopoverBody,
 } from '@chakra-ui/react';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { SupabaseAuthState } from '@hooks/useSupabaseAuth';
@@ -55,7 +60,7 @@ import ConnectionIndicator from '@components/play/ConnectionIndicator';
 import type { SantoriniMoveAction, MatchStatus, PlayerProfile } from '@/types/match';
 import type { PlayerConnectionState } from '@hooks/useMatchLobby';
 import { useSurfaceTokens } from '@/theme/useSurfaceTokens';
-import EmojiPicker from '@components/EmojiPicker';
+import { EMOJIS } from '@components/EmojiPicker';
 
 const K_FACTOR = 32;
 const NOTIFICATION_PROMPT_STORAGE_KEY = 'santorini:notificationsPrompted';
@@ -1070,7 +1075,7 @@ function PlayerClockCard({
   const clockColor = active ? accentColor : strongText;
   const alignItems: 'flex-start' | 'flex-end' = alignment;
   const isRightAligned = alignment === 'flex-end';
-  const textAlign = 'left';
+  const textAlign = isRightAligned ? 'right' : 'left';
   const cardPadding = useBreakpointValue({ base: 3, md: 4 });
   const clockFontSize = useBreakpointValue({ base: '2xl', md: '3xl' });
   const labelFontSize = useBreakpointValue({ base: 'xs', md: 'sm' });
@@ -1079,12 +1084,12 @@ function PlayerClockCard({
   const activeReactions = reactions ?? [];
   const layoutDirection = useBreakpointValue<'column' | 'row'>({ base: 'column', md: 'row' }) ?? 'column';
   const isColumnLayout = layoutDirection === 'column';
-  const effectiveTextAlign = 'left';
-  const horizontalJustify = 'flex-start';
-  const nameJustify = 'flex-start';
-  const clockTextAlign = 'left';
+  const effectiveTextAlign = isColumnLayout ? 'left' : textAlign;
+  const horizontalJustify = !isColumnLayout && isRightAligned ? 'flex-end' : 'flex-start';
+  const nameJustify = isColumnLayout ? 'flex-start' : horizontalJustify;
+  const clockTextAlign = isColumnLayout ? 'left' : effectiveTextAlign;
 
-  const avatarNode = (
+  const renderAvatarContent = () => (
     <Box position="relative" display="inline-flex" minH="60px">
       <Avatar
         size={avatarSize ?? 'md'}
@@ -1093,8 +1098,73 @@ function PlayerClockCard({
       >
         {active ? <AvatarBadge boxSize="1.1em" bg={accentColor} borderColor="white" /> : null}
       </Avatar>
+      <AnimatePresence initial={false}>
+        {activeReactions.map((reaction, index) => {
+          const horizontalBase = isColumnLayout ? 0 : 32;
+          const offset = isColumnLayout ? index * 28 : (index - (activeReactions.length - 1) / 2) * 22;
+          const xPosition = isRightAligned ? horizontalBase + offset : horizontalBase + offset;
+          const alignmentSide = isColumnLayout ? 'left' : isRightAligned ? 'right' : 'left';
+
+          return (
+            <MotionBox
+              key={reaction.id}
+              position="absolute"
+              top={isColumnLayout ? undefined : '-12px'}
+              bottom={isColumnLayout ? '8px' : undefined}
+              left={alignmentSide === 'left' ? `${xPosition}px` : undefined}
+              right={alignmentSide === 'right' ? `${xPosition}px` : undefined}
+              initial={{ opacity: 0, y: 0, scale: 0.9 }}
+              animate={{ opacity: [0, 1, 1, 0], y: isColumnLayout ? -60 : -70, scale: [1.15, 1, 1, 0.95] }}
+              exit={{ opacity: 0, y: isColumnLayout ? -70 : -80, scale: 0.8 }}
+              transition={{ duration: 2.5, times: [0, 0.08, 0.82, 1], ease: 'easeOut' }}
+              pointerEvents="none"
+              zIndex={3}
+            >
+              <Text fontSize={emojiFontSize ?? '2xl'} textShadow="0 0 8px rgba(0,0,0,0.45)">
+                {reaction.emoji}
+              </Text>
+            </MotionBox>
+          );
+        })}
+      </AnimatePresence>
     </Box>
   );
+
+  const avatarNode =
+    showEmojiPicker && onSendEmoji ? (
+      <Popover placement="bottom-start" closeOnBlur={false} closeOnEsc>
+        <PopoverTrigger>
+          <Box cursor="pointer">{renderAvatarContent()}</Box>
+        </PopoverTrigger>
+        <PopoverContent width="auto">
+          <PopoverArrow />
+          <PopoverBody px={2} py={2}>
+            <Wrap spacing={1.5} justify="center" maxW="220px">
+              {EMOJIS.map((emoji) => (
+                <WrapItem key={emoji}>
+                  <Button
+                    size="md"
+                    variant="ghost"
+                    fontSize="2xl"
+                    px={2}
+                    py={1}
+                    onClick={() => {
+                      onSendEmoji(emoji);
+                    }}
+                  >
+                    <span role="img" aria-label="emoji">
+                      {emoji}
+                    </span>
+                  </Button>
+                </WrapItem>
+              ))}
+            </Wrap>
+          </PopoverBody>
+        </PopoverContent>
+      </Popover>
+    ) : (
+      renderAvatarContent()
+    );
 
   const nameRow = (
     <HStack spacing={1.5} align="center" justify={nameJustify} w="100%">
@@ -1137,40 +1207,6 @@ function PlayerClockCard({
       boxShadow={active ? `0 0 0 1px ${accentColor}` : 'none'}
       position="relative"
     >
-      {showEmojiPicker && onSendEmoji ? (
-        <Box position="absolute" top={2} right={2} zIndex={2}>
-          <EmojiPicker onSelect={onSendEmoji} />
-        </Box>
-      ) : null}
-      <AnimatePresence initial={false}>
-        {activeReactions.map((reaction, index) => {
-          const horizontalBase = isColumnLayout ? 0 : 32;
-          const offset = isColumnLayout ? index * 28 : (index - (activeReactions.length - 1) / 2) * 22;
-          const xPosition = isRightAligned ? horizontalBase + offset : horizontalBase + offset;
-          const alignmentSide = isColumnLayout ? 'left' : isRightAligned ? 'right' : 'left';
-
-          return (
-            <MotionBox
-              key={reaction.id}
-              position="absolute"
-              top={isColumnLayout ? undefined : '-12px'}
-              bottom={isColumnLayout ? '8px' : undefined}
-              left={alignmentSide === 'left' ? `${xPosition}px` : undefined}
-              right={alignmentSide === 'right' ? `${xPosition}px` : undefined}
-              initial={{ opacity: 0, y: 0, scale: 0.9 }}
-              animate={{ opacity: [0, 1, 1, 0], y: isColumnLayout ? -60 : -70, scale: [1.15, 1, 1, 0.95] }}
-              exit={{ opacity: 0, y: isColumnLayout ? -70 : -80, scale: 0.8 }}
-              transition={{ duration: 2.5, times: [0, 0.08, 0.82, 1], ease: 'easeOut' }}
-              pointerEvents="none"
-              zIndex={3}
-            >
-              <Text fontSize={emojiFontSize ?? '2xl'} textShadow="0 0 8px rgba(0,0,0,0.45)">
-                {reaction.emoji}
-              </Text>
-            </MotionBox>
-          );
-        })}
-      </AnimatePresence>
       {isColumnLayout ? (
         <Stack spacing={2} w="100%" align="flex-start">
           <HStack spacing={3} align="center" justify="flex-start">
@@ -1189,7 +1225,7 @@ function PlayerClockCard({
           flexWrap="nowrap"
         >
           {avatarNode}
-          <Stack spacing={1} align="flex-start" w="100%">
+          <Stack spacing={1} align={alignItems} w="100%">
             {nameRow}
             {clockNode}
           </Stack>

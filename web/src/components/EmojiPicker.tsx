@@ -13,7 +13,7 @@ import {
 } from '@chakra-ui/react';
 import { useMemo } from 'react';
 
-const EMOJIS = [
+export const EMOJIS = [
   '😀',
   '👍',
   '❤️',

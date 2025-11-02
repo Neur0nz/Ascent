@@ -329,10 +329,9 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
 
   const pushEmojiReaction = useCallback((reaction: EmojiReaction) => {
     const currentMatchId = activeMatchRef.current?.id;
-    if (!currentMatchId || currentMatchId !== reaction.matchId) {
+    if (currentMatchId && currentMatchId !== reaction.matchId) {
       return;
     }
-
     setEmojiReactions((prev) => {
       const filtered = prev.filter((item) => item.id !== reaction.id);
       const next = [...filtered, reaction];
