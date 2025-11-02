@@ -814,8 +814,6 @@ function ActiveMatchContent({
     }
   };
 
-  const showJoinCode = lobbyMatch?.visibility === 'private' && joinCode;
-
   return (
     <Stack spacing={6}>
       <Stack spacing={{ base: 5, md: 6 }} align="center">
@@ -853,46 +851,6 @@ function ActiveMatchContent({
             onSendEmoji={onSendEmoji}
           />
         </Stack>
-        <Flex
-          w="100%"
-          maxW="960px"
-          direction={{ base: 'column', md: 'row' }}
-          justify="space-between"
-          align={{ base: 'flex-start', md: 'center' }}
-          gap={{ base: 3, md: 4 }}
-        >
-          <Wrap spacing={3} align="center">
-            <WrapItem>
-              <Heading size="sm" color={accentHeading}>
-                {creatorDisplayName} vs {opponentDisplayName}
-              </Heading>
-            </WrapItem>
-            {showJoinCode && (
-              <WrapItem>
-                <Badge colorScheme="orange" fontSize="0.8rem">
-                  Code: {joinCode}
-                </Badge>
-              </WrapItem>
-            )}
-            <WrapItem>
-              <Badge colorScheme={lobbyMatch?.rated ? 'purple' : 'gray'}>
-                {lobbyMatch?.rated ? 'Rated' : 'Casual'}
-              </Badge>
-            </WrapItem>
-            {lobbyMatch && lobbyMatch.clock_initial_seconds > 0 && (
-              <WrapItem>
-                <Badge colorScheme="green">
-                  {Math.round(lobbyMatch.clock_initial_seconds / 60)}+{lobbyMatch.clock_increment_seconds}
-                </Badge>
-              </WrapItem>
-            )}
-            <WrapItem>
-              <Text fontSize="sm" color={mutedText}>
-                {typedMoves.length} moves
-              </Text>
-            </WrapItem>
-          </Wrap>
-        </Flex>
       </Stack>
 
       {ratingProjection && (
@@ -1430,6 +1388,7 @@ function GamePlayWorkspace({
 }) {
   const lobby = useMatchLobbyContext();
   const workspaceToast = useToast();
+  const { cardBg, cardBorder, mutedText, accentHeading } = useSurfaceTokens();
   const rematchOffers = useMemo(
     () =>
       Object.values(lobby.rematchOffers ?? {}).filter((offer): offer is LobbyMatch => Boolean(offer)),
@@ -1441,6 +1400,31 @@ function GamePlayWorkspace({
   const [lastCancelledMatchId, setLastCancelledMatchId] = useState<string | null>(null);
   const myRole = lobby.activeRole;
   const canSendEmoji = Boolean(lobby.activeMatch && lobby.sessionMode === 'online' && myRole);
+  const activeMatchSummary = useMemo(() => {
+    if (lobby.sessionMode !== 'online') {
+      return null;
+    }
+    const match = lobby.activeMatch;
+    if (!match) {
+      return null;
+    }
+    const creatorLabel = formatNameWithRating(match.creator, match.creator?.display_name ?? 'Player 1 (Green)');
+    const opponentLabel = formatNameWithRating(match.opponent, match.opponent?.display_name ?? 'Player 2 (Red)');
+    const moveCount = lobby.moves.filter(
+      (move) => (move.action as SantoriniMoveAction | undefined)?.kind === 'santorini.move',
+    ).length;
+    const clockLabel =
+      match.clock_initial_seconds > 0
+        ? `${Math.round(match.clock_initial_seconds / 60)}+${match.clock_increment_seconds}`
+        : null;
+    return {
+      vsLabel: `${creatorLabel} vs ${opponentLabel}`,
+      ratedLabel: match.rated ? 'Rated' : 'Casual',
+      moveCount,
+      clockLabel,
+      joinCode: match.visibility === 'private' && match.private_join_code ? match.private_join_code : null,
+    };
+  }, [lobby.activeMatch, lobby.moves, lobby.sessionMode]);
   const creatorReactions = useMemo(() => {
     const match = lobby.activeMatch;
     if (!match) {
@@ -1572,7 +1556,6 @@ function GamePlayWorkspace({
     (lobby.activeMatch.status === 'completed' || lobby.activeMatch.status === 'abandoned')
       ? lobby.activeMatch
       : null;
-  const { cardBg, cardBorder } = useSurfaceTokens();
   const { activeMatchId, clearUndoRequest, undoRequests } = lobby;
   const activeUndoState = activeMatchId ? undoRequests[activeMatchId] : undefined;
 
@@ -1670,10 +1653,49 @@ function GamePlayWorkspace({
                 Local
               </Button>
             </ButtonGroup>
-            {!auth.profile && (
-              <Text fontSize="xs" color="orange.500">
-                Sign in to play online
-              </Text>
+            {activeMatchSummary ? (
+              <Wrap
+                spacing={3}
+                align="center"
+                justify={{ base: 'flex-start', md: 'flex-end' }}
+                flex="1"
+              >
+                <WrapItem>
+                  <Text fontSize="sm" fontWeight="semibold" color={accentHeading}>
+                    {activeMatchSummary.vsLabel}
+                  </Text>
+                </WrapItem>
+                {activeMatchSummary.joinCode && (
+                  <WrapItem>
+                    <Badge colorScheme="orange" fontSize="xs">
+                      Code: {activeMatchSummary.joinCode}
+                    </Badge>
+                  </WrapItem>
+                )}
+                <WrapItem>
+                  <Badge colorScheme={activeMatchSummary.ratedLabel === 'Rated' ? 'purple' : 'gray'} fontSize="xs">
+                    {activeMatchSummary.ratedLabel}
+                  </Badge>
+                </WrapItem>
+                {activeMatchSummary.clockLabel && (
+                  <WrapItem>
+                    <Badge colorScheme="green" fontSize="xs">
+                      {activeMatchSummary.clockLabel}
+                    </Badge>
+                  </WrapItem>
+                )}
+                <WrapItem>
+                  <Text fontSize="xs" color={mutedText}>
+                    {activeMatchSummary.moveCount} moves
+                  </Text>
+                </WrapItem>
+              </Wrap>
+            ) : (
+              !auth.profile && (
+                <Text fontSize="xs" color="orange.500">
+                  Sign in to play online
+                </Text>
+              )
             )}
           </Flex>
         </CardBody>

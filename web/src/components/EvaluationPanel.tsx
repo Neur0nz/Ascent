@@ -104,7 +104,7 @@ function EvaluationPanel({
   updateOptionsDepth,
 }: EvaluationPanelProps) {
   const disclosure = useDisclosure({ defaultIsOpen: true });
-  const movesDisclosure = useDisclosure({ defaultIsOpen: true });
+  const movesDisclosure = useDisclosure({ defaultIsOpen: false });
   const panelGradient = useColorModeValue('linear(to-br, gray.50, white)', 'linear(to-br, blackAlpha.500, blackAlpha.400)');
   const panelBorder = useColorModeValue('gray.200', 'whiteAlpha.200');
   const mutedText = useColorModeValue('gray.600', 'whiteAlpha.700');
