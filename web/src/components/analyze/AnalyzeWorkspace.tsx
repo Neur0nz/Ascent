@@ -524,40 +524,7 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
     }));
   }, [evaluationSeries]);
 
-  const evaluationDomain = useMemo(() => {
-    if (!evaluationSeries || evaluationSeries.length === 0) {
-      return [-1, 1];
-    }
-    let min = Infinity;
-    let max = -Infinity;
-    for (const point of evaluationSeries) {
-      min = Math.min(min, point.evaluation);
-      max = Math.max(max, point.evaluation);
-    }
-    if (!Number.isFinite(min) || !Number.isFinite(max)) {
-      return [-1, 1];
-    }
-
-    if (min === max) {
-      min -= 0.05;
-      max += 0.05;
-    }
-
-    const padding = Math.max(0.02, (max - min) * 0.1);
-    let domainMin = min - padding;
-    let domainMax = max + padding;
-
-    domainMin = Math.max(-1, domainMin);
-    domainMax = Math.min(1, domainMax);
-
-    if (domainMax - domainMin < 0.1) {
-      const mid = (domainMin + domainMax) / 2;
-      domainMin = Math.max(-1, mid - 0.05);
-      domainMax = Math.min(1, mid + 0.05);
-    }
-
-    return [domainMin, domainMax];
-  }, [evaluationSeries]);
+  const evaluationDomain: [number, number] = [-1, 1];
 
   const canStepBack = currentIndex > -1;
   const canStepForward = loaded ? currentIndex < loaded.moves.length - 1 : false;
