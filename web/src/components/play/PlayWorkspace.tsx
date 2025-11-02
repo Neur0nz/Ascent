@@ -617,6 +617,39 @@ function ActiveMatchContent({
     }
   };
 
+  const resolveConnectionState = useCallback(
+    (playerId: string | null | undefined, fallbackStatus: ConnectionQuality = 'offline'): PlayerConnectionState | null => {
+      if (!playerId) return null;
+      const existing = lobby.connectionStates[playerId];
+      if (existing) return existing;
+      const resolvedRole =
+        lobby.activeMatch?.creator_id === playerId
+          ? 'creator'
+          : lobby.activeMatch?.opponent_id === playerId
+            ? 'opponent'
+            : null;
+      const isSelf = auth.profile?.id === playerId;
+      const status: ConnectionQuality = isSelf && lobby.onlineEnabled ? 'connecting' : fallbackStatus;
+      return {
+        playerId,
+        role: resolvedRole,
+        status,
+        lastSeen: null,
+        isSelf,
+      };
+    },
+    [auth.profile?.id, lobby.activeMatch, lobby.connectionStates, lobby.onlineEnabled],
+  );
+
+  const creatorConnection = useMemo(
+    () => resolveConnectionState(lobby.activeMatch?.creator_id),
+    [lobby.activeMatch?.creator_id, resolveConnectionState],
+  );
+  const opponentConnection = useMemo(
+    () => resolveConnectionState(lobby.activeMatch?.opponent_id),
+    [lobby.activeMatch?.opponent_id, resolveConnectionState],
+  );
+
   // Note: Abort feature hooks are available but UI implementation is minimal for now
   // Full implementation with request/response flow can be added later
 
@@ -1029,39 +1062,6 @@ function PlayWorkspace({ auth }: { auth: SupabaseAuthState }) {
     return opponent?.display_name ?? 'Opponent';
   }, [auth.profile, lobby.activeMatch]);
   const showActiveStatusBanner = Boolean(auth.profile) && sessionMode === 'online' && inProgressMatches.length > 0;
-
-  const resolveConnectionState = useCallback(
-    (playerId: string | null | undefined, fallbackStatus: ConnectionQuality = 'offline'): PlayerConnectionState | null => {
-      if (!playerId) return null;
-      const existing = lobby.connectionStates[playerId];
-      if (existing) return existing;
-      const resolvedRole =
-        lobby.activeMatch?.creator_id === playerId
-          ? 'creator'
-          : lobby.activeMatch?.opponent_id === playerId
-            ? 'opponent'
-            : null;
-      const isSelf = auth.profile?.id === playerId;
-      const status: ConnectionQuality = isSelf && lobby.onlineEnabled ? 'connecting' : fallbackStatus;
-      return {
-        playerId,
-        role: resolvedRole,
-        status,
-        lastSeen: null,
-        isSelf,
-      };
-    },
-    [auth.profile?.id, lobby.activeMatch, lobby.connectionStates, lobby.onlineEnabled],
-  );
-
-  const creatorConnection = useMemo(
-    () => resolveConnectionState(lobby.activeMatch?.creator_id),
-    [lobby.activeMatch?.creator_id, resolveConnectionState],
-  );
-  const opponentConnection = useMemo(
-    () => resolveConnectionState(lobby.activeMatch?.opponent_id),
-    [lobby.activeMatch?.opponent_id, resolveConnectionState],
-  );
 
   useEffect(() => {
     // Auto-enable online mode by default
