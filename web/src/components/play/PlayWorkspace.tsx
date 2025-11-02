@@ -449,6 +449,9 @@ function ActiveMatchPanel({
   onOfferRematch,
   onGameComplete,
   onStopLocal,
+  connectionStates,
+  currentUserId,
+  onlineEnabled,
 }: {
   sessionMode: ReturnType<typeof useMatchLobby>['sessionMode'];
   match: LobbyMatch | null;
@@ -460,6 +463,9 @@ function ActiveMatchPanel({
   onOfferRematch: ReturnType<typeof useMatchLobby>['offerRematch'];
   onGameComplete: (status: MatchStatus, payload?: { winner_id?: string | null }) => Promise<void>;
   onStopLocal: () => void;
+  connectionStates: ReturnType<typeof useMatchLobby>['connectionStates'];
+  currentUserId: string | null;
+  onlineEnabled: boolean;
 }) {
   if (sessionMode === 'local') {
     return <LocalMatchPanel onExit={onStopLocal} />;
@@ -477,6 +483,9 @@ function ActiveMatchPanel({
           onLeave={onLeave}
           onOfferRematch={onOfferRematch}
           onGameComplete={onGameComplete}
+          connectionStates={connectionStates}
+          currentUserId={currentUserId}
+          onlineEnabled={onlineEnabled}
         />
       </SantoriniProvider>
     );
@@ -506,6 +515,9 @@ function ActiveMatchContent({
   onLeave,
   onOfferRematch,
   onGameComplete,
+  connectionStates,
+  currentUserId,
+  onlineEnabled,
 }: {
   match: LobbyMatch | null;
   role: 'creator' | 'opponent' | null;
@@ -515,6 +527,9 @@ function ActiveMatchContent({
   onLeave: (matchId?: string | null) => Promise<void>;
   onOfferRematch: ReturnType<typeof useMatchLobby>['offerRematch'];
   onGameComplete: (status: MatchStatus, payload?: { winner_id?: string | null}) => Promise<void>;
+  connectionStates: ReturnType<typeof useMatchLobby>['connectionStates'];
+  currentUserId: string | null;
+  onlineEnabled: boolean;
 }) {
   const toast = useToast();
   const [offerBusy, setOfferBusy] = useBoolean();
@@ -620,16 +635,16 @@ function ActiveMatchContent({
   const resolveConnectionState = useCallback(
     (playerId: string | null | undefined, fallbackStatus: ConnectionQuality = 'offline'): PlayerConnectionState | null => {
       if (!playerId) return null;
-      const existing = lobby.connectionStates[playerId];
+      const existing = connectionStates[playerId];
       if (existing) return existing;
       const resolvedRole =
-        lobby.activeMatch?.creator_id === playerId
+        lobbyMatch?.creator_id === playerId
           ? 'creator'
-          : lobby.activeMatch?.opponent_id === playerId
+          : lobbyMatch?.opponent_id === playerId
             ? 'opponent'
             : null;
-      const isSelf = auth.profile?.id === playerId;
-      const status: ConnectionQuality = isSelf && lobby.onlineEnabled ? 'connecting' : fallbackStatus;
+      const isSelf = currentUserId === playerId;
+      const status: ConnectionQuality = isSelf && onlineEnabled ? 'connecting' : fallbackStatus;
       return {
         playerId,
         role: resolvedRole,
@@ -638,16 +653,16 @@ function ActiveMatchContent({
         isSelf,
       };
     },
-    [auth.profile?.id, lobby.activeMatch, lobby.connectionStates, lobby.onlineEnabled],
+    [connectionStates, currentUserId, lobbyMatch, onlineEnabled],
   );
 
   const creatorConnection = useMemo(
-    () => resolveConnectionState(lobby.activeMatch?.creator_id),
-    [lobby.activeMatch?.creator_id, resolveConnectionState],
+    () => resolveConnectionState(lobbyMatch?.creator_id),
+    [lobbyMatch?.creator_id, resolveConnectionState],
   );
   const opponentConnection = useMemo(
-    () => resolveConnectionState(lobby.activeMatch?.opponent_id),
-    [lobby.activeMatch?.opponent_id, resolveConnectionState],
+    () => resolveConnectionState(lobbyMatch?.opponent_id),
+    [lobbyMatch?.opponent_id, resolveConnectionState],
   );
 
   // Note: Abort feature hooks are available but UI implementation is minimal for now
@@ -1386,6 +1401,9 @@ function PlayWorkspace({ auth }: { auth: SupabaseAuthState }) {
         onOfferRematch={lobby.offerRematch}
         onGameComplete={lobby.updateMatchStatus}
         onStopLocal={lobby.stopLocalMatch}
+        connectionStates={lobby.connectionStates}
+        currentUserId={auth.profile?.id ?? null}
+        onlineEnabled={lobby.onlineEnabled}
       />
     </Stack>
   );
