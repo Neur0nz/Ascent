@@ -314,12 +314,9 @@ function ActiveMatchContent({
     isSelf: boolean,
   ) => {
     const colorEmoji = colorName === 'Green' ? '🟢' : '🔴';
-    const segments: string[] = [`${colorEmoji} ${isSelf ? 'YOU' : name}`];
-    if (rating !== null) {
-      segments.push(`${rating} ELO`);
-    }
-    segments.push(colorName);
-    return segments.join(' · ');
+    const baseName = isSelf ? 'YOU' : name;
+    const ratingLabel = rating !== null ? ` (${rating})` : '';
+    return `${colorEmoji} ${baseName}${ratingLabel}`;
   };
   const creatorClockLabel = formatClockLabel(creatorBaseName, creatorRatingValue, 'Green', role === 'creator');
   const opponentClockLabel = formatClockLabel(opponentBaseName, opponentRatingValue, 'Red', role === 'opponent');
@@ -1072,13 +1069,60 @@ function PlayerClockCard({
   const inactiveBg = useColorModeValue('white', 'whiteAlpha.100');
   const clockColor = active ? accentColor : strongText;
   const alignItems: 'flex-start' | 'flex-end' = alignment;
-  const textAlign = alignment === 'flex-end' ? 'right' : 'left';
+  const isRightAligned = alignment === 'flex-end';
+  const textAlign = isRightAligned ? 'right' : 'left';
   const cardPadding = useBreakpointValue({ base: 3, md: 4 });
   const clockFontSize = useBreakpointValue({ base: '2xl', md: '3xl' });
   const labelFontSize = useBreakpointValue({ base: 'xs', md: 'sm' });
   const avatarSize = useBreakpointValue<'sm' | 'md' | 'lg'>({ base: 'md', md: 'lg' });
   const emojiFontSize = useBreakpointValue({ base: '3xl', md: '4xl' });
   const activeReactions = reactions ?? [];
+  const layoutDirection = useBreakpointValue<'column' | 'row'>({ base: 'column', md: 'row' }) ?? 'column';
+  const isColumnLayout = layoutDirection === 'column';
+  const effectiveTextAlign = isColumnLayout ? 'left' : textAlign;
+  const horizontalJustify = !isColumnLayout && isRightAligned ? 'flex-end' : 'flex-start';
+  const nameJustify = isColumnLayout ? 'flex-start' : horizontalJustify;
+  const clockTextAlign = isColumnLayout ? 'left' : effectiveTextAlign;
+
+  const avatarNode = (
+    <Box position="relative" display="inline-flex" minH="60px">
+      <Avatar
+        size={avatarSize ?? 'md'}
+        name={profile?.display_name ?? label}
+        src={profile?.avatar_url ?? undefined}
+      >
+        {active ? <AvatarBadge boxSize="1.1em" bg={accentColor} borderColor="white" /> : null}
+      </Avatar>
+    </Box>
+  );
+
+  const nameRow = (
+    <HStack spacing={1.5} align="center" justify={nameJustify} w="100%">
+      <Text fontSize={labelFontSize ?? 'sm'} fontWeight="semibold" color={mutedText} noOfLines={1}>
+        {label}
+      </Text>
+      {connectionState && (
+        <ConnectionIndicator
+          status={connectionState.status}
+          lastSeen={connectionState.lastSeen}
+          isSelf={connectionState.isSelf}
+          size="xs"
+        />
+      )}
+    </HStack>
+  );
+
+  const clockNode = (
+    <Heading
+      fontSize={clockFontSize ?? '2xl'}
+      color={clockColor}
+      fontFamily="mono"
+      letterSpacing="tight"
+      textAlign={clockTextAlign}
+    >
+      {clock}
+    </Heading>
+  );
 
   return (
     <Box
@@ -1098,64 +1142,59 @@ function PlayerClockCard({
           <EmojiPicker onSelect={onSendEmoji} />
         </Box>
       ) : null}
-      <Stack spacing={3} align={alignItems}>
-        <Box position="relative" display="inline-flex" alignSelf={alignItems} minH="60px">
-          <Avatar
-            size={avatarSize ?? 'md'}
-            name={profile?.display_name ?? label}
-            src={profile?.avatar_url ?? undefined}
-          >
-            {active ? <AvatarBadge boxSize="1.1em" bg={accentColor} borderColor="white" /> : null}
-          </Avatar>
-          <AnimatePresence initial={false}>
-            {activeReactions.map((reaction, index) => {
-              const offset = (index - (activeReactions.length - 1) / 2) * 22;
-              return (
-                <MotionBox
-                  key={reaction.id}
-                  position="absolute"
-                  left="50%"
-                  top="-12px"
-                  initial={{ opacity: 0, y: 0, x: offset, scale: 0.9 }}
-                  animate={{ opacity: [0, 1, 1, 0], y: -70, x: offset, scale: [1.15, 1, 1, 0.95] }}
-                  exit={{ opacity: 0, y: -80, x: offset, scale: 0.8 }}
-                  transition={{ duration: 2.5, times: [0, 0.08, 0.82, 1], ease: 'easeOut' }}
-                  pointerEvents="none"
-                  zIndex={1}
-                >
-                  <Text fontSize={emojiFontSize ?? '2xl'} textShadow="0 0 8px rgba(0,0,0,0.45)">
-                    {reaction.emoji}
-                  </Text>
-                </MotionBox>
-              );
-            })}
-          </AnimatePresence>
-        </Box>
-        <Stack spacing={1} align={alignItems} w="100%">
-          <HStack spacing={1.5} justify={alignment === 'flex-end' ? 'flex-end' : 'flex-start'} align="center">
-            <Text fontSize={labelFontSize ?? 'sm'} fontWeight="semibold" color={mutedText} textAlign={textAlign}>
-              {label}
-            </Text>
-            {connectionState && (
-              <ConnectionIndicator
-                status={connectionState.status}
-                lastSeen={connectionState.lastSeen}
-                isSelf={connectionState.isSelf}
-                size="xs"
-              />
-            )}
+      <AnimatePresence initial={false}>
+        {activeReactions.map((reaction, index) => {
+          const horizontalBase = isColumnLayout ? 0 : 32;
+          const offset = isColumnLayout ? index * 28 : (index - (activeReactions.length - 1) / 2) * 22;
+          const xPosition = isRightAligned ? horizontalBase + offset : horizontalBase + offset;
+          const alignmentSide = isColumnLayout ? 'left' : isRightAligned ? 'right' : 'left';
+
+          return (
+            <MotionBox
+              key={reaction.id}
+              position="absolute"
+              top={isColumnLayout ? undefined : '-12px'}
+              bottom={isColumnLayout ? '8px' : undefined}
+              left={alignmentSide === 'left' ? `${xPosition}px` : undefined}
+              right={alignmentSide === 'right' ? `${xPosition}px` : undefined}
+              initial={{ opacity: 0, y: 0, scale: 0.9 }}
+              animate={{ opacity: [0, 1, 1, 0], y: isColumnLayout ? -60 : -70, scale: [1.15, 1, 1, 0.95] }}
+              exit={{ opacity: 0, y: isColumnLayout ? -70 : -80, scale: 0.8 }}
+              transition={{ duration: 2.5, times: [0, 0.08, 0.82, 1], ease: 'easeOut' }}
+              pointerEvents="none"
+              zIndex={3}
+            >
+              <Text fontSize={emojiFontSize ?? '2xl'} textShadow="0 0 8px rgba(0,0,0,0.45)">
+                {reaction.emoji}
+              </Text>
+            </MotionBox>
+          );
+        })}
+      </AnimatePresence>
+      {isColumnLayout ? (
+        <Stack spacing={2} w="100%" align="flex-start">
+          <HStack spacing={3} align="center" justify="flex-start">
+            {avatarNode}
+            {clockNode}
           </HStack>
-          <Heading
-            fontSize={clockFontSize ?? '2xl'}
-            color={clockColor}
-            fontFamily="mono"
-            letterSpacing="tight"
-            textAlign={textAlign}
-          >
-            {clock}
-          </Heading>
+          {nameRow}
         </Stack>
-      </Stack>
+      ) : (
+        <Flex
+          direction="row"
+          align="center"
+          justify="flex-start"
+          gap={isRightAligned ? 2 : 3}
+          w="100%"
+          flexWrap="nowrap"
+        >
+          {avatarNode}
+          <Stack spacing={1} align={alignItems} w="100%">
+            {nameRow}
+            {clockNode}
+          </Stack>
+        </Flex>
+      )}
     </Box>
   );
 }

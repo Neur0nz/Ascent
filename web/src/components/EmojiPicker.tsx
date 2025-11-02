@@ -1,7 +1,6 @@
 import {
   Box,
   Button,
-  HStack,
   IconButton,
   Popover,
   PopoverArrow,
@@ -9,10 +8,29 @@ import {
   PopoverContent,
   PopoverTrigger,
   useColorModeValue,
+  Wrap,
+  WrapItem,
 } from '@chakra-ui/react';
 import { useMemo } from 'react';
 
-const EMOJIS = ['😀', '👍', '❤️', '🔥', '💪', '😮', '👏'];
+const EMOJIS = [
+  '😀',
+  '👍',
+  '❤️',
+  '🔥',
+  '💪',
+  '😮',
+  '😎',
+  '🤓',
+  '🤔',
+  '😴',
+  '😳',
+  '🤡',
+  '💀',
+  '💩',
+  '🗿',
+  '💯',
+];
 
 interface EmojiPickerProps {
   onSelect: (emoji: string) => void;
@@ -54,25 +72,26 @@ function EmojiPicker({ onSelect, isDisabled }: EmojiPickerProps) {
           >
             <PopoverArrow bg={popoverBg} />
             <PopoverBody px={2} py={2}>
-              <HStack spacing={1.5}>
+              <Wrap spacing={1.5} justify="center" maxW="220px">
                 {EMOJIS.map((emoji) => (
-                  <Button
-                    key={emoji}
-                    size="md"
-                    variant="ghost"
-                    fontSize="2xl"
-                    px={2}
-                    py={1}
-                    onClick={() => {
-                      onSelect(emoji);
-                    }}
-                  >
-                    <span role="img" aria-label="emoji">
-                      {emoji}
-                    </span>
-                  </Button>
+                  <WrapItem key={emoji}>
+                    <Button
+                      size="md"
+                      variant="ghost"
+                      fontSize="2xl"
+                      px={2}
+                      py={1}
+                      onClick={() => {
+                        onSelect(emoji);
+                      }}
+                    >
+                      <span role="img" aria-label="emoji">
+                        {emoji}
+                      </span>
+                    </Button>
+                  </WrapItem>
                 ))}
-              </HStack>
+              </Wrap>
             </PopoverBody>
           </PopoverContent>
         </>
