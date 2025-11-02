@@ -362,10 +362,24 @@ function ActiveMatchContent({
   const opponentTrackerInitializedRef = useRef(false);
   const lastMoveCountRef = useRef<number>(moves.length);
   const movesHydratedRef = useRef(false);
-  const isPageHidden = useCallback(
-    () => typeof document !== 'undefined' && document.visibilityState === 'hidden',
-    [],
-  );
+  const isPageBackgrounded = useCallback(() => {
+    if (typeof document === 'undefined') {
+      return false;
+    }
+    if (document.visibilityState === 'hidden' || (typeof document.hidden === 'boolean' && document.hidden)) {
+      return true;
+    }
+    if (typeof document.hasFocus === 'function') {
+      try {
+        if (!document.hasFocus()) {
+          return true;
+        }
+      } catch (error) {
+        console.warn('GamePlayWorkspace: document.hasFocus check failed', error);
+      }
+    }
+    return false;
+  }, []);
   const { isOpen: isResignOpen, onOpen: onResignOpen, onClose: onResignClose } = useDisclosure();
   const resignCancelRef = useRef<HTMLButtonElement | null>(null);
 
@@ -515,7 +529,7 @@ function ActiveMatchContent({
       const isCreator = lobbyMatch.creator_id === profileId;
       if (isCreator) {
         const opponentName = lobbyMatch.opponent?.display_name ?? 'Opponent';
-        if (notificationsSupported && notificationPermission === 'granted' && isPageHidden()) {
+        if (notificationsSupported && notificationPermission === 'granted' && isPageBackgrounded()) {
           showNotification('Opponent joined your game', {
             body: `${opponentName} just joined. Your match is ready.`,
             id: `match-${lobbyMatch.id}-join`,
@@ -540,7 +554,7 @@ function ActiveMatchContent({
     profileId,
     notificationsSupported,
     notificationPermission,
-    isPageHidden,
+    isPageBackgrounded,
     showNotification,
   ]);
 
@@ -575,7 +589,7 @@ function ActiveMatchContent({
         : latestMove.player_id === lobbyMatch.opponent_id
           ? opponentDisplayName
           : 'Opponent';
-    if (notificationsSupported && notificationPermission === 'granted' && isPageHidden()) {
+    if (notificationsSupported && notificationPermission === 'granted' && isPageBackgrounded()) {
       showNotification('Your turn', {
         body: `${opponentName} made their move.`,
         id: `match-${lobbyMatch.id}-move`,
@@ -590,7 +604,7 @@ function ActiveMatchContent({
     opponentDisplayName,
     notificationsSupported,
     notificationPermission,
-    isPageHidden,
+    isPageBackgrounded,
     showNotification,
     toast,
   ]);
