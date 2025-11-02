@@ -629,9 +629,31 @@ function ActiveMatchContent({
           <Stack spacing={1}>
             <Heading size="md">Active match</Heading>
             {lobbyMatch && (
-              <Text fontSize="sm" color={mutedText}>
-                {creatorName} vs {lobbyMatch.opponent ? opponentName : 'Waiting for opponent'}
-              </Text>
+              <HStack spacing={2} fontSize="sm" color={mutedText} align="center" flexWrap="wrap">
+                <HStack spacing={1} align="center">
+                  <Text>{creatorName}</Text>
+                  {creatorConnection && (
+                    <ConnectionIndicator
+                      status={creatorConnection.status}
+                      lastSeen={creatorConnection.lastSeen}
+                      isSelf={creatorConnection.isSelf}
+                      size="xs"
+                    />
+                  )}
+                </HStack>
+                <Text>vs</Text>
+                <HStack spacing={1} align="center">
+                  <Text>{lobbyMatch.opponent ? opponentName : 'Waiting for opponent'}</Text>
+                  {lobbyMatch.opponent && opponentConnection && (
+                    <ConnectionIndicator
+                      status={opponentConnection.status}
+                      lastSeen={opponentConnection.lastSeen}
+                      isSelf={opponentConnection.isSelf}
+                      size="xs"
+                    />
+                  )}
+                </HStack>
+              </HStack>
             )}
           </Stack>
           <HStack spacing={3}>
@@ -699,9 +721,19 @@ function ActiveMatchContent({
                     <Heading size="lg" color={creatorTurnActive ? accentHeading : strongText}>
                       {creatorClock}
                     </Heading>
-                    <Text fontSize="xs" color={helperText} textAlign={{ base: 'center', sm: 'left' }}>
-                      {creatorName}
-                    </Text>
+                    <HStack spacing={1} justify={{ base: 'center', sm: 'flex-start' }}>
+                      <Text fontSize="xs" color={helperText}>
+                        {creatorName}
+                      </Text>
+                      {creatorConnection && (
+                        <ConnectionIndicator
+                          status={creatorConnection.status}
+                          lastSeen={creatorConnection.lastSeen}
+                          isSelf={creatorConnection.isSelf}
+                          size="xs"
+                        />
+                      )}
+                    </HStack>
                   </VStack>
                   <VStack spacing={1} align={{ base: 'center', sm: 'flex-end' }} w="100%">
                     <Text fontSize="sm" color={mutedText} textAlign={{ base: 'center', sm: 'right' }}>
@@ -710,9 +742,19 @@ function ActiveMatchContent({
                     <Heading size="lg" color={opponentTurnActive ? accentHeading : strongText}>
                       {opponentClock}
                     </Heading>
-                    <Text fontSize="xs" color={helperText} textAlign={{ base: 'center', sm: 'right' }}>
-                      {opponentName}
-                    </Text>
+                    <HStack spacing={1} justify={{ base: 'center', sm: 'flex-end' }}>
+                      <Text fontSize="xs" color={helperText}>
+                        {opponentName}
+                      </Text>
+                      {opponentConnection && (
+                        <ConnectionIndicator
+                          status={opponentConnection.status}
+                          lastSeen={opponentConnection.lastSeen}
+                          isSelf={opponentConnection.isSelf}
+                          size="xs"
+                        />
+                      )}
+                    </HStack>
                   </VStack>
                 </Stack>
               </VStack>
