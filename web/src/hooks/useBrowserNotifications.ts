@@ -26,19 +26,51 @@ export function useBrowserNotifications(): UseBrowserNotificationsResult {
     return Notification.permission;
   });
   const lastNotificationIdRef = useRef<string | null>(null);
+  const serviceWorkerRegistrationRef = useRef<ServiceWorkerRegistration | null>(null);
   const serviceWorkerReadyRef = useRef<Promise<ServiceWorkerRegistration | null> | null>(null);
 
   const resolveServiceWorkerRegistration = useCallback(() => {
+    if (serviceWorkerRegistrationRef.current) {
+      return Promise.resolve(serviceWorkerRegistrationRef.current);
+    }
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
-      return null;
+      return Promise.resolve(null);
     }
     if (!serviceWorkerReadyRef.current) {
-      serviceWorkerReadyRef.current = navigator.serviceWorker.ready
-        .then((registration) => registration)
-        .catch((error) => {
+      serviceWorkerReadyRef.current = (async () => {
+        try {
+          const registration = await navigator.serviceWorker.ready;
+          serviceWorkerRegistrationRef.current = registration;
+          return registration;
+        } catch (error) {
           console.warn('Notification service worker not ready', error);
+          try {
+            const baseHref =
+              typeof window !== 'undefined'
+                ? new URL(import.meta.env.BASE_URL ?? '/', window.location.href).href
+                : undefined;
+            if (baseHref) {
+              const direct = await navigator.serviceWorker.getRegistration(baseHref);
+              if (direct) {
+                serviceWorkerRegistrationRef.current = direct;
+                return direct;
+              }
+            }
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            const matched = registrations.find((registration) => {
+              if (!baseHref) return Boolean(registration.scope);
+              return registration.scope === baseHref || baseHref.startsWith(registration.scope);
+            });
+            if (matched) {
+              serviceWorkerRegistrationRef.current = matched;
+              return matched;
+            }
+          } catch (lookupError) {
+            console.warn('Notification service worker lookup failed', lookupError);
+          }
           return null;
-        });
+        }
+      })();
     }
     return serviceWorkerReadyRef.current;
   }, []);

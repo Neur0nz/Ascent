@@ -25,11 +25,17 @@ ReactDOM.createRoot(container).render(
 
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   const serviceWorkerUrl = new URL(`${import.meta.env.BASE_URL}notification-sw.js`, window.location.href);
-  window.addEventListener('load', () => {
+  const registerNotificationWorker = () => {
     navigator.serviceWorker
       .register(serviceWorkerUrl.href, { scope: import.meta.env.BASE_URL })
       .catch((error) => {
         console.warn('Failed to register notification service worker', error);
       });
-  });
+  };
+
+  if (document.readyState === 'complete') {
+    registerNotificationWorker();
+  } else {
+    window.addEventListener('load', registerNotificationWorker, { once: true });
+  }
 }

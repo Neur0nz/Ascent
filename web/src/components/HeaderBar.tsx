@@ -75,7 +75,7 @@ function HeaderBar({ activeTab, actions, auth, onNavigateToProfile }: HeaderBarP
               letterSpacing="tight" 
               color={headingColor}
             >
-              Ascent Santorini
+              Ascent
             </Heading>
             <Text fontSize={{ base: 'sm', md: 'md' }} color={helperMuted}>
               Play Santorini online or practice against AI
