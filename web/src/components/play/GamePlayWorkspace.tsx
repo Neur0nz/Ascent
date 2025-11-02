@@ -1119,7 +1119,7 @@ function PlayerClockCard({
   const clockFontSize = useBreakpointValue({ base: '2xl', md: '3xl' });
   const labelFontSize = useBreakpointValue({ base: 'xs', md: 'sm' });
   const avatarSize = useBreakpointValue<'sm' | 'md' | 'lg'>({ base: 'md', md: 'lg' });
-  const emojiFontSize = useBreakpointValue({ base: '2xl', md: '3xl' });
+  const emojiFontSize = useBreakpointValue({ base: '3xl', md: '4xl' });
   const activeReactions = reactions ?? [];
 
   return (

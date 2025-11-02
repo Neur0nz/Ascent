@@ -24,7 +24,7 @@ function EmojiPicker({ onSelect, isDisabled }: EmojiPickerProps) {
   const popoverBorder = useColorModeValue('gray.200', 'whiteAlpha.200');
   const triggerLabel = useMemo(
     () => (
-      <Box as="span" role="img" aria-hidden="true" fontSize="lg">
+      <Box as="span" role="img" aria-hidden="true" fontSize="2xl">
         🙂
       </Box>
     ),
@@ -32,34 +32,37 @@ function EmojiPicker({ onSelect, isDisabled }: EmojiPickerProps) {
   );
 
   return (
-    <Popover placement="top" trigger="click" closeOnBlur closeOnEsc>
+    <Popover placement="top" trigger="click" closeOnBlur={false} closeOnEsc>
       {({ onClose }) => (
         <>
           <PopoverTrigger>
             <IconButton
               aria-label="Send emoji"
-              size="sm"
+              size="md"
               variant="ghost"
               isDisabled={isDisabled}
               icon={triggerLabel}
+              fontSize="2xl"
             />
           </PopoverTrigger>
           <PopoverContent
             bg={popoverBg}
             borderColor={popoverBorder}
             borderWidth="1px"
-            shadow="lg"
+            shadow="xl"
             width="auto"
           >
             <PopoverArrow bg={popoverBg} />
-            <PopoverBody>
-              <HStack spacing={1}>
+            <PopoverBody px={2} py={2}>
+              <HStack spacing={1.5}>
                 {EMOJIS.map((emoji) => (
                   <Button
                     key={emoji}
-                    size="sm"
+                    size="md"
                     variant="ghost"
-                    fontSize="xl"
+                    fontSize="2xl"
+                    px={2}
+                    py={1}
                     onClick={() => {
                       onSelect(emoji);
                       onClose();

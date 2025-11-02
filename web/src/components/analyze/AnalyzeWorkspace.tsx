@@ -92,6 +92,8 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
   const [evaluationSeries, setEvaluationSeries] = useState<EvaluationSeriesPoint[] | null>(null);
   const [evaluationLoading, setEvaluationLoading] = useState(false);
   const [evaluationError, setEvaluationError] = useState<string | null>(null);
+  const [evaluationDepthUsed, setEvaluationDepthUsed] = useState<number | null>(null);
+  const MIN_EVAL_MOVE_INDEX = 3;
 
   // Initialize AI engine on mount
   useEffect(() => {
@@ -264,6 +266,7 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
   useEffect(() => {
     setEvaluationSeries(null);
     setEvaluationError(null);
+    setEvaluationDepthUsed(null);
   }, [loaded?.match.id]);
 
   const loadMatch = useCallback(() => {
@@ -327,6 +330,7 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
     const restoreIndex = currentIndex;
     let computedSeries: EvaluationSeriesPoint[] | null = null;
     let failureMessage: string | null = null;
+    let depthDetected: number | null = null;
 
     try {
       let playbackEngine = SantoriniEngine.fromSnapshot(initialSnapshot);
@@ -365,13 +369,23 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
         }
       }
 
+      const filteredSnapshots = snapshots.filter((entry) => entry.moveIndex >= MIN_EVAL_MOVE_INDEX);
+
+      if (filteredSnapshots.length === 0) {
+        failureMessage = 'Not enough moves yet to build an evaluation graph.';
+        return;
+      }
+
       const points: EvaluationSeriesPoint[] = [];
 
-      for (const entry of snapshots) {
+      for (const entry of filteredSnapshots) {
         await santorini.importState(entry.snapshot as SantoriniStateSnapshot, { waitForEvaluation: false });
         const evaluation = await santorini.controls.refreshEvaluation();
         const value = evaluation?.value ?? 0;
         const label = evaluation?.label ?? (value >= 0 ? `+${value.toFixed(3)}` : value.toFixed(3));
+        if (depthDetected === null) {
+          depthDetected = santorini.evaluationDepth ?? null;
+        }
         points.push({
           moveIndex: entry.moveIndex,
           moveNumber: entry.moveIndex === -1 ? 0 : entry.moveIndex + 1,
@@ -397,6 +411,8 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
 
     if (failureMessage) {
       setEvaluationError(failureMessage);
+      setEvaluationSeries(null);
+      setEvaluationDepthUsed(null);
       toast({
         title: 'Evaluation graph failed',
         status: 'error',
@@ -407,6 +423,7 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
 
     if (computedSeries) {
       setEvaluationSeries(computedSeries);
+      setEvaluationDepthUsed(depthDetected);
       toast({
         title: 'Evaluation graph ready',
         status: 'success',
@@ -994,13 +1011,16 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
                             dataKey="evaluation"
                             stroke={evaluationLineColor}
                             strokeWidth={2}
-                            dot={{ r: 2.5, stroke: evaluationLineColor, strokeWidth: 1 }}
-                            activeDot={{ r: 4 }}
+                            dot={{ r: 4, stroke: evaluationLineColor, strokeWidth: 1.5 }}
+                            activeDot={{ r: 6 }}
                             isAnimationActive={false}
                           />
                         </LineChart>
                       </ResponsiveContainer>
                     </Box>
+                    <Text fontSize="xs" color={mutedText}>
+                      Evaluation depth: {evaluationDepthUsed ?? 'AI default'}
+                    </Text>
                     <Text fontSize="xs" color={mutedText}>
                       Positive values indicate an advantage for Green (creator). Negative values favour Red (opponent).
                     </Text>
