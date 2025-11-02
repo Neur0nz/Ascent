@@ -24,25 +24,26 @@
 
 
 
-  <!-- Completed Santorini tower (3 base levels + dome) - centered with padding -->
+  <!-- Completed Santorini tower (3 base levels + dome) - optimized for small sizes -->
 
-  <g fill="#FFFFFF" stroke="#FFFFFF" stroke-opacity="0.85" stroke-linejoin="round" transform="translate(8, 8)">
+  <g fill="#FFFFFF" stroke="#FFFFFF" stroke-opacity="1" stroke-linejoin="round" transform="translate(4, 8)">
 
-    <!-- Level 0 (bottom) - opacity 0.24 -->
+    <!-- Level 0 (bottom) - higher opacity and thicker stroke for visibility -->
+    <!-- Tower base uses 56 width, centered in 56x48 space -->
 
-    <polygon fill-opacity="0.24" stroke-width="1" points="0,40 0,32 48,32 48,40"/>
+    <polygon fill-opacity="0.4" stroke-width="2" points="0,48 0,38 56,38 56,48"/>
 
-    <!-- Level 1 (middle) - opacity 0.48 -->
+    <!-- Level 1 (middle) - higher opacity for better contrast -->
 
-    <polygon fill-opacity="0.48" stroke-width="1" points="6,32 6,24 42,24 42,32"/>
+    <polygon fill-opacity="0.65" stroke-width="2" points="7,38 7,28 49,28 49,38"/>
 
-    <!-- Level 2 (top) - opacity 0.72 -->
+    <!-- Level 2 (top) - full opacity for maximum visibility -->
 
-    <polygon fill-opacity="0.72" stroke-width="1" points="12,24 12,16 36,16 36,24"/>
+    <polygon fill-opacity="0.85" stroke-width="2" points="14,28 14,18 42,18 42,28"/>
 
-    <!-- Dome (level 3) - opacity 0.82, filled semicircle arch -->
-    <!-- Arc curves upward, closes along base line (which aligns with level 2 top) -->
-    <path fill-opacity="0.82" fill="#FFFFFF" stroke="#FFFFFF" stroke-opacity="0.85" stroke-width="1" d="M 14 16 A 10 10 0 0 1 34 16 Z" stroke-linecap="round"/>
+    <!-- Dome (level 3) - full opacity and thicker stroke for prominence -->
+    <!-- Arc curves upward, closes along base line -->
+    <path fill-opacity="1" fill="#FFFFFF" stroke="#FFFFFF" stroke-opacity="1" stroke-width="2" d="M 16 18 A 12 12 0 0 1 40 18 Z" stroke-linecap="round"/>
 
   </g>
 
