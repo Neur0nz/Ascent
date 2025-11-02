@@ -259,27 +259,6 @@ function ActiveMatchContent({
       try {
         // Update match status to completed with winner
         await onGameComplete('completed', { winner_id: winnerId });
-
-        // Show completion toast
-        if (winnerId) {
-          const winnerName =
-            winnerId === lobbyMatch.creator_id
-              ? lobbyMatch.creator?.display_name ?? 'Player 1'
-              : lobbyMatch.opponent?.display_name ?? 'Player 2';
-          toast({
-            title: 'Game completed!',
-            description: `${winnerName} wins!`,
-            status: 'success',
-            duration: 5000,
-          });
-        } else {
-          toast({
-            title: 'Game completed!',
-            description: 'The game ended in a draw.',
-            status: 'info',
-            duration: 5000,
-          });
-        }
       } catch (error) {
         console.error('Failed to complete game:', error);
         toast({
@@ -1481,6 +1460,8 @@ function GamePlayWorkspace({
   const lobby = useMatchLobbyContext();
   const workspaceToast = useToast();
   const { cardBg, cardBorder, mutedText, accentHeading } = useSurfaceTokens();
+  const currentProfileId = auth.profile?.id ?? null;
+  const completionToastKeyRef = useRef<string | null>(null);
   const rematchOffers = useMemo(
     () =>
       Object.values(lobby.rematchOffers ?? {}).filter((offer): offer is LobbyMatch => Boolean(offer)),
@@ -1644,12 +1625,99 @@ function GamePlayWorkspace({
   const sessionMode = lobby.sessionMode ?? 'online';
   const activeOnlineMatchId = sessionMode === 'online' && lobby.activeMatch ? lobby.activeMatch.id : null;
   useMatchVisibilityReporter(activeOnlineMatchId);
-  const completedMatch =
-    sessionMode === 'online' &&
-    lobby.activeMatch &&
-    (lobby.activeMatch.status === 'completed' || lobby.activeMatch.status === 'abandoned')
-      ? lobby.activeMatch
-      : null;
+  useEffect(() => {
+    if (sessionMode !== 'online') {
+      completionToastKeyRef.current = null;
+      return;
+    }
+    const completed = lobby.lastCompletedMatch;
+    if (!completed) {
+      return;
+    }
+    if (completed.status !== 'completed' && completed.status !== 'abandoned') {
+      return;
+    }
+    if (!currentProfileId) {
+      return;
+    }
+    const key = `${completed.id}:${completed.status}:${completed.winner_id ?? 'null'}`;
+    if (completionToastKeyRef.current === key) {
+      return;
+    }
+    completionToastKeyRef.current = key;
+
+    const isParticipant =
+      currentProfileId === completed.creator_id || currentProfileId === completed.opponent_id;
+    if (!isParticipant) {
+      return;
+    }
+
+    const winnerId = completed.winner_id ?? null;
+    const winnerName =
+      winnerId === completed.creator_id
+        ? completed.creator?.display_name ?? 'Player 1'
+        : winnerId === completed.opponent_id
+          ? completed.opponent?.display_name ?? 'Player 2'
+          : null;
+    const opponentId =
+      currentProfileId === completed.creator_id ? completed.opponent_id : completed.creator_id;
+    const opponentName =
+      opponentId === completed.creator_id
+        ? completed.creator?.display_name ?? 'Player 1'
+        : opponentId === completed.opponent_id
+          ? completed.opponent?.display_name ?? 'Player 2'
+          : 'Opponent';
+
+    if (completed.status === 'abandoned') {
+      if (!winnerId) {
+        return;
+      }
+      if (winnerId === currentProfileId) {
+        workspaceToast({
+          title: 'Win by resignation',
+          description: opponentName ? `${opponentName} resigned.` : 'Your opponent resigned.',
+          status: 'success',
+          duration: 5000,
+        });
+      } else {
+        workspaceToast({
+          title: 'You resigned',
+          description: winnerName
+            ? `${winnerName} wins by resignation.`
+            : 'Your opponent wins by resignation.',
+          status: 'warning',
+          duration: 5000,
+        });
+      }
+      return;
+    }
+
+    if (!winnerId) {
+      workspaceToast({
+        title: 'Game drawn',
+        description: 'The game ended in a draw.',
+        status: 'info',
+        duration: 5000,
+      });
+      return;
+    }
+
+    if (winnerId === currentProfileId) {
+      workspaceToast({
+        title: 'Victory!',
+        description: opponentName ? `You defeated ${opponentName}.` : 'You won the game.',
+        status: 'success',
+        duration: 5000,
+      });
+    } else {
+      workspaceToast({
+        title: 'Defeat',
+        description: winnerName ? `${winnerName} won the game.` : 'Your opponent won the game.',
+        status: 'warning',
+        duration: 5000,
+      });
+    }
+  }, [currentProfileId, lobby.lastCompletedMatch, sessionMode, workspaceToast]);
   const { activeMatchId, clearUndoRequest, undoRequests } = lobby;
   const activeUndoState = activeMatchId ? undoRequests[activeMatchId] : undefined;
 
@@ -1680,6 +1748,22 @@ function GamePlayWorkspace({
     lobby.activeMatch &&
     !lobby.activeMatch.opponent_id
   );
+
+  const activeCompletedMatch =
+    sessionMode === 'online' &&
+    lobby.activeMatch &&
+    (lobby.activeMatch.status === 'completed' || lobby.activeMatch.status === 'abandoned')
+      ? lobby.activeMatch
+      : null;
+
+  const completedMatch =
+    sessionMode === 'online' && !isInProgress
+      ? activeCompletedMatch
+        ?? (lobby.lastCompletedMatch &&
+            (lobby.lastCompletedMatch.status === 'completed' || lobby.lastCompletedMatch.status === 'abandoned')
+              ? lobby.lastCompletedMatch
+              : null)
+      : null;
 
   const handleRequestSummaryRematch = useCallback(async () => {
     setRequestingSummaryRematch.on();

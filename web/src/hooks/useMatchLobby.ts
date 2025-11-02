@@ -77,6 +77,7 @@ export interface UseMatchLobbyState {
   abortRequests: Record<string, AbortRequestState | undefined>;
   rematchOffers: Record<string, LobbyMatch | undefined>;
   connectionStates: Record<string, PlayerConnectionState>;
+  lastCompletedMatch: LobbyMatch | null;
 }
 
 const INITIAL_STATE: UseMatchLobbyState = {
@@ -92,6 +93,7 @@ const INITIAL_STATE: UseMatchLobbyState = {
   abortRequests: {},
   rematchOffers: {},
   connectionStates: {},
+  lastCompletedMatch: null,
 };
 
 export interface UseMatchLobbyOptions {
@@ -848,8 +850,21 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
 
           setState((prev) => {
             let myMatches = prev.myMatches;
-            if (payload.eventType === 'DELETE' || !isTracked) {
+            let lastCompletedMatch = prev.lastCompletedMatch;
+
+            if (payload.eventType === 'DELETE') {
               myMatches = removeMatch(prev.myMatches, updated.id);
+              if (lastCompletedMatch?.id === updated.id) {
+                lastCompletedMatch = null;
+              }
+            } else if (!isTracked) {
+              const hydrated = attachProfiles({
+                ...(prev.myMatches.find((match) => match.id === updated.id) ?? {}),
+                ...updated,
+              });
+              const matchRecord = hydrated ?? { ...updated, creator: null, opponent: null };
+              myMatches = removeMatch(prev.myMatches, updated.id);
+              lastCompletedMatch = matchRecord;
             } else {
               const hydrated = attachProfiles({
                 ...(prev.myMatches.find((match) => match.id === updated.id) ?? {}),
@@ -857,6 +872,10 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
               });
               const matchRecord = hydrated ?? { ...updated, creator: null, opponent: null };
               myMatches = upsertMatch(prev.myMatches, matchRecord);
+              if (lastCompletedMatch?.id === matchRecord.id) {
+                lastCompletedMatch =
+                  matchRecord.status === 'completed' || matchRecord.status === 'abandoned' ? matchRecord : null;
+              }
             }
 
             let activeMatchId = prev.activeMatchId;
@@ -877,7 +896,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
 
             const joinCode = activeMatch ? activeMatch.private_join_code ?? null : null;
 
-            return { ...prev, myMatches, activeMatchId, activeMatch, joinCode };
+            return { ...prev, myMatches, activeMatchId, activeMatch, joinCode, lastCompletedMatch };
           });
 
           void ensurePlayersLoaded([updated.creator_id, updated.opponent_id ?? undefined]);
@@ -1723,6 +1742,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
   const leaveMatch = useCallback(
     async (matchId?: string | null) => {
       const targetId = matchId ?? state.activeMatchId;
+      const previousLastCompleted = state.lastCompletedMatch;
 
       if (!targetId) {
         setState((prev) => ({
@@ -1788,8 +1808,13 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
           : null;
 
       const existingUndo = state.undoRequests[targetId];
+      const statusToSet: MatchStatus = opponentId ? 'completed' : 'abandoned';
 
       if (candidate) {
+        const completionRecord =
+          candidate.status === 'in_progress'
+            ? ({ ...candidate, status: statusToSet, winner_id: opponentId ?? null } as LobbyMatch)
+            : null;
         setState((prev) => {
           const remaining = removeMatch(prev.myMatches, targetId);
           const remainingLobby = removeMatch(prev.matches, targetId);
@@ -1807,11 +1832,11 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
             moves: wasActive ? [] : prev.moves,
             joinCode: wasActive && fallback ? fallback.private_join_code ?? null : wasActive ? null : prev.joinCode,
             undoRequests: nextUndo,
+            lastCompletedMatch: completionRecord ?? prev.lastCompletedMatch,
           };
         });
       }
 
-      const statusToSet: MatchStatus = opponentId ? 'completed' : 'abandoned';
       const { error } = await client.functions.invoke('update-match-status', {
         body: {
           matchId: targetId,
@@ -1840,6 +1865,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
               activeMatchId: shouldRestoreActive ? candidate.id : prev.activeMatchId,
               activeMatch: nextActive,
               undoRequests: restoredUndo,
+              lastCompletedMatch: previousLastCompleted,
             };
           });
         }
@@ -1857,6 +1883,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
             delete next[targetId];
             return next;
           })(),
+          lastCompletedMatch: prev.lastCompletedMatch,
         }));
       }
     },
@@ -1988,6 +2015,10 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
           myMatches,
           activeMatch,
           joinCode: prev.activeMatchId === matchId ? enriched.private_join_code ?? null : prev.joinCode,
+          lastCompletedMatch:
+            enriched.status === 'completed' || enriched.status === 'abandoned'
+              ? enriched
+              : prev.lastCompletedMatch,
         };
       });
     },
@@ -2628,6 +2659,10 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
   );
 
   const activeMatchWithProfiles = useMemo(() => attachProfiles(state.activeMatch), [attachProfiles, state.activeMatch]);
+  const lastCompletedMatchWithProfiles = useMemo(
+    () => attachProfiles(state.lastCompletedMatch),
+    [attachProfiles, state.lastCompletedMatch],
+  );
 
   const startLocalMatch = useCallback(() => {
     const localMatch = createLocalMatch();
@@ -2715,6 +2750,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
     abortRequests: state.abortRequests,
     rematchOffers: state.rematchOffers,
     connectionStates: state.connectionStates,
+    lastCompletedMatch: lastCompletedMatchWithProfiles,
     emojiReactions,
     setActiveMatch,
     createMatch,
