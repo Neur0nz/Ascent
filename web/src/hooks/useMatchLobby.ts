@@ -797,20 +797,36 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
   useEffect(() => {
     const client = supabase;
 
+    const clearPresenceTimers = () => {
+      if (presenceHeartbeatRef.current) {
+        clearInterval(presenceHeartbeatRef.current);
+        presenceHeartbeatRef.current = null;
+      }
+      if (presenceMonitorRef.current) {
+        clearInterval(presenceMonitorRef.current);
+        presenceMonitorRef.current = null;
+      }
+    };
+
     if (!matchId) {
+      clearPresenceTimers();
       if (channelRef.current) {
         client?.removeChannel(channelRef.current);
         channelRef.current = null;
       }
+      channelStatusRef.current = 'CLOSED';
       setState((prev) => ({ ...prev, moves: [], activeMatch: null, joinCode: null }));
+      updateConnectionStatesFromPresence();
       return undefined;
     }
 
     if (matchId === LOCAL_MATCH_ID) {
+      clearPresenceTimers();
       if (channelRef.current) {
         client?.removeChannel(channelRef.current);
         channelRef.current = null;
       }
+      channelStatusRef.current = 'CLOSED';
       setState((prev) => {
         if (prev.activeMatchId !== LOCAL_MATCH_ID) {
           return prev;
@@ -824,26 +840,44 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
           moves: [],
         };
       });
+      updateConnectionStatesFromPresence();
       return undefined;
     }
 
     if (!client || !onlineEnabled) {
+      clearPresenceTimers();
       if (channelRef.current) {
         client?.removeChannel(channelRef.current);
         channelRef.current = null;
       }
+      channelStatusRef.current = 'CLOSED';
       setState((prev) => ({ ...prev, moves: [], activeMatch: null, joinCode: null }));
+      updateConnectionStatesFromPresence();
       return undefined;
     }
 
     void hydrateActiveMatch('initial-load');
+    clearPresenceTimers();
+    channelStatusRef.current = 'INIT';
 
-    const channel = client
-      .channel(`match-${matchId}`, {
-        config: {
-          broadcast: { self: true }, // Receive our own broadcasts for instant feedback
-        },
+    const channel = client.channel(`match-${matchId}`, {
+      config: {
+        broadcast: { self: true }, // Receive our own broadcasts for instant feedback
+      },
+    });
+
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        updateConnectionStatesFromPresence();
       })
+      .on('presence', { event: 'join' }, () => {
+        updateConnectionStatesFromPresence();
+      })
+      .on('presence', { event: 'leave' }, () => {
+        updateConnectionStatesFromPresence();
+      });
+
+    channel
       .on(
         'broadcast',
         { event: 'move' },
@@ -1252,30 +1286,84 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
             return prev;
           });
         },
-      )
-      .subscribe((status) => {
+      );
+
+    const sendPresenceUpdate = async (reason: string) => {
+      if (!profile) {
+        return;
+      }
+      const role =
+        activeRoleRef.current ??
+        (activeMatchRef.current?.creator_id === profile.id
+          ? 'creator'
+          : activeMatchRef.current?.opponent_id === profile.id
+            ? 'opponent'
+            : 'spectator');
+      try {
+        await channel.track({
+          user_id: profile.id,
+          role,
+          last_seen: Date.now(),
+        });
+      } catch (error) {
+        console.warn('useMatchLobby: Failed to track presence', { matchId, reason, error });
+      } finally {
+        updateConnectionStatesFromPresence();
+      }
+    };
+
+    channel.subscribe((status) => {
         console.log('useMatchLobby: Real-time subscription status', { 
           matchId, 
           status,
           channel: channel.topic 
         });
-        
+
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           console.warn('useMatchLobby: Real-time connection lost for match, will auto-reconnect', { matchId, status });
+          channelStatusRef.current = 'ERROR';
+          clearPresenceTimers();
+          updateConnectionStatesFromPresence();
           // Supabase will automatically attempt to reconnect
         }
-        
+
         if (status === 'SUBSCRIBED') {
+          channelStatusRef.current = 'SUBSCRIBED';
           console.log('useMatchLobby: Real-time subscription active, refreshing match state', { matchId });
           void hydrateActiveMatch('re-subscribed');
+          void sendPresenceUpdate('subscribed');
+          if (!presenceHeartbeatRef.current) {
+            presenceHeartbeatRef.current = setInterval(() => {
+              void sendPresenceUpdate('heartbeat');
+            }, PRESENCE_HEARTBEAT_INTERVAL);
+          }
+          if (!presenceMonitorRef.current) {
+            presenceMonitorRef.current = setInterval(() => {
+              updateConnectionStatesFromPresence();
+            }, CONNECTION_MONITOR_INTERVAL);
+          }
+        }
+
+        if (status === 'CLOSED') {
+          channelStatusRef.current = 'CLOSED';
+          clearPresenceTimers();
+          updateConnectionStatesFromPresence();
         }
       });
 
     channelRef.current = channel;
 
     return () => {
+      clearPresenceTimers();
+      try {
+        void channel.untrack();
+      } catch (error) {
+        console.warn('useMatchLobby: Failed to untrack presence on cleanup', { matchId, error });
+      }
       client.removeChannel(channel);
       channelRef.current = null;
+      channelStatusRef.current = 'CLOSED';
+      updateConnectionStatesFromPresence();
     };
   }, [attachProfiles, ensurePlayersLoaded, hydrateActiveMatch, matchId, mergePlayers, onlineEnabled, profile]);
 
