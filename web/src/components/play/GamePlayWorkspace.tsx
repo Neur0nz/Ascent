@@ -50,7 +50,9 @@ import { buildMatchJoinLink } from '@/utils/joinLinks';
 import { scheduleAutoOpenCreate } from '@/utils/lobbyStorage';
 import { useBrowserNotifications } from '@hooks/useBrowserNotifications';
 import GameBoard from '@components/GameBoard';
+import ConnectionIndicator from '@components/play/ConnectionIndicator';
 import type { SantoriniMoveAction, MatchStatus, PlayerProfile } from '@/types/match';
+import type { PlayerConnectionState } from '@hooks/useMatchLobby';
 import { useSurfaceTokens } from '@/theme/useSurfaceTokens';
 
 const K_FACTOR = 32;
@@ -198,6 +200,8 @@ function ActiveMatchContent({
   onRespondUndo,
   onClearUndo,
   profileId,
+  connectionStates,
+  currentUserId,
 }: {
   match: LobbyMatch | null;
   role: 'creator' | 'opponent' | null;
@@ -211,11 +215,15 @@ function ActiveMatchContent({
   onRespondUndo: UseMatchLobbyReturn['respondUndo'];
   onClearUndo: () => void;
   profileId: string | null;
+  connectionStates?: Record<string, PlayerConnectionState>;
+  currentUserId: string | null;
 }) {
   const toast = useToast();
   const [leaveBusy, setLeaveBusy] = useBoolean();
   const lobbyMatch = match ?? null;
   const { cardBg, cardBorder, mutedText, strongText, accentHeading, panelBg } = useSurfaceTokens();
+  // Ensure connectionStates has a default value
+  const safeConnectionStates = connectionStates ?? {};
   const typedMoves = useMemo(
     () =>
       moves
@@ -310,6 +318,25 @@ function ActiveMatchContent({
   const [respondingUndo, setRespondingUndo] = useBoolean(false);
   const myProfile = role === 'creator' ? lobbyMatch?.creator : role === 'opponent' ? lobbyMatch?.opponent : null;
   const opponentProfile = role === 'creator' ? lobbyMatch?.opponent : role === 'opponent' ? lobbyMatch?.creator : null;
+  
+  // Resolve connection states for creator and opponent
+  const resolveConnectionState = useCallback(
+    (playerId: string | null | undefined): PlayerConnectionState | null => {
+      if (!playerId) return null;
+      return safeConnectionStates[playerId] ?? null;
+    },
+    [safeConnectionStates],
+  );
+
+  const creatorConnection = useMemo(
+    () => resolveConnectionState(lobbyMatch?.creator_id),
+    [lobbyMatch?.creator_id, resolveConnectionState],
+  );
+  const opponentConnection = useMemo(
+    () => resolveConnectionState(lobbyMatch?.opponent_id),
+    [lobbyMatch?.opponent_id, resolveConnectionState],
+  );
+
   const {
     permission: notificationPermission,
     isSupported: notificationsSupported,
@@ -797,6 +824,7 @@ function ActiveMatchContent({
             accentColor={accentHeading}
             profile={lobbyMatch?.creator}
             alignment="flex-start"
+            connectionState={creatorConnection}
           />
           <PlayerClockCard
             label={opponentClockLabel}
@@ -805,6 +833,7 @@ function ActiveMatchContent({
             accentColor={accentHeading}
             profile={lobbyMatch?.opponent}
             alignment="flex-end"
+            connectionState={opponentConnection}
           />
         </Stack>
         <Flex
@@ -1033,6 +1062,7 @@ interface PlayerClockCardProps {
   accentColor: string;
   profile: PlayerProfile | null | undefined;
   alignment: 'flex-start' | 'flex-end';
+  connectionState?: PlayerConnectionState | null;
 }
 
 function PlayerClockCard({
@@ -1042,6 +1072,7 @@ function PlayerClockCard({
   accentColor,
   profile,
   alignment,
+  connectionState,
 }: PlayerClockCardProps) {
   const { cardBorder, mutedText, strongText } = useSurfaceTokens();
   const activeBg = useColorModeValue('teal.50', 'teal.900');
@@ -1076,9 +1107,19 @@ function PlayerClockCard({
           {active ? <AvatarBadge boxSize="1.1em" bg={accentColor} borderColor="white" /> : null}
         </Avatar>
       <Stack spacing={1} align={alignItems} w="100%">
-          <Text fontSize={labelFontSize ?? 'sm'} fontWeight="semibold" color={mutedText} textAlign={textAlign}>
-            {label}
-          </Text>
+          <HStack spacing={1.5} justify={alignment === 'flex-end' ? 'flex-end' : 'flex-start'} align="center">
+            <Text fontSize={labelFontSize ?? 'sm'} fontWeight="semibold" color={mutedText} textAlign={textAlign}>
+              {label}
+            </Text>
+            {connectionState && (
+              <ConnectionIndicator
+                status={connectionState.status}
+                lastSeen={connectionState.lastSeen}
+                isSelf={connectionState.isSelf}
+                size="xs"
+              />
+            )}
+          </HStack>
           <Heading
             fontSize={clockFontSize ?? '2xl'}
             color={clockColor}
@@ -1592,6 +1633,8 @@ function GamePlayWorkspace({ auth, onNavigateToLobby }: { auth: SupabaseAuthStat
             onRespondUndo={lobby.respondUndo}
             onClearUndo={handleClearUndoState}
             profileId={auth.profile?.id ?? null}
+            connectionStates={lobby.connectionStates}
+            currentUserId={auth.profile?.id ?? null}
           />
         </SantoriniProvider>
       )}
