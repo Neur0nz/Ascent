@@ -25,7 +25,7 @@ export function useBrowserNotifications(): UseBrowserNotificationsResult {
     }
     return Notification.permission;
   });
-  const lastNotificationIdRef = useRef<string | null>(null);
+  const lastNotificationRef = useRef<{ id: string; timestamp: number } | null>(null);
   const serviceWorkerRegistrationRef = useRef<ServiceWorkerRegistration | null>(null);
   const serviceWorkerReadyRef = useRef<Promise<ServiceWorkerRegistration | null> | null>(null);
 
@@ -100,10 +100,16 @@ export function useBrowserNotifications(): UseBrowserNotificationsResult {
       }
 
       const tag = options?.id;
-      const idChanged = Boolean(tag && lastNotificationIdRef.current !== tag);
-
-      if (tag && !idChanged) {
-        return;
+      if (tag) {
+        const now = Date.now();
+        const duplicateWindowMs = 1500;
+        const last = lastNotificationRef.current;
+        if (last && last.id === tag && now - last.timestamp < duplicateWindowMs) {
+          return;
+        }
+        lastNotificationRef.current = { id: tag, timestamp: now };
+      } else {
+        lastNotificationRef.current = null;
       }
 
       const baseOptions = { ...(options ?? {}) };
@@ -135,8 +141,6 @@ export function useBrowserNotifications(): UseBrowserNotificationsResult {
           console.error('Failed to show notification', error);
         }
       };
-
-      lastNotificationIdRef.current = tag ?? null;
 
       const registrationPromise = resolveServiceWorkerRegistration();
       if (registrationPromise) {
