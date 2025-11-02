@@ -285,10 +285,6 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
     activeMatchRef.current = state.activeMatch ?? null;
   }, [state.activeMatch]);
 
-  useEffect(() => {
-    updateConnectionStatesFromPresence();
-  }, [state.activeMatch, state.activeMatchId, onlineEnabled, updateConnectionStatesFromPresence]);
-
   const mergePlayers = useCallback((records: PlayerProfile[]): void => {
     if (!records.length) return;
     const next = { ...playersRef.current };
@@ -437,6 +433,10 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
       return { ...prev, connectionStates: next };
     });
   }, [onlineEnabled, profile?.id]);
+
+  useEffect(() => {
+    updateConnectionStatesFromPresence();
+  }, [state.activeMatch, state.activeMatchId, onlineEnabled, updateConnectionStatesFromPresence]);
 
   const hydrateActiveMatch = useCallback(
     async (reason: string = 'manual'): Promise<void> => {
