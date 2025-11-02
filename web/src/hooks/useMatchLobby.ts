@@ -45,6 +45,16 @@ export interface AbortRequestState {
   respondedBy?: 'creator' | 'opponent';
 }
 
+export type ConnectionQuality = 'connecting' | 'offline' | 'weak' | 'moderate' | 'strong';
+
+export interface PlayerConnectionState {
+  playerId: string;
+  role: 'creator' | 'opponent' | 'spectator' | null;
+  status: ConnectionQuality;
+  lastSeen: number | null;
+  isSelf: boolean;
+}
+
 export interface UseMatchLobbyState {
   matches: LobbyMatch[];
   myMatches: LobbyMatch[];
@@ -57,6 +67,7 @@ export interface UseMatchLobbyState {
   undoRequests: Record<string, UndoRequestState | undefined>;
   abortRequests: Record<string, AbortRequestState | undefined>;
   rematchOffers: Record<string, LobbyMatch | undefined>;
+  connectionStates: Record<string, PlayerConnectionState>;
 }
 
 const INITIAL_STATE: UseMatchLobbyState = {
@@ -71,6 +82,7 @@ const INITIAL_STATE: UseMatchLobbyState = {
   undoRequests: {},
   abortRequests: {},
   rematchOffers: {},
+  connectionStates: {},
 };
 
 export interface UseMatchLobbyOptions {
@@ -78,6 +90,60 @@ export interface UseMatchLobbyOptions {
 }
 
 const LOCAL_MATCH_ID = 'local:match';
+
+
+interface MatchPresenceMeta {
+  user_id?: string;
+  role?: 'creator' | 'opponent' | 'spectator';
+  last_seen?: number;
+}
+
+const CONNECTION_THRESHOLDS = {
+  strong: 6000,
+  moderate: 12000,
+  weak: 20000,
+} as const;
+
+const PRESENCE_HEARTBEAT_INTERVAL = 5000;
+const CONNECTION_MONITOR_INTERVAL = 6000;
+
+function determineConnectionQuality(lastSeen: number | null, now: number): ConnectionQuality {
+  if (lastSeen === null) {
+    return 'offline';
+  }
+  const delta = now - lastSeen;
+  if (delta <= CONNECTION_THRESHOLDS.strong) return 'strong';
+  if (delta <= CONNECTION_THRESHOLDS.moderate) return 'moderate';
+  if (delta <= CONNECTION_THRESHOLDS.weak) return 'weak';
+  return 'offline';
+}
+
+function areConnectionStatesEqual(
+  prev: Record<string, PlayerConnectionState>,
+  next: Record<string, PlayerConnectionState>,
+): boolean {
+  const prevKeys = Object.keys(prev);
+  const nextKeys = Object.keys(next);
+  if (prevKeys.length !== nextKeys.length) {
+    return false;
+  }
+  for (const key of prevKeys) {
+    const prevState = prev[key];
+    const nextState = next[key];
+    if (!nextState) {
+      return false;
+    }
+    if (
+      prevState.status !== nextState.status ||
+      prevState.lastSeen !== nextState.lastSeen ||
+      prevState.role !== nextState.role ||
+      prevState.isSelf !== nextState.isSelf
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
 
 
 function createEmptySnapshot(): SantoriniStateSnapshot {
@@ -193,6 +259,11 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
   const processingMovesRef = useRef<Set<number>>(new Set());
   // Hydration guard to avoid optimistic apply while fetching fresh state on (re)subscribe
   const hydratingRef = useRef<boolean>(false);
+  const activeMatchRef = useRef<LobbyMatch | null>(null);
+  const activeRoleRef = useRef<'creator' | 'opponent' | 'spectator' | null>(null);
+  const presenceHeartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const presenceMonitorRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const channelStatusRef = useRef<'INIT' | 'SUBSCRIBED' | 'ERROR' | 'CLOSED'>('INIT');
 
   const matchId = state.activeMatchId;
   
@@ -209,6 +280,14 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
       console.error('Failed to persist active match to localStorage', error);
     }
   }, [state.activeMatchId]);
+
+  useEffect(() => {
+    activeMatchRef.current = state.activeMatch ?? null;
+  }, [state.activeMatch]);
+
+  useEffect(() => {
+    updateConnectionStatesFromPresence();
+  }, [state.activeMatch, state.activeMatchId, onlineEnabled, updateConnectionStatesFromPresence]);
 
   const mergePlayers = useCallback((records: PlayerProfile[]): void => {
     if (!records.length) return;
@@ -266,6 +345,98 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
     },
     [], // Stable - reads from playersRef.current which is always up-to-date
   );
+
+  const updateConnectionStatesFromPresence = useCallback(() => {
+    if (!onlineEnabled) {
+      setState((prev) => {
+        if (Object.keys(prev.connectionStates).length === 0) {
+          return prev;
+        }
+        return { ...prev, connectionStates: {} };
+      });
+      return;
+    }
+
+    const channel = channelRef.current;
+    const activeMatch = activeMatchRef.current;
+    if (!channel || !activeMatch) {
+      setState((prev) => {
+        if (Object.keys(prev.connectionStates).length === 0) {
+          return prev;
+        }
+        return { ...prev, connectionStates: {} };
+      });
+      return;
+    }
+
+    const now = Date.now();
+    const aggregated = new Map<string, { lastSeen: number; role: 'creator' | 'opponent' | 'spectator' | null }>();
+    const presenceState = channel.presenceState<MatchPresenceMeta>();
+    Object.values(presenceState).forEach((entries) => {
+      entries.forEach((entry) => {
+        const userId = entry?.user_id;
+        if (!userId) return;
+        const lastSeen = typeof entry.last_seen === 'number' ? entry.last_seen : now;
+        const role = entry.role ?? null;
+        const current = aggregated.get(userId);
+        if (!current || lastSeen > current.lastSeen) {
+          aggregated.set(userId, { lastSeen, role });
+        }
+      });
+    });
+
+    const expectedPlayers = new Set<string>();
+    if (activeMatch.creator_id) expectedPlayers.add(activeMatch.creator_id);
+    if (activeMatch.opponent_id) expectedPlayers.add(activeMatch.opponent_id);
+
+    const userId = profile?.id ?? null;
+    const next: Record<string, PlayerConnectionState> = {};
+
+    aggregated.forEach((value, playerId) => {
+      const status = determineConnectionQuality(value.lastSeen, now);
+      const resolvedRole =
+        value.role ??
+        (activeMatch.creator_id === playerId
+          ? 'creator'
+          : activeMatch.opponent_id === playerId
+            ? 'opponent'
+            : null);
+      next[playerId] = {
+        playerId,
+        role: resolvedRole,
+        status,
+        lastSeen: value.lastSeen,
+        isSelf: playerId === userId,
+      };
+      expectedPlayers.delete(playerId);
+    });
+
+    expectedPlayers.forEach((playerId) => {
+      const isSelf = playerId === userId;
+      const resolvedRole =
+        activeMatch.creator_id === playerId
+          ? 'creator'
+          : activeMatch.opponent_id === playerId
+            ? 'opponent'
+            : null;
+      const status: ConnectionQuality =
+        isSelf && channelStatusRef.current !== 'SUBSCRIBED' ? 'connecting' : 'offline';
+      next[playerId] = {
+        playerId,
+        role: resolvedRole,
+        status,
+        lastSeen: null,
+        isSelf,
+      };
+    });
+
+    setState((prev) => {
+      if (areConnectionStatesEqual(prev.connectionStates, next)) {
+        return prev;
+      }
+      return { ...prev, connectionStates: next };
+    });
+  }, [onlineEnabled, profile?.id]);
 
   const hydrateActiveMatch = useCallback(
     async (reason: string = 'manual'): Promise<void> => {

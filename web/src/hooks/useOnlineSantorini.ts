@@ -464,6 +464,19 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
   }, [isMyTurn, match, role, selectable]);
 
   useEffect(() => {
+    if (isMyTurn) {
+      return;
+    }
+    const hasSelectable = selectable.some((row) => row.some(Boolean));
+    const hasCancelSelectable = cancelSelectable.some((row) => row.some(Boolean));
+    if (hasSelectable || hasCancelSelectable) {
+      setSelectable(Array.from({ length: 5 }, () => Array(5).fill(false)));
+      setCancelSelectable(Array.from({ length: 5 }, () => Array(5).fill(false)));
+    }
+    moveSelectorRef.current.reset();
+  }, [cancelSelectable, isMyTurn, selectable]);
+
+  useEffect(() => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
