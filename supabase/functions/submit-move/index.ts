@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.76.1';
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.76.1';
 import { SantoriniEngine, SantoriniStateSnapshot } from '../_shared/santorini.ts';
+import { sendPushNotification, type StoredPushSubscription } from '../_shared/push.ts';
 
 interface SantoriniMoveAction {
   kind: 'santorini.move';
@@ -30,6 +31,7 @@ interface SubmitMoveRequest {
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+const APP_BASE_URL = Deno.env.get('APP_BASE_URL') ?? null;
 
 if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
   throw new Error('Missing Supabase configuration environment variables');
@@ -331,14 +333,7 @@ async function loadSubmissionContext(
       playerId: cachedParticipant.playerId,
       fromCache: true,
     };
-    console.log(
-      '♻️  Cache hit for match',
-      matchId,
-      '- participant',
-      cachedParticipant.role,
-      'moveIndex',
-      context.lastMoveIndex,
-    );
+    console.log('Cache hit for match', matchId, '- participant', cachedParticipant.role, 'moveIndex', context.lastMoveIndex);
     return context;
   }
 
@@ -516,6 +511,99 @@ function recordIllegalMoveAttempt(userId: string): boolean {
 function clearIllegalMovePenalties(userId: string): void {
   penaltyTracker.delete(userId);
   console.log('✅  Cleared penalty counter for user', userId);
+}
+
+interface PlayerSummary {
+  id: string;
+  display_name: string | null;
+  auth_user_id: string | null;
+}
+
+const sanitizeBaseUrl = (value: string | null): string | null => {
+  if (!value) {
+    return null;
+  }
+  try {
+    return new URL(value).href.replace(/\/+$/, '');
+  } catch (_error) {
+    console.warn('submit-move: invalid APP_BASE_URL, ignoring');
+    return null;
+  }
+};
+
+const APP_FOCUS_BASE_URL = sanitizeBaseUrl(APP_BASE_URL);
+
+async function fetchPlayerSummaries(
+  client: ServiceSupabaseClient,
+  ids: string[],
+): Promise<PlayerSummary[]> {
+  const uniqueIds = Array.from(new Set(ids.filter((id): id is string => typeof id === 'string' && id.length > 0)));
+  if (!uniqueIds.length) {
+    return [];
+  }
+  const { data, error } = await client
+    .from('players')
+    .select('id, display_name, auth_user_id')
+    .in('id', uniqueIds);
+  if (error) {
+    console.warn('submit-move: failed to fetch player summaries', { ids: uniqueIds, error });
+    return [];
+  }
+  return (Array.isArray(data) ? data : []) as PlayerSummary[];
+}
+
+async function notifyOpponentOfTurn(options: {
+  supabase: ServiceSupabaseClient;
+  match: any;
+  actorPlayerId: string;
+  actorRole: PlayerRole;
+}): Promise<void> {
+  const { supabase, match, actorPlayerId, actorRole } = options;
+  const recipientProfileId =
+    actorRole === 'creator' ? match?.opponent_id ?? null : match?.creator_id ?? null;
+  if (!recipientProfileId) {
+    return;
+  }
+
+  const playerSummaries = await fetchPlayerSummaries(supabase, [recipientProfileId, actorPlayerId]);
+  const actor = playerSummaries.find((player) => player.id === actorPlayerId) ?? null;
+
+  const { data: subscriptions, error: subscriptionsError } = await supabase
+    .from('web_push_subscriptions')
+    .select('id, endpoint, p256dh, auth, encoding')
+    .eq('profile_id', recipientProfileId);
+  if (subscriptionsError) {
+    console.warn('submit-move: failed to load push subscriptions', subscriptionsError);
+    return;
+  }
+  if (!subscriptions || subscriptions.length === 0) {
+    return;
+  }
+
+  const focusUrl = APP_FOCUS_BASE_URL ? `${APP_FOCUS_BASE_URL}#play` : null;
+  const payload = {
+    title: 'Your turn in Santorini',
+    body: actor?.display_name ? `${actor.display_name} just made a move.` : 'Your opponent just made a move.',
+    tag: `match-${match.id}-move`,
+    data: focusUrl ? { focusUrl, matchId: match.id } : { matchId: match.id },
+    requireInteraction: true,
+  };
+
+  const results = await Promise.allSettled(
+    subscriptions.map(async (subscription) => {
+      const storedSubscription = subscription as StoredPushSubscription;
+      const result = await sendPushNotification(storedSubscription, payload);
+      if (!result.delivered && (result.reason === 'gone' || result.reason === 'unauthorized')) {
+        await supabase.from('web_push_subscriptions').delete().eq('id', storedSubscription.id);
+      }
+      return result;
+    }),
+  );
+
+  const failed = results.filter((entry) => entry.status === 'rejected');
+  if (failed.length > 0) {
+    console.warn('submit-move: unhandled errors when sending push notifications', failed);
+  }
 }
 
 serve(async (req) => {
@@ -877,6 +965,17 @@ serve(async (req) => {
     insertedMove,
     applyResult.snapshot,
   );
+
+  try {
+    await notifyOpponentOfTurn({
+      supabase,
+      match,
+      actorPlayerId: playerId,
+      actorRole: role,
+    });
+  } catch (error) {
+    console.warn('submit-move: failed to dispatch push notification', error);
+  }
 
   console.log(`⏱️ [TOTAL: ${(performance.now() - startTime).toFixed(0)}ms] Request complete`);
   return jsonResponse({ move: insertedMove, snapshot: applyResult.snapshot });

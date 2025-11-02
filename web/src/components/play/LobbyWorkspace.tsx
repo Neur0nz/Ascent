@@ -53,6 +53,7 @@ import { useSurfaceTokens } from '@/theme/useSurfaceTokens';
 import { buildMatchJoinLink } from '@/utils/joinLinks';
 import { PENDING_JOIN_STORAGE_KEY, consumeAutoOpenCreateFlag } from '@/utils/lobbyStorage';
 import { useBrowserNotifications } from '@hooks/useBrowserNotifications';
+import { usePushSubscription } from '@hooks/usePushSubscription';
 
 function formatDate(value: string) {
   return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -804,6 +805,7 @@ function LobbyWorkspace({
     isSupported: notificationsSupported,
     requestPermission: requestNotificationPermission,
   } = useBrowserNotifications();
+  usePushSubscription(auth.profile ?? null, notificationPermission);
   const notificationsPromptedRef = useRef(false);
   const matchesHydratedRef = useRef(false);
 

@@ -26,10 +26,10 @@ __pycache__/
 
 # Vite build artifacts
 dist/
+node_modules/
 web/node_modules/
 
 # Environment files
 .env
 .env.*
 *.env
-

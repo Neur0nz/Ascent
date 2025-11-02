@@ -55,6 +55,7 @@ import { useLocalSantorini } from '@hooks/useLocalSantorini';
 import { buildMatchJoinLink } from '@/utils/joinLinks';
 import { scheduleAutoOpenCreate } from '@/utils/lobbyStorage';
 import { useBrowserNotifications } from '@hooks/useBrowserNotifications';
+import { usePushSubscription } from '@hooks/usePushSubscription';
 import GameBoard from '@components/GameBoard';
 import ConnectionIndicator from '@components/play/ConnectionIndicator';
 import type { SantoriniMoveAction, MatchStatus, PlayerProfile } from '@/types/match';
@@ -356,6 +357,7 @@ function ActiveMatchContent({
     requestPermission,
     showNotification,
   } = useBrowserNotifications();
+  usePushSubscription(myProfile ?? null, notificationPermission);
   const notificationToastIdRef = useRef<string | number | undefined>();
   const hasPromptedNotificationsRef = useRef(false);
   const lastOpponentIdRef = useRef<string | null>(lobbyMatch?.opponent_id ?? null);
