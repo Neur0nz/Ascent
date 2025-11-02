@@ -1,6 +1,6 @@
 /* eslint-disable no-restricted-globals */
 const FOCUSABLE_CLIENT_TYPES = ['window'];
-const clientMatchVisibility = new Map();
+const clientMatchState = new Map();
 
 const normalizeMatchId = (value) => {
   if (typeof value !== 'string') {
@@ -29,11 +29,11 @@ self.addEventListener('message', (event) => {
     typeof data.timestamp === 'number' && Number.isFinite(data.timestamp) ? data.timestamp : Date.now();
 
   if (!matchId) {
-    clientMatchVisibility.delete(source.id);
+    clientMatchState.delete(source.id);
     return;
   }
 
-  clientMatchVisibility.set(source.id, { matchId, visible, timestamp });
+  clientMatchState.set(source.id, { matchId, visible, timestamp });
 });
 
 const shouldSuppressNotification = async (matchId) => {
@@ -45,18 +45,35 @@ const shouldSuppressNotification = async (matchId) => {
     includeUncontrolled: true,
   });
   const activeIds = new Set(allClients.map((client) => client.id));
-  for (const knownId of Array.from(clientMatchVisibility.keys())) {
+  for (const knownId of Array.from(clientMatchState.keys())) {
     if (!activeIds.has(knownId)) {
-      clientMatchVisibility.delete(knownId);
+      clientMatchState.delete(knownId);
     }
   }
 
   for (const client of allClients) {
-    const visibility = clientMatchVisibility.get(client.id);
-    if (!visibility) {
+    const state = clientMatchState.get(client.id);
+    if (!state) {
       continue;
     }
-    if (visibility.matchId === matchId && visibility.visible) {
+    if (state.matchId !== matchId) {
+      continue;
+    }
+    const visibilityState = typeof client.visibilityState === 'string' ? client.visibilityState : undefined;
+    const clientFocused = typeof client.focused === 'boolean' ? client.focused : undefined;
+    const messageVisible = typeof state.visible === 'boolean' ? state.visible : undefined;
+
+    if (visibilityState && visibilityState !== 'visible') {
+      continue;
+    }
+    if (clientFocused === false) {
+      continue;
+    }
+    const effectiveVisible =
+      (visibilityState === 'visible' && clientFocused !== false) ||
+      (clientFocused === true && (visibilityState === undefined || visibilityState === 'visible')) ||
+      (messageVisible === true && visibilityState === undefined && clientFocused === undefined);
+    if (effectiveVisible) {
       return true;
     }
   }
