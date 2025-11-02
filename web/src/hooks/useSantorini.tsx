@@ -967,13 +967,35 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
   const refreshEvaluation = useCallback(async (): Promise<EvaluationState | null> => {
     const balancedEvaluation: EvaluationState = { value: 0, advantage: 'Balanced', label: '0.00' };
 
+    const game = gameRef.current;
+
+    const terminalEvaluation = (() => {
+      const ended = game?.gameEnded;
+      if (!ended || ended.length < 2) {
+        return null;
+      }
+      const [creatorWin, opponentWin] = ended;
+      if (creatorWin === 1) {
+        return { value: 1, advantage: 'Creator wins', label: '+1.00' } satisfies EvaluationState;
+      }
+      if (opponentWin === 1) {
+        return { value: -1, advantage: 'Opponent wins', label: '-1.00' } satisfies EvaluationState;
+      }
+      return null;
+    })();
+
+    if (terminalEvaluation) {
+      setEvaluation(terminalEvaluation);
+      setTopMoves([]);
+      return terminalEvaluation;
+    }
+
     if (!evaluationEnabled) {
       setEvaluation(balancedEvaluation);
       setTopMoves([]);
       return balancedEvaluation;
     }
 
-    const game = gameRef.current;
     if (!game || !game.py) {
       return null;
     }

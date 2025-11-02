@@ -65,7 +65,6 @@ function EmojiPicker({ onSelect, isDisabled }: EmojiPickerProps) {
                     py={1}
                     onClick={() => {
                       onSelect(emoji);
-                      onClose();
                     }}
                   >
                     <span role="img" aria-label="emoji">

@@ -537,8 +537,26 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
     if (!Number.isFinite(min) || !Number.isFinite(max)) {
       return [-1, 1];
     }
-    const padding = Math.max(0.05, (max - min) * 0.1);
-    return [Math.min(-1, min - padding), Math.max(1, max + padding)];
+
+    if (min === max) {
+      min -= 0.05;
+      max += 0.05;
+    }
+
+    const padding = Math.max(0.02, (max - min) * 0.1);
+    let domainMin = min - padding;
+    let domainMax = max + padding;
+
+    domainMin = Math.max(-1, domainMin);
+    domainMax = Math.min(1, domainMax);
+
+    if (domainMax - domainMin < 0.1) {
+      const mid = (domainMin + domainMax) / 2;
+      domainMin = Math.max(-1, mid - 0.05);
+      domainMax = Math.min(1, mid + 0.05);
+    }
+
+    return [domainMin, domainMax];
   }, [evaluationSeries]);
 
   const canStepBack = currentIndex > -1;
@@ -550,11 +568,12 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
   const highlightBorder = useColorModeValue('teal.500', 'teal.300');
   const highlightBg = useColorModeValue('teal.50', 'teal.900');
   const badgeBorder = useColorModeValue('gray.200', 'whiteAlpha.200');
-  const evaluationLineColor = useColorModeValue('teal.500', 'teal.200');
-  const chartGridColor = useColorModeValue('gray.200', 'whiteAlpha.200');
-  const chartAxisColor = useColorModeValue('gray.700', 'whiteAlpha.800');
-  const chartReferenceColor = useColorModeValue('gray.500', 'whiteAlpha.500');
-  const tooltipBg = useColorModeValue('white', 'gray.700');
+  const evaluationLineColor = useColorModeValue('#2F855A', '#68D391'); // Chakra green.600 / green.300
+  const evaluationDotStroke = useColorModeValue('#22543D', '#C6F6D5');
+  const chartGridColor = useColorModeValue('rgba(64, 64, 64, 0.12)', 'rgba(255, 255, 255, 0.15)');
+  const chartAxisColor = useColorModeValue('#1A202C', 'rgba(255,255,255,0.92)');
+  const chartReferenceColor = useColorModeValue('rgba(49, 130, 206, 0.8)', 'rgba(144, 205, 244, 0.9)');
+  const tooltipBg = useColorModeValue('#FFFFFF', '#1F2933');
 
   const renderEvaluationTooltip = useCallback(
     ({ active, payload }: TooltipProps<number, string>) => {
@@ -581,11 +600,12 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
         <Box
           bg={tooltipBg}
           borderRadius="md"
-          px={3}
-          py={2}
+          px={3.5}
+          py={2.5}
           borderWidth="1px"
           borderColor={cardBorder}
-          boxShadow="md"
+          boxShadow="lg"
+          color={chartAxisColor}
         >
           <Text fontWeight="semibold" fontSize="sm">
             {point.moveIndex === -1 ? 'Initial position' : `Move ${point.moveNumber}`}
@@ -604,7 +624,21 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
         </Box>
       );
     },
-    [cardBorder, evaluationLineColor, mutedText, tooltipBg],
+    [cardBorder, chartAxisColor, evaluationLineColor, mutedText, tooltipBg],
+  );
+
+  const handleChartClick = useCallback(
+    (state: { activePayload?: Array<{ payload?: { moveIndex?: number } }> } | undefined) => {
+      if (!state || !state.activePayload || state.activePayload.length === 0) {
+        return;
+      }
+      const point = state.activePayload[0]?.payload;
+      if (!point || typeof point.moveIndex !== 'number' || replaying) {
+        return;
+      }
+      void goToMove(point.moveIndex);
+    },
+    [goToMove, replaying],
   );
 
   const analyzeButtons = useMemo(() => {
@@ -987,13 +1021,16 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
                         <LineChart
                           data={evaluationChartData}
                           margin={{ top: 10, right: 16, bottom: 0, left: -10 }}
+                          onClick={handleChartClick}
                         >
                           <CartesianGrid stroke={chartGridColor} strokeDasharray="4 4" />
                           <XAxis
                             dataKey="moveNumber"
                             stroke={chartAxisColor}
                             tickFormatter={(value) => (value === 0 ? 'Start' : String(value))}
-                            fontSize={12}
+                            tick={{ fill: chartAxisColor, fontSize: 12 }}
+                            tickLine={{ stroke: chartAxisColor, strokeWidth: 1 }}
+                            axisLine={{ stroke: chartAxisColor, strokeWidth: 1 }}
                             tickMargin={8}
                             minTickGap={12}
                           />
@@ -1002,17 +1039,23 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
                             stroke={chartAxisColor}
                             tickFormatter={(value) => value.toFixed(2)}
                             width={48}
-                            fontSize={12}
+                            tick={{ fill: chartAxisColor, fontSize: 12 }}
+                            tickLine={{ stroke: chartAxisColor, strokeWidth: 1 }}
+                            axisLine={{ stroke: chartAxisColor, strokeWidth: 1 }}
                           />
-                          <ReferenceLine y={0} stroke={chartReferenceColor} strokeDasharray="4 4" />
-                          <RechartsTooltip content={renderEvaluationTooltip} />
+                          <ReferenceLine y={0} stroke={chartReferenceColor} strokeWidth={1.5} strokeDasharray="6 6" />
+                          <RechartsTooltip
+                            content={renderEvaluationTooltip}
+                            wrapperStyle={{ outline: 'none' }}
+                          />
                           <Line
                             type="monotone"
                             dataKey="evaluation"
                             stroke={evaluationLineColor}
-                            strokeWidth={2}
-                            dot={{ r: 4, stroke: evaluationLineColor, strokeWidth: 1.5 }}
-                            activeDot={{ r: 6 }}
+                            strokeWidth={2.5}
+                            dot={{ r: 5, stroke: evaluationDotStroke, strokeWidth: 1.5, fill: evaluationLineColor }}
+                            activeDot={{ r: 7, strokeWidth: 0, fill: evaluationLineColor }}
+                            connectNulls
                             isAnimationActive={false}
                           />
                         </LineChart>
