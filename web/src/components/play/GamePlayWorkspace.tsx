@@ -1070,7 +1070,7 @@ function PlayerClockCard({
   const clockColor = active ? accentColor : strongText;
   const alignItems: 'flex-start' | 'flex-end' = alignment;
   const isRightAligned = alignment === 'flex-end';
-  const textAlign = isRightAligned ? 'right' : 'left';
+  const textAlign = 'left';
   const cardPadding = useBreakpointValue({ base: 3, md: 4 });
   const clockFontSize = useBreakpointValue({ base: '2xl', md: '3xl' });
   const labelFontSize = useBreakpointValue({ base: 'xs', md: 'sm' });
@@ -1079,10 +1079,10 @@ function PlayerClockCard({
   const activeReactions = reactions ?? [];
   const layoutDirection = useBreakpointValue<'column' | 'row'>({ base: 'column', md: 'row' }) ?? 'column';
   const isColumnLayout = layoutDirection === 'column';
-  const effectiveTextAlign = isColumnLayout ? 'left' : textAlign;
-  const horizontalJustify = !isColumnLayout && isRightAligned ? 'flex-end' : 'flex-start';
-  const nameJustify = isColumnLayout ? 'flex-start' : horizontalJustify;
-  const clockTextAlign = isColumnLayout ? 'left' : effectiveTextAlign;
+  const effectiveTextAlign = 'left';
+  const horizontalJustify = 'flex-start';
+  const nameJustify = 'flex-start';
+  const clockTextAlign = 'left';
 
   const avatarNode = (
     <Box position="relative" display="inline-flex" minH="60px">
@@ -1189,7 +1189,7 @@ function PlayerClockCard({
           flexWrap="nowrap"
         >
           {avatarNode}
-          <Stack spacing={1} align={alignItems} w="100%">
+          <Stack spacing={1} align="flex-start" w="100%">
             {nameRow}
             {clockNode}
           </Stack>
