@@ -61,19 +61,20 @@ const shouldSuppressNotification = async (matchId) => {
     }
     const visibilityState = typeof client.visibilityState === 'string' ? client.visibilityState : undefined;
     const clientFocused = typeof client.focused === 'boolean' ? client.focused : undefined;
-    const messageVisible = typeof state.visible === 'boolean' ? state.visible : undefined;
+    const messageVisible = state.visible === true;
 
-    if (visibilityState && visibilityState !== 'visible') {
+    const isClientVisible = visibilityState === 'visible' || visibilityState === undefined;
+    const isFocusedOrUnknown = clientFocused !== false;
+
+    if (messageVisible && isFocusedOrUnknown) {
+      return true;
+    }
+
+    if (visibilityState === 'hidden') {
       continue;
     }
-    if (clientFocused === false) {
-      continue;
-    }
-    const effectiveVisible =
-      (visibilityState === 'visible' && clientFocused !== false) ||
-      (clientFocused === true && (visibilityState === undefined || visibilityState === 'visible')) ||
-      (messageVisible === true && visibilityState === undefined && clientFocused === undefined);
-    if (effectiveVisible) {
+
+    if (isClientVisible && isFocusedOrUnknown) {
       return true;
     }
   }

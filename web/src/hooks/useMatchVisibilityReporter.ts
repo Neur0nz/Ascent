@@ -64,7 +64,9 @@ const computeVisibility = (): boolean => {
   }
   if (typeof document.hasFocus === 'function') {
     try {
-      return document.hasFocus();
+      if (document.hasFocus()) {
+        return true;
+      }
     } catch (error) {
       console.warn('useMatchVisibilityReporter: document.hasFocus check failed', error);
     }

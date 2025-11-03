@@ -52,6 +52,7 @@ export interface EmojiReaction {
   playerId: string;
   role: 'creator' | 'opponent' | 'spectator' | null;
   createdAt: number;
+  offset?: number;
 }
 
 export type ConnectionQuality = 'connecting' | 'offline' | 'weak' | 'moderate' | 'strong';
@@ -281,6 +282,7 @@ export function useMatchLobby(profile: PlayerProfile | null, options: UseMatchLo
   const presenceMonitorRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const channelStatusRef = useRef<'INIT' | 'SUBSCRIBED' | 'ERROR' | 'CLOSED'>('INIT');
   const emojiTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const emojiOffsetsRef = useRef<Record<string, number>>({});
   const emojiCounterRef = useRef(0);
 
   const matchId = state.activeMatchId;
@@ -327,6 +329,9 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
       clearTimeout(emojiTimeoutsRef.current[id]!);
       delete emojiTimeoutsRef.current[id];
     }
+    if (emojiOffsetsRef.current[id] !== undefined) {
+      delete emojiOffsetsRef.current[id];
+    }
   }, []);
 
   const pushEmojiReaction = useCallback((reaction: EmojiReaction) => {
@@ -334,11 +339,28 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
     if (currentMatchId && currentMatchId !== reaction.matchId) {
       return;
     }
+
+    if (emojiOffsetsRef.current[reaction.id] == null) {
+      const spread = 40;
+      emojiOffsetsRef.current[reaction.id] = Math.round((Math.random() - 0.5) * 2 * spread);
+    }
+    const reactionWithOffset: EmojiReaction = {
+      ...reaction,
+      offset: emojiOffsetsRef.current[reaction.id],
+    };
+
     setEmojiReactions((prev) => {
       const filtered = prev.filter((item) => item.id !== reaction.id);
-      const next = [...filtered, reaction];
+      const next = [...filtered, reactionWithOffset];
       // Keep recent reactions to avoid overflow
-      return next.slice(-12);
+      const limited = next.slice(-12);
+      const allowedIds = new Set(limited.map((item) => item.id));
+      for (const key of Object.keys(emojiOffsetsRef.current)) {
+        if (!allowedIds.has(key)) {
+          delete emojiOffsetsRef.current[key];
+        }
+      }
+      return limited;
     });
 
     if (emojiTimeoutsRef.current[reaction.id]) {
@@ -356,6 +378,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
       clearTimeout(timeout);
     });
     emojiTimeoutsRef.current = {};
+    emojiOffsetsRef.current = {};
     setEmojiReactions([]);
   }, []);
 
@@ -2031,7 +2054,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         throw new Error('Online play is not enabled.');
       }
       const client = supabase;
-      const currentMatch = state.activeMatch;
+      const currentMatch = state.activeMatch ?? state.lastCompletedMatch;
       if (!client || !profile || !currentMatch) return null;
 
       const hasClock = (currentMatch.clock_initial_seconds ?? 0) > 0;

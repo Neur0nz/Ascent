@@ -376,6 +376,7 @@ function ActiveMatchContent({
   }, [lobbyMatch?.id]);
   const playerRating = myProfile?.rating;
   const opponentRating = opponentProfile?.rating;
+  const [showRatingProjection, setShowRatingProjection] = useState(true);
   const ratingProjection = useMemo(() => {
     if (!lobbyMatch?.rated || !role || typedMoves.length > 0) {
       return null;
@@ -851,19 +852,22 @@ function ActiveMatchContent({
         </Stack>
       </Stack>
 
-      {ratingProjection && (
+      {ratingProjection && showRatingProjection && (
         <Alert status="info" variant="left-accent" borderRadius="md">
           <AlertIcon />
-          <Stack spacing={1} flex="1">
-            <AlertTitle>Rated stakes</AlertTitle>
-            <AlertDescription fontSize="sm">
-              Win: {formatDelta(ratingProjection.winDelta)} ELO · Draw: {formatDelta(ratingProjection.drawDelta)} ELO · Loss:{' '}
-              {formatDelta(ratingProjection.lossDelta)} ELO
-            </AlertDescription>
-            <AlertDescription fontSize="xs" color={mutedText}>
-              You: {ratingProjection.playerRating} · Opponent: {ratingProjection.opponentRating}
-            </AlertDescription>
-          </Stack>
+          <Flex flex="1" align={{ base: 'flex-start', md: 'center' }} gap={3} direction={{ base: 'column', md: 'row' }}>
+            <Stack spacing={1} flex="1">
+              <AlertTitle>Rated stakes</AlertTitle>
+              <AlertDescription fontSize="sm">
+                Win: {formatDelta(ratingProjection.winDelta)} ELO · Draw: {formatDelta(ratingProjection.drawDelta)} ELO · Loss:{' '}
+                {formatDelta(ratingProjection.lossDelta)} ELO
+              </AlertDescription>
+              <AlertDescription fontSize="xs" color={mutedText}>
+                You: {ratingProjection.playerRating} · Opponent: {ratingProjection.opponentRating}
+              </AlertDescription>
+            </Stack>
+            <CloseButton alignSelf={{ base: 'flex-start', md: 'center' }} onClick={() => setShowRatingProjection(false)} />
+          </Flex>
         </Alert>
       )}
 
@@ -954,7 +958,7 @@ function CompletedMatchSummary({
   profileId: string | null;
   onRequestRematch: () => void;
   rematchLoading: boolean;
-  onPrepareAnalyze: () => void;
+  onPrepareAnalyze: (match: LobbyMatch) => void;
 }) {
   const { cardBg, cardBorder, mutedText, accentHeading } = useSurfaceTokens();
 
@@ -1027,7 +1031,7 @@ function CompletedMatchSummary({
             <Button colorScheme="teal" onClick={onRequestRematch} isLoading={rematchLoading} isDisabled={rematchLoading}>
               Request rematch
             </Button>
-            <Button variant="outline" onClick={onPrepareAnalyze}>
+            <Button variant="outline" onClick={() => onPrepareAnalyze(match)}>
               Review in Analyze
             </Button>
           </HStack>
@@ -1096,10 +1100,13 @@ function PlayerClockCard({
       </Avatar>
       <AnimatePresence initial={false}>
         {activeReactions.map((reaction, index) => {
-          const horizontalBase = isColumnLayout ? 0 : 32;
-          const offset = isColumnLayout ? index * 28 : (index - (activeReactions.length - 1) / 2) * 22;
-          const xPosition = isRightAligned ? horizontalBase + offset : horizontalBase + offset;
-          const alignmentSide = isColumnLayout ? 'left' : isRightAligned ? 'right' : 'left';
+          const baseOffset =
+            reaction.offset ??
+            (isColumnLayout ? index * 24 : (index - (activeReactions.length - 1) / 2) * 18);
+          const horizontalShift =
+            !isColumnLayout && isRightAligned ? -baseOffset : baseOffset;
+          const verticalTarget = isColumnLayout ? -60 : -70;
+          const exitTarget = verticalTarget - 10;
 
           return (
             <MotionBox
@@ -1107,11 +1114,15 @@ function PlayerClockCard({
               position="absolute"
               top={isColumnLayout ? undefined : '-12px'}
               bottom={isColumnLayout ? '8px' : undefined}
-              left={alignmentSide === 'left' ? `${xPosition}px` : undefined}
-              right={alignmentSide === 'right' ? `${xPosition}px` : undefined}
-              initial={{ opacity: 0, y: 0, scale: 0.9 }}
-              animate={{ opacity: [0, 1, 1, 0], y: isColumnLayout ? -60 : -70, scale: [1.15, 1, 1, 0.95] }}
-              exit={{ opacity: 0, y: isColumnLayout ? -70 : -80, scale: 0.8 }}
+              left="50%"
+              initial={{ opacity: 0, y: 0, scale: 0.9, x: -50 + horizontalShift }}
+              animate={{
+                opacity: [0, 1, 1, 0],
+                y: verticalTarget,
+                x: -50 + horizontalShift,
+                scale: [1.15, 1, 1, 0.95],
+              }}
+              exit={{ opacity: 0, y: exitTarget, x: -50 + horizontalShift, scale: 0.8 }}
               transition={{ duration: 2.5, times: [0, 0.08, 0.82, 1], ease: 'easeOut' }}
               pointerEvents="none"
               zIndex={3}
@@ -1790,12 +1801,12 @@ function GamePlayWorkspace({
     }
   }, [lobby, setRequestingSummaryRematch, workspaceToast]);
 
-  const handlePrepareAnalyze = useCallback(() => {
-    if (!lobby.activeMatch) {
+  const handlePrepareAnalyze = useCallback((match: LobbyMatch | null) => {
+    if (!match) {
       return;
     }
     try {
-      localStorage.setItem('santorini:lastAnalyzedMatch', lobby.activeMatch.id);
+      localStorage.setItem('santorini:lastAnalyzedMatch', match.id);
     } catch (error) {
       console.warn('Unable to store last analyzed match', error);
     }
@@ -1806,7 +1817,7 @@ function GamePlayWorkspace({
       duration: 3000,
     });
     onNavigateToAnalyze();
-  }, [lobby.activeMatch, onNavigateToAnalyze, workspaceToast]);
+  }, [onNavigateToAnalyze, workspaceToast]);
 
   return (
     <Stack spacing={6} py={{ base: 6, md: 10 }}>
