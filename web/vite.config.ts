@@ -16,12 +16,16 @@ export default defineConfig(({ mode }) => {
         '@theme': path.resolve(__dirname, 'src/theme'),
         '@components': path.resolve(__dirname, 'src/components'),
         '@hooks': path.resolve(__dirname, 'src/hooks'),
-        '@game': path.resolve(__dirname, 'src/game')
+        '@game': path.resolve(__dirname, 'src/game'),
+        '@shared': path.resolve(__dirname, '../shared')
       }
     },
     server: {
       port: Number(env.VITE_DEV_PORT ?? 5174),
-      host: true
+      host: true,
+      fs: {
+        allow: [path.resolve(__dirname), path.resolve(__dirname, '..')]
+      }
     },
     preview: {
       port: Number(env.VITE_PREVIEW_PORT ?? 4173),

@@ -1,6 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { loadScript } from '@/utils/scriptLoader';
 import { Santorini } from '@game/santorini';
 import { MoveSelector } from '@game/moveSelector';
 import { renderCellSvg, type CellState } from '@game/svg';
@@ -14,30 +13,22 @@ import {
 } from '@/lib/santoriniEngine';
 import { TypeScriptMoveSelector } from '@/lib/moveSelectorTS';
 import { useToast } from '@chakra-ui/react';
+import { createSantoriniRuntime } from '@/lib/runtime/santoriniRuntime';
+import {
+  DEFAULT_PRACTICE_DIFFICULTY,
+  DEFAULT_PRACTICE_MODE,
+  type PracticeGameMode,
+  persistPracticeDifficulty as storePracticeDifficulty,
+  persistPracticeMode as storePracticeMode,
+  readPracticeSettings,
+  readPracticeSnapshot,
+  writePracticeSnapshot,
+  clearPracticeSnapshot,
+} from '@/lib/practiceState';
 
 export interface UseSantoriniOptions {
   evaluationEnabled?: boolean;
 }
-
-const PY_FILES: Array<[string, string]> = [
-  [`${import.meta.env.BASE_URL || '/'}santorini/Game.py`, 'Game.py'],
-  [`${import.meta.env.BASE_URL || '/'}santorini/proxy.py`, 'proxy.py'],
-  [`${import.meta.env.BASE_URL || '/'}santorini/MCTS.py`, 'MCTS.py'],
-  [`${import.meta.env.BASE_URL || '/'}santorini/SantoriniDisplay.py`, 'SantoriniDisplay.py'],
-  [`${import.meta.env.BASE_URL || '/'}santorini/SantoriniGame.py`, 'SantoriniGame.py'],
-  [`${import.meta.env.BASE_URL || '/'}santorini/SantoriniLogicNumba.py`, 'SantoriniLogicNumba.py'],
-  [`${import.meta.env.BASE_URL || '/'}santorini/SantoriniConstants.py`, 'SantoriniConstants.py'],
-];
-
-const MODEL_FILENAME = `${import.meta.env.BASE_URL || '/'}santorini/model_no_god.onnx`;
-const SIZE_CB = [1, 25, 3];
-const ONNX_OUTPUT_SIZE = 162;
-
-let onnxSessionPromise: Promise<any> | null = null;
-
-const PRACTICE_STATE_KEY = 'santorini:practiceState:v2'; // Updated key for TypeScript-based state
-const PRACTICE_MODE_KEY = 'santorini:practiceGameMode';
-const PRACTICE_DIFFICULTY_KEY = 'santorini:practiceDifficulty';
 
 const COLUMN_LABELS = ['A', 'B', 'C', 'D', 'E'] as const;
 
@@ -147,10 +138,7 @@ export type ButtonsState = {
   setupTurn: number;
 };
 
-export type PracticeGameMode = 'P0' | 'P1' | 'Human' | 'AI';
-
-const DEFAULT_PRACTICE_MODE: PracticeGameMode = 'P0';
-const DEFAULT_PRACTICE_DIFFICULTY = 50;
+export type { PracticeGameMode } from '@/lib/practiceState';
 
 type UiPlacementContext =
   | { phase: 'placement'; player: 0 | 1; workerId: 1 | 2 | -1 | -2 }
@@ -392,22 +380,16 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     [],
   );
   const persistPracticeMode = useCallback((mode: PracticeGameMode) => {
-    if (typeof window === 'undefined') {
-      return;
-    }
     try {
-      window.localStorage.setItem(PRACTICE_MODE_KEY, mode);
+      storePracticeMode(mode);
     } catch (error) {
       console.error('Failed to persist practice mode:', error);
     }
   }, []);
 
   const persistPracticeDifficulty = useCallback((value: number) => {
-    if (typeof window === 'undefined') {
-      return;
-    }
     try {
-      window.localStorage.setItem(PRACTICE_DIFFICULTY_KEY, String(value));
+      storePracticeDifficulty(value);
     } catch (error) {
       console.error('Failed to persist practice difficulty:', error);
     }
@@ -552,12 +534,8 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
 
   // Persist TypeScript engine state (single source of truth)
   const persistPracticeState = useCallback(async () => {
-    if (typeof window === 'undefined') {
-      return;
-    }
     try {
-      const snapshot = engineRef.current.snapshot;
-      window.localStorage.setItem(PRACTICE_STATE_KEY, JSON.stringify(snapshot));
+      writePracticeSnapshot(engineRef.current.snapshot);
     } catch (error) {
       console.error('Failed to persist practice state:', error);
     }
@@ -565,42 +543,16 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
 
   const restorePracticeSettings = useCallback((game: Santorini) => {
     const validModes: PracticeGameMode[] = ['P0', 'P1', 'Human', 'AI'];
-    let modeToApply: PracticeGameMode = DEFAULT_PRACTICE_MODE;
-
-    if (typeof game.gameMode === 'string' && validModes.includes(game.gameMode as PracticeGameMode)) {
-      modeToApply = game.gameMode as PracticeGameMode;
-    }
-
-    if (typeof window !== 'undefined') {
-      try {
-        const storedMode = window.localStorage.getItem(PRACTICE_MODE_KEY) as PracticeGameMode | null;
-        if (storedMode && validModes.includes(storedMode)) {
-          modeToApply = storedMode;
-        }
-      } catch (error) {
-        console.error('Failed to read practice mode from storage:', error);
-      }
-    }
+    const stored = readPracticeSettings();
+    const modeToApply =
+      typeof game.gameMode === 'string' && validModes.includes(game.gameMode as PracticeGameMode)
+        ? (game.gameMode as PracticeGameMode)
+        : stored.mode ?? DEFAULT_PRACTICE_MODE;
 
     game.gameMode = modeToApply;
     setPracticeMode(modeToApply);
 
-    let difficultyToApply = DEFAULT_PRACTICE_DIFFICULTY;
-    if (typeof window !== 'undefined') {
-      try {
-        const storedDifficulty = window.localStorage.getItem(PRACTICE_DIFFICULTY_KEY);
-        if (storedDifficulty !== null) {
-          const parsed = Number(storedDifficulty);
-          if (Number.isFinite(parsed) && parsed > 0) {
-            difficultyToApply = parsed;
-          } else {
-            window.localStorage.removeItem(PRACTICE_DIFFICULTY_KEY);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to read practice difficulty from storage:', error);
-      }
-    }
+    const difficultyToApply = stored.difficulty ?? DEFAULT_PRACTICE_DIFFICULTY;
 
     try {
       game.change_difficulty(difficultyToApply);
@@ -612,32 +564,19 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
 
   // Restore TypeScript engine state from localStorage
   const restorePracticeState = useCallback(async () => {
-    if (typeof window === 'undefined') {
+    const snapshot = readPracticeSnapshot();
+    if (!snapshot) {
       return false;
     }
-    const stored = window.localStorage.getItem(PRACTICE_STATE_KEY);
-    if (!stored) {
-      return false;
-    }
+
     try {
-      const snapshot = JSON.parse(stored) as SantoriniSnapshot;
-      if (!snapshot || snapshot.version !== 1) {
-        console.warn('Invalid or unsupported practice state version');
-        window.localStorage.removeItem(PRACTICE_STATE_KEY);
-        return false;
-      }
-      
-      // Restore TypeScript engine
-      engineRef.current = SantoriniEngine.fromSnapshot(snapshot);
+      engineRef.current = SantoriniEngine.fromSnapshot(snapshot as SantoriniSnapshot);
       moveSelectorRef.current.reset();
-      
-      // Sync to Python engine for AI/evaluation
       await syncPythonFromTypeScript();
-      
       return true;
     } catch (error) {
       console.error('Failed to restore practice state:', error);
-      window.localStorage.removeItem(PRACTICE_STATE_KEY);
+      clearPracticeSnapshot();
       return false;
     }
   }, []);
@@ -689,142 +628,16 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     }
   }, []);
 
-  const initOnnxSession = useCallback(async () => {
-    if (!window.ort) {
-      throw new Error('ONNX runtime not available');
-    }
-
-    if (!onnxSessionPromise) {
-      onnxSessionPromise = (async () => {
-        try {
-          // Load the model file as a binary blob to avoid content-type issues
-          console.log('Loading ONNX model from:', MODEL_FILENAME);
-          const response = await fetch(MODEL_FILENAME);
-          if (!response.ok) {
-            throw new Error(`Failed to load model: ${response.status} ${response.statusText}`);
-          }
-          console.log('Model response headers:', Object.fromEntries(response.headers.entries()));
-          const modelBuffer = await response.arrayBuffer();
-          console.log('Model buffer size:', modelBuffer.byteLength);
-
-          // Try creating session with buffer
-          let session;
-          try {
-            // Configure ONNX runtime for single-threaded mode to avoid SharedArrayBuffer issues
-            const sessionOptions = {
-              executionProviders: ['wasm'],
-              graphOptimizationLevel: 'all',
-              enableCpuMemArena: false,
-              enableMemPattern: false,
-              enableProfiling: false,
-              logLevel: 'warning'
-            };
-
-            session = await window.ort.InferenceSession.create(modelBuffer, sessionOptions);
-            console.log('ONNX session created successfully with buffer');
-          } catch (bufferError) {
-            console.warn('Failed to create session with buffer, trying URL approach:', bufferError);
-            // Fallback: try loading directly from URL with same options
-            const sessionOptions = {
-              executionProviders: ['wasm'],
-              graphOptimizationLevel: 'all',
-              enableCpuMemArena: false,
-              enableMemPattern: false,
-              enableProfiling: false,
-              logLevel: 'warning'
-            };
-            session = await window.ort.InferenceSession.create(MODEL_FILENAME, sessionOptions);
-            console.log('ONNX session created successfully with URL');
-          }
-          (window as any).onnxSession = session;
-          (window as any).predict = async (canonicalBoard: any, valids: any) => {
-            const boardArray = Array.from(canonicalBoard) as number[];
-            const validsArray = Array.from(valids) as number[];
-            const tensorBoard = new window.ort.Tensor('float32', Float32Array.from(boardArray), SIZE_CB);
-            const tensorValid = new window.ort.Tensor('bool', new Uint8Array(validsArray), [1, ONNX_OUTPUT_SIZE]);
-            const results = await session.run({
-              board: tensorBoard,
-              valid_actions: tensorValid,
-            });
-            return {
-              pi: Array.from(results.pi.data),
-              v: Array.from(results.v.data),
-            };
-          };
-          return session;
-        } catch (error) {
-          onnxSessionPromise = null;
-          console.error('Failed to initialize ONNX session:', error);
-          throw error;
-        }
-      })();
-    }
-
-    await onnxSessionPromise;
-  }, []);
-
   const loadPyodideRuntime = useCallback(async () => {
     try {
-      const pyodideUrl = import.meta.env.VITE_PYODIDE_URL as string;
-      const onnxUrl = import.meta.env.VITE_ONNX_URL as string | undefined;
-
-      if (!pyodideUrl) {
-        throw new Error('Missing required environment variable: VITE_PYODIDE_URL');
-      }
-
-      const scriptPromises: Promise<unknown>[] = [loadScript(pyodideUrl)];
-      if (evaluationEnabled) {
-        if (!onnxUrl) {
-          throw new Error('Missing required environment variable: VITE_ONNX_URL');
-        }
-        scriptPromises.push(loadScript(onnxUrl));
-      }
-
-      await Promise.all(scriptPromises);
-      
-      // Wait a bit for the script to initialize
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      const loadPyodideFn = window.loadPyodide;
-      if (!loadPyodideFn) {
-        throw new Error('Pyodide runtime missing - failed to load Pyodide script');
-      }
-
-      const onnxSessionInitPromise = evaluationEnabled ? initOnnxSession() : Promise.resolve();
-
-      const fileFetchPromise = Promise.all(
-        PY_FILES.map(async ([input, output]) => {
-          const response = await fetch(input);
-          if (!response.ok) {
-            throw new Error(`Failed to load Python file: ${input}`);
-          }
-          const data = await response.arrayBuffer();
-          return { output, data: new Uint8Array(data) };
-        })
-      );
-
-      const pyodidePromise = (async () => {
-        const instance = await loadPyodideFn({ fullStdLib: false });
-        await instance.loadPackage('numpy');
-        return instance;
-      })();
-
-      const [pyodide, fetchedFiles] = await Promise.all([pyodidePromise, fileFetchPromise]);
-
-      fetchedFiles.forEach(({ output, data }) => {
-        pyodide.FS.writeFile(output, data);
-      });
-
-      const game = new Santorini();
-      game.setBackend(pyodide);
+      const { game, selector } = await createSantoriniRuntime({ evaluationEnabled });
       gameRef.current = game;
-      selectorRef.current = new MoveSelector(game);
-      await onnxSessionInitPromise;
+      selectorRef.current = selector;
     } catch (error) {
-      console.error('Failed to load Pyodide runtime:', error);
+      console.error('Failed to load Santorini runtime:', error);
       throw error;
     }
-  }, [evaluationEnabled, initOnnxSession]);
+  }, [evaluationEnabled]);
 
   const readBoard = useCallback(() => {
     const game = gameRef.current;

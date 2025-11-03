@@ -10,7 +10,8 @@
       "@theme": ["src/theme"],
       "@components/*": ["src/components/*"],
       "@hooks/*": ["src/hooks/*"],
-      "@game/*": ["src/game/*"]
+      "@game/*": ["src/game/*"],
+      "@shared/*": ["../shared/*"]
     },
     "resolveJsonModule": true,
     "isolatedModules": true,
@@ -21,6 +22,6 @@
     "noEmit": true,
     "types": ["vite/client"]
   },
-  "include": ["src"],
+  "include": ["src", "../shared"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
