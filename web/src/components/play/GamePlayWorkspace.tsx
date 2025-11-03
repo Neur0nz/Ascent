@@ -1100,11 +1100,16 @@ function PlayerClockCard({
       </Avatar>
       <AnimatePresence initial={false}>
         {activeReactions.map((reaction, index) => {
-          const baseOffset =
-            reaction.offset ??
-            (isColumnLayout ? index * 24 : (index - (activeReactions.length - 1) / 2) * 18);
-          const horizontalShift =
-            !isColumnLayout && isRightAligned ? -baseOffset : baseOffset;
+          const normalized =
+            typeof reaction.offset === 'number'
+              ? Math.max(-0.6, Math.min(0.6, reaction.offset))
+              : Math.max(
+                  -0.6,
+                  Math.min(0.6, (index / Math.max(activeReactions.length - 1, 1)) * 1.2 - 0.6),
+                );
+          const spread = isColumnLayout ? 14 : 24;
+          const offsetPx = normalized * spread;
+          const horizontalShift = !isColumnLayout && isRightAligned ? -offsetPx : offsetPx;
           const verticalTarget = isColumnLayout ? -60 : -70;
           const exitTarget = verticalTarget - 10;
 

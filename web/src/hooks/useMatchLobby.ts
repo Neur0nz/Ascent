@@ -341,8 +341,8 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
     }
 
     if (emojiOffsetsRef.current[reaction.id] == null) {
-      const spread = 40;
-      emojiOffsetsRef.current[reaction.id] = Math.round((Math.random() - 0.5) * 2 * spread);
+      const normalized = Math.max(-0.8, Math.min(0.8, (Math.random() * 2 - 1)));
+      emojiOffsetsRef.current[reaction.id] = normalized;
     }
     const reactionWithOffset: EmojiReaction = {
       ...reaction,
