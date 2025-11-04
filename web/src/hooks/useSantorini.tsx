@@ -25,103 +25,25 @@ import {
   writePracticeSnapshot,
   clearPracticeSnapshot,
 } from '@/lib/practiceState';
+import { SantoriniPythonBridge } from '@/lib/pythonBridge/bridge';
+import {
+  applyActionToBoard,
+  formatCoordinate,
+  normalizeBoardPayload,
+  nextPlacementWorkerId,
+  findWorkerPosition,
+} from '@/lib/practice/practiceEngine';
+import { summarizeHistoryEntries, type MoveSummary } from '@/lib/practice/history';
+import type { PracticeTopMove } from '@/lib/practice/types';
+import {
+  normalizeTopMoves as normalizePracticeTopMoves,
+  toFiniteNumber as toFinitePracticeNumber,
+} from '@/lib/practice/valueUtils';
 
 export interface UseSantoriniOptions {
   evaluationEnabled?: boolean;
 }
 
-const COLUMN_LABELS = ['A', 'B', 'C', 'D', 'E'] as const;
-
-const inBounds = (y: number, x: number): boolean =>
-  y >= 0 && y < GAME_CONSTANTS.BOARD_SIZE && x >= 0 && x < GAME_CONSTANTS.BOARD_SIZE;
-
-const formatCoordinate = (position?: [number, number] | null): string => {
-  if (!position) return '—';
-  const [y, x] = position;
-  if (!inBounds(y, x)) return '—';
-  return `${COLUMN_LABELS[x]}${y + 1}`;
-};
-
-const normalizeBoardPayload = (payload: unknown): number[][][] | null => {
-  if (!Array.isArray(payload) || payload.length !== GAME_CONSTANTS.BOARD_SIZE) {
-    return null;
-  }
-  return payload.map((row) => {
-    if (!Array.isArray(row) || row.length !== GAME_CONSTANTS.BOARD_SIZE) {
-      return Array.from({ length: GAME_CONSTANTS.BOARD_SIZE }, () => [0, 0, 0]);
-    }
-    return row.map((cell) => {
-      if (Array.isArray(cell) && cell.length >= 2) {
-        const worker = Number(cell[0]) || 0;
-        const level = Number(cell[1]) || 0;
-        const meta = Number(cell[2]) || 0;
-        return [worker, level, meta];
-      }
-      return [0, 0, 0];
-    });
-  });
-};
-
-const cloneBoardGrid = (board: number[][][]): number[][][] =>
-  board.map((row) => row.map((cell) => cell.slice() as number[]));
-
-const findWorkerPosition = (board: number[][][], workerId: number): [number, number] | null => {
-  for (let y = 0; y < GAME_CONSTANTS.BOARD_SIZE; y += 1) {
-    for (let x = 0; x < GAME_CONSTANTS.BOARD_SIZE; x += 1) {
-      if (board[y][x][0] === workerId) {
-        return [y, x];
-      }
-    }
-  }
-  return null;
-};
-
-const nextPlacementWorkerId = (player: number, board: number[][][]): number => {
-  const ids = player === 0 ? [1, 2] : [-1, -2];
-  for (const id of ids) {
-    if (!board.some((row) => row.some((cell) => cell[0] === id))) {
-      return id;
-    }
-  }
-  return ids[0];
-};
-
-const applyActionToBoard = (board: number[][][] | null, player: number, action: number | null): number[][][] | null => {
-  if (!board) return null;
-  const next = cloneBoardGrid(board);
-  if (!Number.isInteger(action) || action === null) {
-    return next;
-  }
-  if (action >= 0 && action < GAME_CONSTANTS.BOARD_SIZE * GAME_CONSTANTS.BOARD_SIZE) {
-    const targetY = Math.floor(action / GAME_CONSTANTS.BOARD_SIZE);
-    const targetX = action % GAME_CONSTANTS.BOARD_SIZE;
-    if (inBounds(targetY, targetX)) {
-      const workerId = nextPlacementWorkerId(player, board);
-      next[targetY][targetX][0] = workerId;
-    }
-    return next;
-  }
-  const [workerIndex, _power, moveDirection, buildDirection] = SANTORINI_CONSTANTS.decodeAction(action);
-  const workerId = (workerIndex + 1) * (player === 0 ? 1 : -1);
-  const origin = findWorkerPosition(next, workerId);
-  if (!origin) {
-    return next;
-  }
-  next[origin[0]][origin[1]][0] = 0;
-  const moveDelta = SANTORINI_CONSTANTS.DIRECTIONS[moveDirection];
-  const destination: [number, number] = [origin[0] + moveDelta[0], origin[1] + moveDelta[1]];
-  if (inBounds(destination[0], destination[1])) {
-    next[destination[0]][destination[1]][0] = workerId;
-  }
-  if (buildDirection !== SANTORINI_CONSTANTS.NO_BUILD && inBounds(destination[0], destination[1])) {
-    const buildDelta = SANTORINI_CONSTANTS.DIRECTIONS[buildDirection];
-    const buildTarget: [number, number] = [destination[0] + buildDelta[0], destination[1] + buildDelta[1]];
-    if (inBounds(buildTarget[0], buildTarget[1])) {
-      next[buildTarget[0]][buildTarget[1]][1] = Math.min(4, next[buildTarget[0]][buildTarget[1]][1] + 1);
-    }
-  }
-  return next;
-};
 
 export type BoardCell = CellState & {
   svg: string;
@@ -150,25 +72,8 @@ export type EvaluationState = {
   label: string;
 };
 
-export type MoveSummary = {
-  description: string;
-  player: number;
-  action: number | null;
-  phase: 'placement' | 'move' | 'unknown';
-  from?: [number, number];
-  to?: [number, number];
-  build?: [number, number] | null;
-  boardBefore?: number[][][] | null;
-  boardAfter?: number[][][] | null;
-};
-
-export type TopMove = {
-  action: number;
-  prob: number;
-  text: string;
-  eval?: number;
-  delta?: number;
-};
+export type TopMove = PracticeTopMove;
+export type { MoveSummary } from '@/lib/practice/history';
 
 export type ApplyMoveOptions = {
   triggerAi?: boolean;
@@ -255,27 +160,7 @@ const toPlainValue = (value: unknown): unknown => {
   return value;
 };
 
-const toFiniteNumber = (value: unknown): number | null => {
-  const plain = toPlainValue(value);
-  if (typeof plain === 'number') {
-    return Number.isFinite(plain) ? plain : null;
-  }
-  if (typeof plain === 'bigint') {
-    return Number(plain);
-  }
-  if (typeof plain === 'string') {
-    const cleaned = plain.trim().replace(/,/g, '.').replace(/[^0-9.+-eE]/g, '');
-    if (!cleaned) {
-      return null;
-    }
-    const parsed = Number(cleaned);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  if (plain !== value) {
-    return toFiniteNumber(plain);
-  }
-  return null;
-};
+const toFiniteNumber = (value: unknown): number | null => toFinitePracticeNumber(value);
 
 const yieldToMainThread = () =>
   new Promise<void>((resolve) => {
@@ -286,63 +171,7 @@ const yieldToMainThread = () =>
     setTimeout(() => resolve(), 0);
   });
 
-const normalizeTopMoves = (rawMoves: unknown): TopMove[] => {
-  if (!Array.isArray(rawMoves)) {
-    return [];
-  }
-
-  const stripAnsi = (value: string) => value.replace(/\u001b\[[0-9;]*m/g, '').trim();
-
-  return rawMoves.map((entry) => {
-    const move = toPlainValue(entry) as Record<string, unknown>;
-
-    const actionValue = toFiniteNumber(move?.action);
-    const rawProb = move?.prob;
-    const probValue = toFiniteNumber(rawProb);
-    const textValue = toPlainValue(move?.text);
-
-    const normalized: TopMove = {
-      action: actionValue != null ? Math.trunc(actionValue) : -1,
-      prob:
-        probValue != null
-          ? (() => {
-              const base = (() => {
-                if (typeof rawProb === 'string' && rawProb.includes('%')) {
-                  return probValue / 100;
-                }
-                if (probValue > 1) {
-                  return probValue / 100;
-                }
-                return probValue;
-              })();
-              return Math.min(Math.max(base, 0), 1);
-            })()
-          : 0,
-      text:
-        typeof textValue === 'string'
-          ? stripAnsi(textValue)
-          : textValue != null
-          ? stripAnsi(String(toPlainValue(textValue)))
-          : '',
-    };
-
-    if (move.eval !== undefined) {
-      const evalValue = toFiniteNumber(move.eval);
-      if (evalValue != null) {
-        normalized.eval = evalValue;
-      }
-    }
-
-    if (move.delta !== undefined) {
-      const deltaValue = toFiniteNumber(move.delta);
-      if (deltaValue != null) {
-        normalized.delta = deltaValue;
-      }
-    }
-
-    return normalized;
-  });
-};
+const normalizeTopMoves = (rawMoves: unknown): TopMove[] => normalizePracticeTopMoves(rawMoves);
 
 function useSantoriniInternal(options: UseSantoriniOptions = {}) {
   const { evaluationEnabled = true } = options;
@@ -431,23 +260,23 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
 
   const updateSelectable = useCallback(() => {
     const selector = selectorRef.current;
-    const game = gameRef.current;
-    if (!selector || !game || !game.py) {
+    if (!selector) {
       return;
     }
 
     selector.selectRelevantCells();
     const placement = getPlacementContext();
     if (buttonsRef.current.setupMode || placement.phase === 'placement') {
+      const snapshot = engineRef.current.snapshot;
       const cells = Array.from({ length: GAME_CONSTANTS.BOARD_SIZE }, (_, y) =>
-        Array.from({ length: GAME_CONSTANTS.BOARD_SIZE }, (_, x) => game.py._read_worker(y, x) === 0),
+        Array.from({ length: GAME_CONSTANTS.BOARD_SIZE }, (_, x) => snapshot.board[y][x][0] === 0),
       );
       setSelectable(cells);
       return;
     }
 
     setSelectable(selector.cells.map((row) => row.slice()));
-  }, []);
+  }, [getPlacementContext]);
 
   // Helper to sync TypeScript engine state to UI and Python engine
   const syncEngineToUi = useCallback(() => {
@@ -584,48 +413,21 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
   // Sync Python engine FROM TypeScript engine (for AI and evaluation)
   const syncPythonFromTypeScript = useCallback(async () => {
     const game = gameRef.current;
-    if (!game?.py) {
-      console.error('🔄 Cannot sync: missing game.py');
+    const bridge = pythonBridgeRef.current;
+    if (!game || !bridge) {
+      console.error('🔄 Cannot sync: missing Python runtime');
       return;
     }
-    
-    // Check if import_practice_state exists
-    if (typeof game.py.import_practice_state !== 'function') {
-      console.error('🔄 import_practice_state not available on game.py');
-      console.log('🔄 Available methods:', Object.getOwnPropertyNames(game.py).filter(k => !k.startsWith('_')));
+    const snapshot = engineRef.current.snapshot;
+    const result = bridge.importPracticeState(snapshot);
+    if (!result) {
+      console.error('🔄 import_practice_state unavailable');
       return;
     }
-    
-    try {
-      const snapshot = engineRef.current.snapshot;
-      console.log('🔄 Syncing TS → Python. Player:', snapshot.player);
-      const resultProxy = game.py.import_practice_state(snapshot);
-      if (!resultProxy) {
-        console.error('🔄 import_practice_state returned null!');
-        return;
-      }
-      const result =
-        typeof resultProxy.toJs === 'function'
-          ? resultProxy.toJs({ create_proxies: false })
-          : resultProxy;
-      resultProxy.destroy?.();
-      console.log('🔄 Sync complete. Python now at player:', result[0]);
-      if (Array.isArray(result) && result.length >= 3) {
-        const [nextPlayer, gameEndedRaw, validMovesRaw] = result as [
-          number,
-          ArrayLike<number> | number[],
-          ArrayLike<boolean> | boolean[],
-        ];
-        game.nextPlayer = typeof nextPlayer === 'number' ? nextPlayer : 0;
-        const endArray = Array.from(gameEndedRaw ?? [], (value) => Number(value));
-        game.gameEnded = (endArray.length === 2 ? endArray : [0, 0]) as [number, number];
-        const validArray = Array.from(validMovesRaw ?? [], (value) => Boolean(value));
-        game.validMoves =
-          validArray.length > 0 ? validArray : Array(GAME_CONSTANTS.TOTAL_MOVES).fill(false);
-      }
-    } catch (error) {
-      console.error('Failed to sync Python from TypeScript:', error);
-    }
+    game.nextPlayer = result.nextPlayer;
+    game.gameEnded = result.gameEnded;
+    game.validMoves =
+      result.validMoves.length > 0 ? result.validMoves : Array(GAME_CONSTANTS.TOTAL_MOVES).fill(false);
   }, []);
 
   const loadPyodideRuntime = useCallback(async () => {
@@ -633,23 +435,25 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       const { game, selector } = await createSantoriniRuntime({ evaluationEnabled });
       gameRef.current = game;
       selectorRef.current = selector;
+      pythonBridgeRef.current = new SantoriniPythonBridge(game);
     } catch (error) {
       console.error('Failed to load Santorini runtime:', error);
       throw error;
     }
   }, [evaluationEnabled]);
 
+  const pythonBridgeRef = useRef<SantoriniPythonBridge | null>(null);
+
   const readBoard = useCallback(() => {
     const game = gameRef.current;
-    if (!game || !game.py) return;
+    const bridge = pythonBridgeRef.current;
+    if (!game || !game.py || !bridge) return;
     const nextBoard: BoardCell[][] = Array.from({ length: GAME_CONSTANTS.BOARD_SIZE }, (_, y) =>
       Array.from({ length: GAME_CONSTANTS.BOARD_SIZE }, (_, x) => {
-        const cell: CellState = {
-          levels: game.py._read_level(y, x),
-          worker: game.py._read_worker(y, x),
-        };
+        const cell = bridge.readBoardCell(y, x);
+        const boardCell: CellState = { worker: cell.worker, levels: cell.levels };
         const highlight = game.has_changed_on_last_move([y, x]);
-        return { ...cell, svg: renderCellSvg(cell), highlight };
+        return { ...boardCell, svg: renderCellSvg(boardCell), highlight };
       }),
     );
     setBoard(nextBoard);
@@ -697,84 +501,10 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
   }, [getPlacementContext, updateButtonsState]);
 
   const refreshHistory = useCallback(() => {
-    const game = gameRef.current;
-    if (!game || !game.py || !game.py.get_history_snapshot) return;
-    const snapshot = game.py.get_history_snapshot().toJs({ create_proxies: false }) as Array<Record<string, unknown>>;
-    const summaries: MoveSummary[] = snapshot.map((entry) => {
-      const player = typeof entry.player === 'number' ? entry.player : Number(entry.player) || 0;
-      const actionValue = entry.action === null || entry.action === undefined ? null : Number(entry.action);
-      const boardBefore = normalizeBoardPayload((entry as Record<string, unknown>).board);
-      const boardAfter = applyActionToBoard(boardBefore, player, actionValue);
-      const fallbackDescription = typeof entry.description === 'string' ? entry.description : '';
-
-      if (actionValue === null || Number.isNaN(actionValue)) {
-        return {
-          description: fallbackDescription || 'Initial position',
-          player,
-          action: null,
-          phase: 'unknown',
-          boardBefore,
-          boardAfter,
-        };
-      }
-
-      if (actionValue >= 0 && actionValue < GAME_CONSTANTS.BOARD_SIZE * GAME_CONSTANTS.BOARD_SIZE) {
-        const targetY = Math.floor(actionValue / GAME_CONSTANTS.BOARD_SIZE);
-        const targetX = actionValue % GAME_CONSTANTS.BOARD_SIZE;
-        const workerId = boardBefore ? nextPlacementWorkerId(player, boardBefore) : player === 0 ? 1 : -1;
-        const workerLabel = workerId === 1 || workerId === -1 ? 'Worker 1' : 'Worker 2';
-        const playerLabel = player === 0 ? 'Green' : 'Red';
-        const description = `${playerLabel} ${workerLabel} placed on ${formatCoordinate([targetY, targetX])}.`;
-        return {
-          description,
-          player,
-          action: actionValue,
-          phase: 'placement',
-          from: undefined,
-          to: [targetY, targetX],
-          build: null,
-          boardBefore,
-          boardAfter,
-        };
-      }
-
-      const [workerIndex, _power, moveDirection, buildDirection] = SANTORINI_CONSTANTS.decodeAction(actionValue);
-      const workerId = (workerIndex + 1) * (player === 0 ? 1 : -1);
-      const origin = boardBefore ? findWorkerPosition(boardBefore, workerId) ?? undefined : undefined;
-      const moveDelta = SANTORINI_CONSTANTS.DIRECTIONS[moveDirection];
-      const destination = origin ? ([origin[0] + moveDelta[0], origin[1] + moveDelta[1]] as [number, number]) : undefined;
-      const build =
-        buildDirection === SANTORINI_CONSTANTS.NO_BUILD || !destination
-          ? null
-          : ([destination[0] + SANTORINI_CONSTANTS.DIRECTIONS[buildDirection][0],
-              destination[1] + SANTORINI_CONSTANTS.DIRECTIONS[buildDirection][1]] as [number, number]);
-      const workerLabel = workerIndex === 0 ? 'Worker 1' : 'Worker 2';
-      const playerLabel = player === 0 ? 'Green' : 'Red';
-      const fromLabel = formatCoordinate(origin);
-      const toLabel = formatCoordinate(destination);
-      const buildLabel = build ? formatCoordinate(build) : null;
-      const descriptionParts = [`${playerLabel} ${workerLabel} moved`];
-      if (fromLabel !== '—') {
-        descriptionParts.push(`from ${fromLabel}`);
-      }
-      descriptionParts.push(`to ${toLabel}`);
-      if (buildLabel && buildLabel !== '—') {
-        descriptionParts.push(`and built ${buildLabel}`);
-      }
-      const description = descriptionParts.join(' ') + '.';
-      return {
-        description,
-        player,
-        action: actionValue,
-        phase: 'move',
-        from: origin,
-        to: destination,
-        build,
-        boardBefore,
-        boardAfter,
-      };
-    });
-    setHistory(summaries);
+    const bridge = pythonBridgeRef.current;
+    if (!bridge) return;
+    const snapshot = bridge.getHistorySnapshot() as Array<Record<string, unknown>>;
+    setHistory(summarizeHistoryEntries(snapshot));
   }, []);
 
   const refreshEvaluation = useCallback(async (): Promise<EvaluationState | null> => {
@@ -809,7 +539,8 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       return balancedEvaluation;
     }
 
-    if (!game || !game.py) {
+    const bridge = pythonBridgeRef.current;
+    if (!game || !bridge) {
       return null;
     }
 
@@ -818,50 +549,29 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     let nextTopMoves: TopMove[] | undefined;
 
     try {
-      // Always calculate evaluation first to ensure last_probs is populated
-      if (game.py.calculate_eval_for_current_position) {
-        const resultProxy = await game.py.calculate_eval_for_current_position(
-          evaluationDepthOverride ?? undefined,
-        );
-        const result = Array.isArray(resultProxy)
-          ? resultProxy
-          : resultProxy.toJs({ create_proxies: false });
-        if (Array.isArray(result) && result.length >= 2) {
-          const value = Number(result[0]);
+      const evalResponse = await bridge.calculateEvaluation(evaluationDepthOverride ?? undefined);
+      if (evalResponse?.value?.length) {
+        const value = Number(evalResponse.value[0]);
+        if (Number.isFinite(value)) {
           const label = value >= 0 ? `+${value.toFixed(3)}` : value.toFixed(3);
           const advantage = value > 0 ? 'Player 0 ahead' : value < 0 ? 'Player 1 ahead' : 'Balanced';
           nextEvaluation = { value, label, advantage };
         }
       }
 
-      // Now get the moves (last_probs should be populated from the evaluation above)
-      if (game.py.list_current_moves) {
-        const movesProxy = game.py.list_current_moves(10);
-        const moves = movesProxy.toJs({ create_proxies: false });
-        const normalizedMoves = normalizeTopMoves(moves);
+      const baseMoves = await bridge.listCurrentMoves(10);
+      let normalizedMoves = normalizeTopMoves(baseMoves);
 
-        // If no moves or all moves have 0 probability, try the advanced version
-        if (normalizedMoves.length === 0 || normalizedMoves.every((move) => move.prob === 0)) {
-          console.log('No moves or zero probabilities from list_current_moves, trying list_current_moves_with_adv...');
-          if (game.py.list_current_moves_with_adv) {
-            try {
-              const advMovesProxy = await game.py.list_current_moves_with_adv(
-                6,
-                optionsDepthOverride ?? undefined,
-              );
-              const advMoves = advMovesProxy.toJs({ create_proxies: false });
-              nextTopMoves = normalizeTopMoves(advMoves);
-            } catch (advError) {
-              console.error('Failed to get advanced moves:', advError);
-              nextTopMoves = normalizedMoves;
-            }
-          } else {
-            nextTopMoves = normalizedMoves;
-          }
-        } else {
-          nextTopMoves = normalizedMoves;
+      if (normalizedMoves.length === 0 || normalizedMoves.every((move) => move.prob === 0)) {
+        console.log('No moves or zero probabilities from list_current_moves, trying list_current_moves_with_adv...');
+        try {
+          const advMoves = await bridge.listMovesWithAdv(6, optionsDepthOverride ?? undefined);
+          normalizedMoves = normalizeTopMoves(advMoves);
+        } catch (advError) {
+          console.error('Failed to get advanced moves:', advError);
         }
       }
+      nextTopMoves = normalizedMoves;
 
       if (requestId === evaluationRequestIdRef.current) {
         if (nextEvaluation !== undefined) {
@@ -890,12 +600,14 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       setTopMoves([]);
       return;
     }
-    const game = gameRef.current;
-    if (!game || !game.py || !game.py.list_current_moves_with_adv) return;
+    const bridge = pythonBridgeRef.current;
+    if (!bridge) {
+      console.warn('calculateOptions skipped: Python bridge unavailable');
+      return;
+    }
     setCalcOptionsBusy(true);
     try {
-      const resultProxy = await game.py.list_current_moves_with_adv(6, optionsDepthOverride ?? undefined);
-      const result = resultProxy.toJs({ create_proxies: false });
+      const result = await bridge.listMovesWithAdv(6, optionsDepthOverride ?? undefined);
       setTopMoves(normalizeTopMoves(result));
     } catch (error) {
       console.error('Failed to calculate options:', error);
@@ -1045,8 +757,15 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     selector.selectNone();
     
     try {
+      const bridge = pythonBridgeRef.current;
+      if (!bridge) {
+        throw new Error('Python bridge unavailable for AI move');
+      }
       // Get AI's chosen action
-      const bestAction = await game.py.guessBestAction();
+      const bestAction = await bridge.guessBestAction();
+      if (bestAction == null) {
+        throw new Error('AI did not return a move');
+      }
       console.log('🤖 AI chose action:', bestAction, 'Current TS player:', engineRef.current.player);
       
       // Apply to TypeScript engine (source of truth)
@@ -1139,23 +858,16 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       
       // Edit mode (requires Python for board manipulation)
       if (pythonSelector && (pythonSelector.editMode === 1 || pythonSelector.editMode === 2)) {
-        if (!game || !game.py) return;
+        const bridge = pythonBridgeRef.current;
+        if (!game || !game.py || !bridge) return;
         processingMoveRef.current = true;
         try {
           game.editCell(y, x, pythonSelector.editMode);
           
           // Sync back to TypeScript engine
-          const snapshotProxy = game.py.export_practice_state?.();
-          if (snapshotProxy) {
-            const rawSnapshot =
-              typeof snapshotProxy.toJs === 'function'
-                ? (snapshotProxy.toJs({ create_proxies: false }) as unknown)
-                : snapshotProxy;
-            snapshotProxy.destroy?.();
-            if (rawSnapshot && typeof rawSnapshot === 'object') {
-              const snapshot = rawSnapshot as SantoriniSnapshot;
-              engineRef.current = SantoriniEngine.fromSnapshot(snapshot);
-            }
+          const snapshot = bridge.exportPracticeState();
+          if (snapshot) {
+            engineRef.current = SantoriniEngine.fromSnapshot(snapshot as SantoriniSnapshot);
           }
           
           syncEngineToUi();
@@ -1369,14 +1081,18 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     async (index: number) => {
       const game = gameRef.current;
       const selector = selectorRef.current;
-      if (!game || !selector || !game.py || !game.py.jump_to_move_index) return;
-      const historyLength = game.py.get_history_length();
+      const bridge = pythonBridgeRef.current;
+      if (!game || !selector || !bridge) return;
+      const historyLength = bridge.getHistoryLength();
       const reverseIndex = historyLength - 1 - index;
-      const resultProxy = game.py.jump_to_move_index(reverseIndex);
-      if (resultProxy && resultProxy.toJs) {
-        const result = resultProxy.toJs({ create_proxies: false });
-        if (Array.isArray(result) && result.length >= 3) {
-          [game.nextPlayer, game.gameEnded, game.validMoves] = result;
+      const jumpResult = bridge.jumpToMoveIndex(reverseIndex);
+      if (jumpResult) {
+        game.nextPlayer = jumpResult.nextPlayer;
+        game.gameEnded = jumpResult.gameEnded;
+        game.validMoves = jumpResult.validMoves;
+        const snapshot = bridge.exportPracticeState();
+        if (snapshot) {
+          engineRef.current = SantoriniEngine.fromSnapshot(snapshot as SantoriniSnapshot);
         }
       }
       selector.resetAndStart();

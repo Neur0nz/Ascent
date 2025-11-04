@@ -1,5 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import type { FunctionInvokeOptions } from '@supabase/supabase-js';
+
+type SupabaseClientType = NonNullable<typeof supabase>;
+
+async function invokeAuthorizedFunction<TResponse = any>(
+  client: SupabaseClientType,
+  functionName: string,
+  options: FunctionInvokeOptions = {},
+) {
+  const { data: sessionData } = await client.auth.getSession();
+  const token = sessionData.session?.access_token;
+  const headers = token
+    ? { ...(options.headers ?? {}), Authorization: `Bearer ${token}` }
+    : options.headers;
+  return client.functions.invoke<TResponse>(functionName, {
+    ...options,
+    headers,
+  });
+}
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import type {
   MatchAction,
@@ -1609,7 +1628,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
           ? (Math.random() < 0.5 ? 'creator' : 'opponent')
           : payload.startingPlayer;
 
-      const { data, error } = await client.functions.invoke('create-match', {
+      const { data, error } = await invokeAuthorizedFunction(client, 'create-match', {
         body: {
           visibility: payload.visibility,
           rated: payload.rated,
@@ -1860,7 +1879,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         });
       }
 
-      const { error } = await client.functions.invoke('update-match-status', {
+      const { error } = await invokeAuthorizedFunction(client, 'update-match-status', {
         body: {
           matchId: targetId,
           status: statusToSet,
@@ -2011,7 +2030,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
       const matchId = state.activeMatchId;
       if (!client || !matchId) return;
 
-      const { data, error } = await client.functions.invoke('update-match-status', {
+      const { data, error } = await invokeAuthorizedFunction(client, 'update-match-status', {
         body: {
           matchId,
           status,
@@ -2060,7 +2079,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
       const hasClock = (currentMatch.clock_initial_seconds ?? 0) > 0;
       const clockInitialMinutes = hasClock ? Math.round((currentMatch.clock_initial_seconds ?? 0) / 60) : 0;
 
-      const { data, error } = await client.functions.invoke('create-match', {
+      const { data, error } = await invokeAuthorizedFunction(client, 'create-match', {
         body: {
           visibility: currentMatch.visibility,
           rated: currentMatch.rated,
@@ -2284,7 +2303,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         if (!client) {
           throw new Error('Supabase client unavailable.');
         }
-        const { data, error } = await client.functions.invoke('submit-move', {
+        const { data, error } = await invokeAuthorizedFunction(client, 'submit-move', {
           body: {
             matchId: match.id,
             moveIndex: requestedMoveIndex,
