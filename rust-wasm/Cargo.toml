@@ -1,0 +1,42 @@
+[package]
+name = "santorini_wasm"
+version = "0.1.0"
+edition = "2021"
+authors = ["alpha-zero-general maintainers"]
+description = "Santorini board logic and Monte Carlo Tree Search implemented in Rust for WebAssembly"
+license = "MIT"
+repository = "https://github.com/nadavi/alpha-zero-general-santorini"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["console_error_panic_hook"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_wasm_bindgen = "0.6"
+rand = { version = "0.8", features = ["small_rng"] }
+rand_distr = "0.4"
+smallvec = "1.11"
+hashbrown = "0.14"
+thiserror = "1.0"
+
+[dependencies.web-sys]
+version = "0.3"
+features = ["console"]
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+[target."cfg(debug_assertions)".dependencies]
+console_error_panic_hook = "0.1"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "s"
+panic = "abort"

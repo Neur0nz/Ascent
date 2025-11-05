@@ -16,9 +16,6 @@ results/
 # For PyCharm users
 .idea/
 
-# Web UI submodule (separate git repo)
-web-ui/.git
-web-ui/.gitignore
 
 # Virtual environment
 venv/

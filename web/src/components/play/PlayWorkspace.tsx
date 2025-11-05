@@ -975,7 +975,7 @@ function PlaySignInGate({ auth }: { auth: SupabaseAuthState }) {
         <Box>
           <AlertTitle>Supabase not configured</AlertTitle>
           <AlertDescription>
-            Online play and authentication are disabled. Follow SUPABASE_SETUP.md to configure Supabase before signing in.
+            Online play and authentication are disabled. Follow the setup guide in `docs/setup/supabase.md` to configure Supabase before signing in.
           </AlertDescription>
         </Box>
       </Alert>
