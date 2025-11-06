@@ -370,70 +370,31 @@ impl SantoriniMcts {
         }
 
         let key = board.key();
-        let node = self
-            .nodes
-            .get(&key)
-            .ok_or_else(|| JsValue::from_str("root node missing after simulations"))?;
+        let (valid, policy_prior, edge_visits, q) = {
+            let node_ref = self
+                .nodes
+                .get(&key)
+                .ok_or_else(|| JsValue::from_str("root node missing after simulations"))?;
+            (
+                node_ref.valid,
+                node_ref.policy,
+                node_ref.nsa,
+                node_ref.mean_value,
+            )
+        };
 
-        let mut visits = node.nsa.to_vec();
-        let mut probs = vec![0.0f32; ACTION_SIZE];
-        if temperature == 0.0 {
-            let mut best_action: Option<usize> = None;
-            let mut best_count: u32 = 0;
-            for (idx, &count) in node.nsa.iter().enumerate() {
-                if !node.valid[idx] {
-                    continue;
-                }
-                if best_action.is_none() || count > best_count {
-                    best_action = Some(idx);
-                    best_count = count;
-                }
-            }
-            if let Some(idx) = best_action.or_else(|| node.valid.iter().position(|&v| v)) {
-                probs[idx] = 1.0;
-            }
-        } else {
-            let mut total = 0.0f32;
-            let temp = temperature.max(0.01);
-            for (idx, &count) in node.nsa.iter().enumerate() {
-                if !node.valid[idx] || count == 0 {
-                    continue;
-                }
-                let weighted = (count as f32).powf(1.0 / temp);
-                probs[idx] = weighted;
-                visits[idx] = count;
-                total += weighted;
-            }
-            if total > EPS {
-                for (idx, valid) in node.valid.iter().enumerate() {
-                    if *valid {
-                        probs[idx] /= total;
-                    }
-                }
-            } else {
-                let valid_count = node.valid.iter().filter(|flag| **flag).count();
-                if valid_count > 0 {
-                    let uniform = 1.0 / valid_count as f32;
-                    for (idx, valid) in node.valid.iter().enumerate() {
-                        if *valid {
-                            probs[idx] = uniform;
-                        }
-                    }
-                }
-            }
-        }
-        for (idx, valid) in node.valid.iter().enumerate() {
-            if !valid {
-                probs[idx] = 0.0;
-                visits[idx] = 0;
-            }
-        }
-
-        let q = node.mean_value;
+        let (policy, visits) = self.root_distribution(
+            &valid,
+            &policy_prior,
+            &edge_visits,
+            temperature,
+            forced_playouts,
+            num_sims,
+        );
         let green_value = if root_player == 0 { q } else { -q };
         let result = SearchResult {
             version: SEARCH_RESULT_VERSION,
-            policy: probs,
+            policy,
             q: [green_value, -green_value],
             visits,
             full_search,
@@ -465,9 +426,8 @@ impl SantoriniMcts {
                     );
                 }
                 if let Some(result) = node.terminal_value {
-                    let root_value = result * to_root_sign;
-                    self.backpropagate(&breadcrumbs, root_value);
-                    return Ok(root_value);
+                    self.backpropagate(&breadcrumbs, result);
+                    return Ok(result * to_root_sign);
                 }
                 let action = node.select_action(
                     self.config.cpuct,
@@ -491,17 +451,16 @@ impl SantoriniMcts {
             if let Some(terminal) = board.result_value(0) {
                 let node = TreeNode::terminal(valid, terminal, board.round());
                 self.nodes.insert(key, node);
-                let root_value = terminal * to_root_sign;
-                self.backpropagate(&breadcrumbs, root_value);
-                return Ok(root_value);
+                self.backpropagate(&breadcrumbs, terminal);
+                return Ok(terminal * to_root_sign);
             }
 
             let prediction = self.evaluate(&board, &valid).await?;
             let node = TreeNode::from_prediction(valid, &prediction, board.round());
-            let root_value = node.mean_value * to_root_sign;
+            let leaf_value = node.mean_value;
             self.nodes.insert(key, node);
-            self.backpropagate(&breadcrumbs, root_value);
-            return Ok(root_value);
+            self.backpropagate(&breadcrumbs, leaf_value);
+            return Ok(leaf_value * to_root_sign);
         }
     }
 
@@ -564,6 +523,112 @@ impl SantoriniMcts {
         let threshold = current_round.saturating_sub(self.config.retain_rounds);
         self.nodes.retain(|_, node| node.round >= threshold);
         self.last_cleanup_round = current_round;
+    }
+
+    fn root_distribution(
+        &mut self,
+        valid: &[bool; ACTION_SIZE],
+        policy: &[f32; ACTION_SIZE],
+        visits: &[u32; ACTION_SIZE],
+        temperature: f32,
+        forced_playouts: bool,
+        num_sims: u32,
+    ) -> (Vec<f32>, Vec<u32>) {
+        let mut counts: Vec<f32> = visits.iter().map(|&count| count as f32).collect();
+        for (idx, flag) in valid.iter().enumerate() {
+            if !flag {
+                counts[idx] = 0.0;
+            }
+        }
+
+        if forced_playouts {
+            let best_visit = visits
+                .iter()
+                .zip(valid.iter())
+                .filter(|(_, &flag)| flag)
+                .map(|(&count, _)| count)
+                .max()
+                .unwrap_or(0);
+            if best_visit > 0 {
+                for idx in 0..ACTION_SIZE {
+                    if !valid[idx] {
+                        continue;
+                    }
+                    if visits[idx] == best_visit {
+                        counts[idx] = best_visit as f32;
+                        continue;
+                    }
+                    let expected = (self.config.forced_playout_coefficient
+                        * policy[idx].max(0.0)
+                        * num_sims as f32)
+                        .sqrt()
+                        .floor() as u32;
+                    let adjusted = visits[idx].saturating_sub(expected);
+                    counts[idx] = if adjusted > 1 { adjusted as f32 } else { 0.0 };
+                }
+            }
+        }
+
+        let mut policy_vec = vec![0.0f32; ACTION_SIZE];
+        if temperature == 0.0 {
+            let mut best_value = -1.0f32;
+            let mut ties: Vec<usize> = Vec::new();
+            for (idx, (&count, &flag)) in counts.iter().zip(valid.iter()).enumerate() {
+                if !flag {
+                    continue;
+                }
+                if count > best_value + EPS {
+                    best_value = count;
+                    ties.clear();
+                    ties.push(idx);
+                } else if (count - best_value).abs() <= EPS {
+                    ties.push(idx);
+                }
+            }
+            let selected = if !ties.is_empty() {
+                let choice = self.rng.gen_range(0..ties.len());
+                ties[choice]
+            } else {
+                valid.iter().position(|&flag| flag).unwrap_or(0)
+            };
+            policy_vec[selected] = 1.0;
+        } else {
+            let temp = temperature.max(0.01);
+            let mut total = 0.0f32;
+            for (idx, (&count, &flag)) in counts.iter().zip(valid.iter()).enumerate() {
+                if !flag || count <= 0.0 {
+                    continue;
+                }
+                let weighted = count.powf(1.0 / temp);
+                policy_vec[idx] = weighted;
+                total += weighted;
+            }
+            if total > EPS {
+                for (idx, &flag) in valid.iter().enumerate() {
+                    if flag {
+                        policy_vec[idx] /= total;
+                    }
+                }
+            } else {
+                let valid_count = valid.iter().filter(|flag| **flag).count();
+                if valid_count > 0 {
+                    let uniform = 1.0 / valid_count as f32;
+                    for (idx, &flag) in valid.iter().enumerate() {
+                        if flag {
+                            policy_vec[idx] = uniform;
+                        }
+                    }
+                }
+            }
+        }
+
+        let visits_vec = visits
+            .iter()
+            .zip(valid.iter())
+            .map(|(&count, &flag)| if flag { count } else { 0 })
+            .collect();
+
+        (policy_vec, visits_vec)
     }
 }
 

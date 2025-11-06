@@ -150,7 +150,7 @@ export class SantoriniWasmProxy {
   private currentEval: [number, number] = [0, 0];
   private lastPolicy: number[] | null = null;
 
-  private mcts: SantoriniMctsWasm;
+  private mcts!: SantoriniMctsWasm;
   private simulationCount: number;
   private pending: Promise<void> = Promise.resolve();
 
@@ -162,7 +162,7 @@ export class SantoriniWasmProxy {
 
     this.board = new this.BoardCtor();
     this.boardArray = bytesToBoardArray(this.board.getState());
-    this.mcts = this.createMcts(this.simulationCount);
+    this.rebuildMcts(this.simulationCount);
   }
 
   dispose(): void {
@@ -172,7 +172,7 @@ export class SantoriniWasmProxy {
     this.futureHistory = [];
   }
 
-  private createMcts(simulations: number, overrides?: { dirichlet_weight?: number }): SantoriniMctsWasm {
+  private createMctsConfig(simulations: number, overrides?: { dirichlet_weight?: number }) {
     const config = this.MctsCtor.defaultConfig() ?? {};
     config.num_simulations = simulations;
     config.partial_divisor = config.partial_divisor ?? 4;
@@ -181,7 +181,15 @@ export class SantoriniWasmProxy {
     config.no_mem_optim = false;
     config.dirichlet_weight =
       overrides && typeof overrides.dirichlet_weight === 'number' ? overrides.dirichlet_weight : 0;
-    return new this.MctsCtor(config, this.predictor);
+    return config;
+  }
+
+  private rebuildMcts(simulations?: number): void {
+    const target = Math.max(1, Math.trunc(simulations ?? this.simulationCount));
+    this.mcts?.free?.();
+    const config = this.createMctsConfig(target);
+    this.mcts = new this.MctsCtor(config, this.predictor);
+    this.simulationCount = target;
   }
 
   private ensureMcts(simulations?: number): void {
@@ -189,9 +197,7 @@ export class SantoriniWasmProxy {
     if (this.simulationCount === target && this.mcts) {
       return;
     }
-    this.mcts.free?.();
-    this.mcts = this.createMcts(target);
-    this.simulationCount = target;
+    this.rebuildMcts(target);
   }
 
   private updateBoardState(bytes?: Int8Array): void {
@@ -237,6 +243,7 @@ export class SantoriniWasmProxy {
       this.board.reset();
       this.boardArray = bytesToBoardArray(this.board.getState());
     }
+    this.rebuildMcts(this.simulationCount);
   }
 
   set_num_simulations(num: number): void {
@@ -248,6 +255,7 @@ export class SantoriniWasmProxy {
     this.set_num_simulations(numMCTSSims);
     this.board.reset();
     this.boardArray = bytesToBoardArray(this.board.getState());
+    this.rebuildMcts(this.simulationCount);
     this.player = 0;
     this.history = [];
     this.futureHistory = [];
@@ -311,20 +319,17 @@ export class SantoriniWasmProxy {
         this.ensureMcts(Math.trunc(numMCTSSims));
       }
       const baseBytes = this.cloneBoardBytes();
-      const evalMcts = this.createMcts(this.simulationCount, { dirichlet_weight: 0 });
       try {
         const { policy, q } = await this.runSearch(
           this.player,
           { temperature: 1.0, forceFullSearch: true },
           baseBytes,
-          evalMcts,
         );
         this.lastPolicy = policy;
         const greenValue = q[0];
         this.currentEval = [greenValue, -greenValue];
         return [this.currentEval[0], this.currentEval[1]];
       } finally {
-        evalMcts.free?.();
         if (previous !== this.simulationCount) {
           this.ensureMcts(previous);
         }
@@ -357,14 +362,12 @@ export class SantoriniWasmProxy {
 
       const baseBytes = this.cloneBoardBytes();
       const originalPlayer = this.player;
-      const evalMcts = this.createMcts(this.simulationCount, { dirichlet_weight: 0 });
 
       try {
         const { policy, q } = await this.runSearch(
           originalPlayer,
           { temperature: 1.0, forceFullSearch: true },
           baseBytes,
-          evalMcts,
         );
         this.lastPolicy = policy;
         const baseEval = q[0];
@@ -389,7 +392,6 @@ export class SantoriniWasmProxy {
             nextPlayer,
             { temperature: 1.0, forceFullSearch: true },
             simulatedBytes,
-            evalMcts,
           );
           const evalAfter = q[0];
 
@@ -404,7 +406,6 @@ export class SantoriniWasmProxy {
 
         return results;
       } finally {
-        evalMcts.free?.();
         if (previous !== this.simulationCount) {
           this.ensureMcts(previous);
         }
@@ -669,10 +670,9 @@ export class SantoriniWasmProxy {
     player: number,
     options: { temperature: number; forceFullSearch: boolean },
     boardBytes?: Int8Array,
-    mctsInstance: SantoriniMctsWasm = this.mcts,
   ): Promise<SearchSummary> {
     const bytes = boardBytes ? new Int8Array(boardBytes) : this.cloneBoardBytes();
-    const result = await mctsInstance.search(bytes, player, options.temperature, options.forceFullSearch);
+    const result = await this.mcts.search(bytes, player, options.temperature, options.forceFullSearch);
     const policy: number[] = Array.isArray(result?.policy) ? result.policy.map(Number) : Array(ACTION_SIZE).fill(0);
     const qRaw = Array.isArray(result?.q) ? result.q : [0, 0];
     const q: [number, number] = [Number(qRaw[0] ?? 0), Number(qRaw[1] ?? 0)];
