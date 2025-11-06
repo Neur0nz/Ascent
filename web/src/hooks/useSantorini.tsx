@@ -228,9 +228,11 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
   const [history, setHistory] = useState<MoveSummary[]>([]);
   const [nextPlayer, setNextPlayer] = useState(0);
   const [calcOptionsBusy, setCalcOptionsBusy] = useState(false);
+  const [evaluationLoading, setEvaluationLoading] = useState(false);
   const [evaluationDepthOverride, setEvaluationDepthOverride] = useState<number | null>(null);
   const [optionsDepthOverride, setOptionsDepthOverride] = useState<number | null>(null);
   const evaluationRequestIdRef = useRef(0);
+  const wasmStateVersionRef = useRef(0);
 
   const toast = useToast();
   
@@ -430,7 +432,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       result.validMoves.length > 0 ? result.validMoves : Array(GAME_CONSTANTS.TOTAL_MOVES).fill(false);
   }, []);
 
-  const loadPyodideRuntime = useCallback(async () => {
+  const loadSantoriniRuntime = useCallback(async () => {
     try {
       const { game, selector } = await createSantoriniRuntime({ evaluationEnabled });
       gameRef.current = game;
@@ -549,7 +551,12 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     let nextTopMoves: TopMove[] | undefined;
 
     try {
+      const snapshotVersion = wasmStateVersionRef.current;
+
       const evalResponse = await bridge.calculateEvaluation(evaluationDepthOverride ?? undefined);
+      if (snapshotVersion !== wasmStateVersionRef.current) {
+        return null;
+      }
       if (evalResponse?.value?.length) {
         const value = Number(evalResponse.value[0]);
         if (Number.isFinite(value)) {
@@ -566,6 +573,9 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         console.log('No moves or zero probabilities from list_current_moves, trying list_current_moves_with_adv...');
         try {
           const advMoves = await bridge.listMovesWithAdv(6, optionsDepthOverride ?? undefined);
+          if (snapshotVersion !== wasmStateVersionRef.current) {
+            return null;
+          }
           normalizedMoves = normalizeTopMoves(advMoves);
         } catch (advError) {
           console.error('Failed to get advanced moves:', advError);
@@ -607,7 +617,12 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     }
     setCalcOptionsBusy(true);
     try {
+      const requestVersion = wasmStateVersionRef.current;
       const result = await bridge.listMovesWithAdv(6, optionsDepthOverride ?? undefined);
+      if (requestVersion !== wasmStateVersionRef.current) {
+        setTopMoves([]);
+        return;
+      }
       setTopMoves(normalizeTopMoves(result));
     } catch (error) {
       console.error('Failed to calculate options:', error);
@@ -673,7 +688,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         // Don't block UI - just update status
         updateButtonsState((prev) => ({ ...prev, status: 'Loading game engine...' }));
         await yieldToMainThread();
-        await loadPyodideRuntime();
+        await loadSantoriniRuntime();
         const game = gameRef.current;
         const selector = selectorRef.current;
         if (!game || !selector) {
@@ -708,7 +723,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
 
     initializePromiseRef.current = initPromise;
     await initPromise;
-  }, [loadPyodideRuntime, refreshEvaluation, restorePracticeSettings, restorePracticeState, startGuidedSetup, syncUi, updateButtonsState]);
+  }, [loadSantoriniRuntime, refreshEvaluation, restorePracticeSettings, restorePracticeState, startGuidedSetup, syncUi, updateButtonsState]);
 
   const aiPlayIfNeeded = useCallback(async () => {
     if (!evaluationEnabled) {
@@ -762,7 +777,12 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         throw new Error('Python bridge unavailable for AI move');
       }
       // Get AI's chosen action
+      const requestVersion = wasmStateVersionRef.current;
       const bestAction = await bridge.guessBestAction();
+      if (requestVersion !== wasmStateVersionRef.current) {
+        console.warn('AI result ignored; state changed during request');
+        return;
+      }
       if (bestAction == null) {
         throw new Error('AI did not return a move');
       }
@@ -816,6 +836,8 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       try {
         const result = engineRef.current.applyMove(move);
         engineRef.current = SantoriniEngine.fromSnapshot(result.snapshot);
+        wasmStateVersionRef.current += 1;
+        wasmStateVersionRef.current += 1;
         moveSelectorRef.current.reset();
         
         console.log('👤 Move applied to TS. New player:', engineRef.current.player);
@@ -1238,3 +1260,12 @@ export function useSantorini(options: UseSantoriniOptions = {}) {
   }
   return useSantoriniInternal(options);
 }
+const useWasmRequestVersion = () => {
+  const versionRef = useRef(0);
+  const bump = useCallback(() => {
+    versionRef.current += 1;
+    return versionRef.current;
+  }, []);
+  const get = useCallback(() => versionRef.current, []);
+  return { versionRef, bump, get };
+};

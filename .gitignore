@@ -30,3 +30,4 @@ web/node_modules/
 .env
 .env.*
 *.env
+rust-wasm/target/

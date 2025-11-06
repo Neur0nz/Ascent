@@ -325,7 +325,6 @@ impl SantoriniMcts {
             return Err(JsValue::from_str("board state must contain 75 entries"));
         }
         let mut board = BoardState::from_vec(&board_state);
-        board = board.canonicalised(player as usize);
 
         let mut full_search = force_full_search;
         if !full_search {
@@ -481,7 +480,7 @@ impl SantoriniMcts {
     }
 
     async fn evaluate(
-        &self,
+        &mut self,
         board: &BoardState,
         valid: &[bool; ACTION_SIZE],
     ) -> Result<NetworkPrediction, JsValue> {
@@ -490,15 +489,17 @@ impl SantoriniMcts {
             self.mask_buffer[idx] = u8::from(*flag);
         }
 
-        let board_array = js_sys::Int8Array::view(&self.board_buffer);
-        let mask_array = js_sys::Uint8Array::view(&self.mask_buffer);
-        let board_js = JsValue::from(board_array);
-        let mask_js = JsValue::from(mask_array);
+        let value = {
+            let board_array = unsafe { js_sys::Int8Array::view(&self.board_buffer) };
+            let mask_array = unsafe { js_sys::Uint8Array::view(&self.mask_buffer) };
+            let board_js = JsValue::from(board_array);
+            let mask_js = JsValue::from(mask_array);
 
-        let value = self
-            .predictor
-            .call2(&JsValue::NULL, &board_js, &mask_js)
-            .map_err(|err| JsValue::from(err))?;
+            self
+                .predictor
+                .call2(&JsValue::NULL, &board_js, &mask_js)
+                .map_err(|err| JsValue::from(err))?
+        };
         let promise = js_sys::Promise::from(value);
         let prediction_value = JsFuture::from(promise).await?;
         let prediction: NetworkPrediction = serde_wasm_bindgen::from_value(prediction_value)?;

@@ -1,7 +1,18 @@
 export type GameInitTuple = [number, [number, number], boolean[]];
 
+function toPlain<T>(value: T): T {
+  if (value && typeof value === 'object') {
+    const candidate = value as unknown as { toJs?: (options?: { create_proxies?: boolean }) => unknown };
+    if (typeof candidate.toJs === 'function') {
+      const plain = candidate.toJs({ create_proxies: false });
+      return toPlain(plain as T);
+    }
+  }
+  return value;
+}
+
 export abstract class AbstractGame {
-  protected pyodide: any;
+  protected backend: any;
   py: any;
   nextPlayer: number;
   previousPlayer: number | null;
@@ -10,8 +21,8 @@ export abstract class AbstractGame {
   numMCTSSims: number;
   validMoves: boolean[];
 
-  constructor(pyodide: any = null) {
-    this.pyodide = pyodide;
+  constructor(backend: any = null) {
+    this.backend = backend;
     this.py = null;
     this.nextPlayer = 0;
     this.previousPlayer = null;
@@ -21,14 +32,19 @@ export abstract class AbstractGame {
     this.validMoves = [];
   }
 
-  setPyodide(pyodide: any) {
-    this.pyodide = pyodide;
+  setPyodide(backend: any) {
+    this.backend = backend;
+    this.py = backend ?? null;
   }
 
   init_game() {
-    if (!this.pyodide) {
-      throw new Error('Pyodide not initialised');
+    if (!this.py) {
+      this.py = this.backend;
     }
+    if (!this.py) {
+      throw new Error('Santorini backend is not initialised');
+    }
+
     this.nextPlayer = 0;
     this.previousPlayer = null;
     this.gameEnded = [0, 0];
@@ -39,10 +55,7 @@ export abstract class AbstractGame {
       this.validMoves.fill(false);
     }
 
-    if (this.py === null) {
-      this.py = this.pyodide.pyimport('proxy');
-    }
-    const dataTuple = this.py.init_game(this.numMCTSSims).toJs({ create_proxies: false }) as GameInitTuple;
+    const dataTuple = toPlain<GameInitTuple>(this.py.init_game(this.numMCTSSims));
     [this.nextPlayer, this.gameEnded, this.validMoves] = dataTuple;
     this.post_init_game();
   }
@@ -58,7 +71,7 @@ export abstract class AbstractGame {
     this.pre_move(action, isManualMove);
 
     this.previousPlayer = this.nextPlayer;
-    const dataTuple = this.py.getNextState(action).toJs({ create_proxies: false }) as GameInitTuple;
+    const dataTuple = toPlain<GameInitTuple>(this.py.getNextState(action));
     [this.nextPlayer, this.gameEnded, this.validMoves] = dataTuple;
     this.post_move(action, isManualMove);
   }
@@ -73,20 +86,20 @@ export abstract class AbstractGame {
 
   change_difficulty(numMCTSSims: number) {
     this.numMCTSSims = Number(numMCTSSims);
-    if (this.py) {
+    if (this.py && typeof this.py.changeDifficulty === 'function') {
       this.py.changeDifficulty(this.numMCTSSims);
     }
   }
 
   revert_to_previous_human_move() {
-    let dataTuple;
+    let dataTuple: any;
     if (this.gameMode === 'Human') {
-      dataTuple = this.py.revert_last_move().toJs({ create_proxies: false });
+      dataTuple = toPlain(this.py.revert_last_move());
     } else {
       const player = this.who_is_human();
-      dataTuple = this.py.revert_to_previous_move(player).toJs({ create_proxies: false });
+      dataTuple = toPlain(this.py.revert_to_previous_move(player));
     }
-    const [nextPlayer, gameEnded, validMoves, removedActions = []] = dataTuple;
+    const [nextPlayer, gameEnded, validMoves, removedActions = []] = dataTuple as [number, [number, number], boolean[], number[]];
     this.nextPlayer = nextPlayer;
     this.gameEnded = gameEnded;
     this.validMoves = validMoves;

@@ -18,12 +18,14 @@ wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 serde = { version = "1.0", features = ["derive"] }
-serde_wasm_bindgen = "0.6"
+serde-wasm-bindgen = "0.6"
 rand = { version = "0.8", features = ["small_rng"] }
 rand_distr = "0.4"
 smallvec = "1.11"
 hashbrown = "0.14"
 thiserror = "1.0"
+getrandom = { version = "0.2", features = ["js"] }
+console_error_panic_hook = { version = "0.1", optional = true }
 
 [dependencies.web-sys]
 version = "0.3"
@@ -31,9 +33,6 @@ features = ["console"]
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
-
-[target."cfg(debug_assertions)".dependencies]
-console_error_panic_hook = "0.1"
 
 [profile.release]
 lto = true

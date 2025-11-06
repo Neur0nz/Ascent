@@ -17,7 +17,8 @@ export default defineConfig(({ mode }) => {
         '@components': path.resolve(__dirname, 'src/components'),
         '@hooks': path.resolve(__dirname, 'src/hooks'),
         '@game': path.resolve(__dirname, 'src/game'),
-        '@shared': path.resolve(__dirname, '../shared')
+        '@shared': path.resolve(__dirname, '../shared'),
+        '@wasm': path.resolve(__dirname, '../rust-wasm/pkg')
       }
     },
     server: {

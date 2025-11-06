@@ -11,7 +11,8 @@
       "@components/*": ["src/components/*"],
       "@hooks/*": ["src/hooks/*"],
       "@game/*": ["src/game/*"],
-      "@shared/*": ["../shared/*"]
+      "@shared/*": ["../shared/*"],
+      "@wasm/*": ["../rust-wasm/pkg/*"]
     },
     "resolveJsonModule": true,
     "isolatedModules": true,
@@ -22,6 +23,6 @@
     "noEmit": true,
     "types": ["vite/client"]
   },
-  "include": ["src", "../shared"],
+  "include": ["src", "../shared", "../rust-wasm/pkg"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

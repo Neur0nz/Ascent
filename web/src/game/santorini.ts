@@ -1,6 +1,17 @@
-import { AbstractGame } from './abstractGame';
+import { AbstractGame, type GameInitTuple } from './abstractGame';
 import { applyDirection, decodeMove } from './utils';
 import { GAME_CONSTANTS } from './constants';
+
+function toPlain<T>(value: T): T {
+  if (value && typeof value === 'object') {
+    const candidate = value as unknown as { toJs?: (options?: { create_proxies?: boolean }) => unknown };
+    if (typeof candidate.toJs === 'function') {
+      const plain = candidate.toJs({ create_proxies: false });
+      return toPlain(plain as T);
+    }
+  }
+  return value;
+}
 
 export class Santorini extends AbstractGame {
   lastMove: number;
@@ -48,7 +59,11 @@ export class Santorini extends AbstractGame {
       return;
     }
 
-    const [workerY, workerX] = this.py._findWorker(workerId).toJs({ create_proxies: false });
+    const workerPosition = toPlain(this.py._findWorker(workerId));
+    if (!Array.isArray(workerPosition) || workerPosition.length < 2) {
+      return;
+    }
+    const [workerY, workerX] = workerPosition as [number, number];
     const [moveY, moveX] = applyDirection(workerY, workerX, moveDirection);
     const [buildY, buildX] = applyDirection(moveY, moveX, buildDirection);
     this.cellsOfLastMove = [
@@ -63,8 +78,8 @@ export class Santorini extends AbstractGame {
       return;
     }
     this.py.editCell(clickedY, clickedX, editMode);
-    if (editMode === 0) {
-      const dataTuple = this.py.update_after_edit().toJs({ create_proxies: false });
+    if (editMode === 0 && typeof this.py.update_after_edit === 'function') {
+      const dataTuple = toPlain(this.py.update_after_edit()) as GameInitTuple;
       [this.nextPlayer, this.gameEnded, this.validMoves] = dataTuple;
     }
   }

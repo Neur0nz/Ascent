@@ -375,10 +375,10 @@ impl SantoriniBoard {
 
     /// Compute valid moves for `player`.
     #[wasm_bindgen(js_name = validMoves)]
-    pub fn valid_moves(&self, player: u8) -> Vec<bool> {
+    pub fn valid_moves(&self, player: u8) -> Vec<u8> {
         let mut mask = [false; ACTION_SIZE];
         self.state.valid_moves(player as usize, &mut mask);
-        mask.to_vec()
+        mask.iter().map(|flag| u8::from(*flag)).collect()
     }
 
     /// Apply an action (placement or move) encoded in canonical action space and return the actual
@@ -403,7 +403,9 @@ impl SantoriniBoard {
     pub fn score_for(&self, player: u8) -> i8 {
         self.state.score_for(player as usize)
     }
+}
 
+impl SantoriniBoard {
     pub fn clone_internal(&self) -> BoardState {
         self.state
     }
