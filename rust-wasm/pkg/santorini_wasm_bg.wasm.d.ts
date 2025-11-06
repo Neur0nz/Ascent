@@ -1,0 +1,33 @@
+/* tslint:disable */
+/* eslint-disable */
+export const memory: WebAssembly.Memory;
+export const __wbg_santoriniboard_free: (a: number, b: number) => void;
+export const __wbg_santorinimcts_free: (a: number, b: number) => void;
+export const actionSize: () => number;
+export const init_panic_hook: () => void;
+export const santoriniboard_applyMove: (a: number, b: number, c: number) => number;
+export const santoriniboard_canonicalState: (a: number, b: number) => [number, number];
+export const santoriniboard_getState: (a: number) => [number, number];
+export const santoriniboard_maybeTerminalScore: (a: number, b: number) => number;
+export const santoriniboard_new: () => number;
+export const santoriniboard_reset: (a: number) => void;
+export const santoriniboard_round: (a: number) => number;
+export const santoriniboard_score_for: (a: number, b: number) => number;
+export const santoriniboard_setState: (a: number, b: number, c: number) => void;
+export const santoriniboard_validMoves: (a: number, b: number) => [number, number];
+export const santorinimcts_defaultConfig: () => any;
+export const santorinimcts_new: (a: any, b: any) => [number, number, number];
+export const santorinimcts_search: (a: number, b: number, c: number, d: number, e: number, f: number) => any;
+export const santorinimcts_setSeed: (a: number, b: bigint) => void;
+export const stateSize: () => number;
+export const wasm_bindgen__convert__closures_____invoke__h0fc66a9e31a94ec2: (a: number, b: number, c: any) => void;
+export const wasm_bindgen__closure__destroy__hdc0e3d4262082e79: (a: number, b: number) => void;
+export const wasm_bindgen__convert__closures_____invoke__h2c729f55a14b41d1: (a: number, b: number, c: any, d: any) => void;
+export const __wbindgen_malloc: (a: number, b: number) => number;
+export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+export const __wbindgen_exn_store: (a: number) => void;
+export const __externref_table_alloc: () => number;
+export const __wbindgen_externrefs: WebAssembly.Table;
+export const __wbindgen_free: (a: number, b: number, c: number) => void;
+export const __externref_table_dealloc: (a: number) => void;
+export const __wbindgen_start: () => void;
