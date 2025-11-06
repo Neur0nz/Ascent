@@ -179,9 +179,8 @@ export class SantoriniWasmProxy {
     config.prob_full_search = 1.0;
     config.forced_playouts = false;
     config.no_mem_optim = false;
-    if (overrides && typeof overrides.dirichlet_weight === 'number') {
-      config.dirichlet_weight = overrides.dirichlet_weight;
-    }
+    config.dirichlet_weight =
+      overrides && typeof overrides.dirichlet_weight === 'number' ? overrides.dirichlet_weight : 0;
     return new this.MctsCtor(config, this.predictor);
   }
 
@@ -279,7 +278,7 @@ export class SantoriniWasmProxy {
   async guessBestAction(): Promise<number> {
     return this.enqueueAsync(async () => {
       const baseBytes = this.cloneBoardBytes();
-      const { policy, q } = await this.runSearch(this.player, { temperature: 0, forceFullSearch: true }, baseBytes);
+      const { policy, q } = await this.runSearch(this.player, { temperature: 1.0, forceFullSearch: true }, baseBytes);
       this.lastPolicy = policy;
 
       const greenValue = q[0];

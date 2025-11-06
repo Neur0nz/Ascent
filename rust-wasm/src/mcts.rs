@@ -67,7 +67,7 @@ fn default_dirichlet_alpha() -> f32 {
     0.3
 }
 fn default_dirichlet_weight() -> f32 {
-    0.25
+    0.0
 }
 fn default_fpu_reduction() -> f32 {
     0.03
@@ -119,7 +119,11 @@ struct TreeNode {
 }
 
 impl TreeNode {
-    fn from_prediction(valid: [bool; ACTION_SIZE], prediction: &NetworkPrediction, round: u16) -> Self {
+    fn from_prediction(
+        valid: [bool; ACTION_SIZE],
+        prediction: &NetworkPrediction,
+        round: u16,
+    ) -> Self {
         let mut policy = [0.0; ACTION_SIZE];
         let mut sum = 0.0;
         let mut valid_count = 0usize;
@@ -127,12 +131,7 @@ impl TreeNode {
             if !valid_flag {
                 continue;
             }
-            let score = prediction
-                .pi
-                .get(idx)
-                .copied()
-                .unwrap_or(0.0)
-                .exp();
+            let score = prediction.pi.get(idx).copied().unwrap_or(0.0).exp();
             policy[idx] = score;
             sum += score;
             valid_count += 1;
@@ -197,7 +196,8 @@ impl TreeNode {
         iteration: u32,
         coefficient: f32,
     ) -> usize {
-        let total = (self.visit_count.max(1) as f32).sqrt();
+        let sqrt_ns = (self.visit_count as f32 + EPS).sqrt();
+        let total = (self.visit_count as f32).sqrt();
         let base_fpu = self.mean_value - fpu;
         let mut best = MIN_FLOAT;
         let mut best_action = 0;
@@ -207,24 +207,40 @@ impl TreeNode {
                 continue;
             }
             if forced_playouts {
-                let expected = (coefficient * self.policy[action].max(0.0) * iter_f).sqrt().floor() as u32;
+                let expected = (coefficient * self.policy[action].max(0.0) * iter_f)
+                    .sqrt()
+                    .floor() as u32;
                 if self.nsa[action] < expected {
                     return action;
                 }
             }
             let visits = self.nsa[action];
-            let q = if visits == 0 {
-                base_fpu
+            let (q, exploration) = if visits == 0 {
+                let exploration = cpuct * self.policy[action] * sqrt_ns;
+                (base_fpu, exploration)
             } else {
-                self.qsa[action]
+                let exploration = if total > 0.0 {
+                    cpuct * self.policy[action] * total / (1.0 + visits as f32)
+                } else {
+                    0.0
+                };
+                (self.qsa[action], exploration)
             };
-            let u = q + cpuct * self.policy[action] * total / (1.0 + visits as f32);
+            let u = q + exploration;
             if u > best {
                 best = u;
                 best_action = action;
             }
         }
         best_action
+    }
+
+    fn record_value(&mut self, value: f32) {
+        let previous_visits = self.visit_count;
+        let weight = (previous_visits + 1) as f32;
+        let updated_mean = (self.mean_value * weight + value) / (weight + 1.0);
+        self.mean_value = updated_mean;
+        self.visit_count = previous_visits + 1;
     }
 
     fn apply_dirichlet(&mut self, rng: &mut SmallRng, alpha: f32, weight: f32) {
@@ -345,7 +361,8 @@ impl SantoriniMcts {
 
         for sim in 0..num_sims {
             let inject_dirichlet = sim == 0 && full_search && self.config.dirichlet_weight > 0.0;
-            self.run_single_simulation(&board, inject_dirichlet, sim + 1, forced_playouts).await?;
+            self.run_single_simulation(&board, inject_dirichlet, sim + 1, forced_playouts)
+                .await?;
         }
 
         if !self.config.no_mem_optim {
@@ -441,7 +458,11 @@ impl SantoriniMcts {
             let key = board.key();
             if let Some(node) = self.nodes.get_mut(&key) {
                 if apply_dirichlet && breadcrumbs.is_empty() {
-                    node.apply_dirichlet(&mut self.rng, self.config.dirichlet_alpha, self.config.dirichlet_weight);
+                    node.apply_dirichlet(
+                        &mut self.rng,
+                        self.config.dirichlet_alpha,
+                        self.config.dirichlet_weight,
+                    );
                 }
                 if let Some(result) = node.terminal_value {
                     let root_value = result * to_root_sign;
@@ -500,8 +521,7 @@ impl SantoriniMcts {
             let board_js = JsValue::from(board_array);
             let mask_js = JsValue::from(mask_array);
 
-            self
-                .predictor
+            self.predictor
                 .call2(&JsValue::NULL, &board_js, &mask_js)
                 .map_err(|err| JsValue::from(err))?
         };
@@ -510,7 +530,9 @@ impl SantoriniMcts {
         let prediction: NetworkPrediction = serde_wasm_bindgen::from_value(prediction_value)?;
 
         if prediction.pi.len() < ACTION_SIZE {
-            return Err(JsValue::from_str("predictor returned fewer than 162 policy entries"));
+            return Err(JsValue::from_str(
+                "predictor returned fewer than 162 policy entries",
+            ));
         }
         Ok(prediction)
     }
@@ -518,9 +540,7 @@ impl SantoriniMcts {
     fn backpropagate(&mut self, path: &[([i8; STATE_SIZE], usize, bool)], mut value: f32) {
         for (key, action, flipped) in path.iter().rev() {
             if let Some(node) = self.nodes.get_mut(key) {
-                node.visit_count += 1;
-                let visit_f = node.visit_count as f32;
-                node.mean_value += (value - node.mean_value) / visit_f;
+                node.record_value(value);
 
                 let edge_visits = &mut node.nsa[*action];
                 *edge_visits += 1;
@@ -544,5 +564,39 @@ impl SantoriniMcts {
         let threshold = current_round.saturating_sub(self.config.retain_rounds);
         self.nodes.retain(|_, node| node.round >= threshold);
         self.last_cleanup_round = current_round;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn record_value_matches_legacy_average() {
+        let mut node = TreeNode {
+            policy: [0.0; ACTION_SIZE],
+            valid: [false; ACTION_SIZE],
+            visit_count: 0,
+            qsa: [0.0; ACTION_SIZE],
+            nsa: [0; ACTION_SIZE],
+            mean_value: 0.2,
+            terminal_value: None,
+            round: 0,
+        };
+
+        node.record_value(0.4);
+        assert!((node.mean_value - 0.3).abs() < 1e-6);
+        assert_eq!(node.visit_count, 1);
+
+        node.record_value(-0.1);
+        let expected = (0.2 + 0.4 - 0.1) / 3.0;
+        assert!((node.mean_value - expected).abs() < 1e-6);
+        assert_eq!(node.visit_count, 2);
+    }
+
+    #[test]
+    fn default_config_has_no_dirichlet_noise() {
+        let cfg = MctsConfig::default();
+        assert_eq!(cfg.dirichlet_weight, 0.0);
     }
 }

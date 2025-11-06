@@ -63,30 +63,22 @@ async function ensureOnnxPredictor(): Promise<(board: Int8Array, mask: Uint8Arra
     }
 
     const session = onnxSessionCache.session;
-    const BOARD_SIZE = 5 * 5 * 3;
+    const BOARD_SIZE = 25 * 3;
     const OUTPUT_SIZE = SANTORINI_CONSTANTS.ACTION_SIZE;
 
     return async (boardBytes: Int8Array, validMask: Uint8Array) => {
-      const canonical = new Int8Array(boardBytes.length);
-      const channelStride = 5 * 5;
-      for (let idx = 0; idx < boardBytes.length; idx += 3) {
-        canonical[idx] = boardBytes[idx];
-        canonical[idx + 1] = boardBytes[idx + 1];
-        canonical[idx + 2] = boardBytes[idx + 2];
-      }
-
       const boardData = new Float32Array(BOARD_SIZE);
-      for (let i = 0; i < canonical.length && i < BOARD_SIZE; i += 1) {
-        boardData[i] = canonical[i];
+      for (let i = 0; i < boardBytes.length && i < BOARD_SIZE; i += 1) {
+        boardData[i] = boardBytes[i];
       }
 
-      const validData = new Uint8Array(validMask.length);
+      const maskData = new Uint8Array(validMask.length);
       for (let i = 0; i < validMask.length; i += 1) {
-        validData[i] = validMask[i];
+        maskData[i] = validMask[i];
       }
 
-      const tensorBoard = new window.ort.Tensor('float32', boardData, [1, 5, 5, 3]);
-      const tensorValid = new window.ort.Tensor('bool', validData, [1, OUTPUT_SIZE]);
+      const tensorBoard = new window.ort.Tensor('float32', boardData, [1, 25, 3]);
+      const tensorValid = new window.ort.Tensor('bool', maskData, [1, OUTPUT_SIZE]);
       const results = await session.run({
         board: tensorBoard,
         valid_actions: tensorValid,

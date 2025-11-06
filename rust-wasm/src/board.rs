@@ -75,7 +75,10 @@ impl BoardState {
     }
 
     pub fn from_bytes(bytes: &[i8]) -> Self {
-        assert!(bytes.len() == STATE_SIZE, "expected 75 entries for board state");
+        assert!(
+            bytes.len() == STATE_SIZE,
+            "expected 75 entries for board state"
+        );
         let mut state = Self::new();
         let mut cursor = 0;
         for i in 0..CELL_COUNT {
@@ -213,11 +216,7 @@ impl BoardState {
     }
 
     pub fn score_for(&self, player: usize) -> i8 {
-        let compare: fn(i8) -> bool = if player == 0 {
-            |w| w > 0
-        } else {
-            |w| w < 0
-        };
+        let compare: fn(i8) -> bool = if player == 0 { |w| w > 0 } else { |w| w < 0 };
         let mut highest = 0;
         for cell in 0..CELL_COUNT {
             if compare(self.workers[cell]) {
