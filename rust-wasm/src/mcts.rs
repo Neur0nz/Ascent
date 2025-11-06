@@ -326,7 +326,9 @@ impl SantoriniMcts {
         }
         let mut board = BoardState::from_vec(&board_state);
         let root_player = player as usize;
-        board = board.canonicalised(root_player);
+        if root_player != 0 {
+            board = board.canonicalised(root_player);
+        }
 
         let mut full_search = force_full_search;
         if !full_search {
@@ -411,10 +413,11 @@ impl SantoriniMcts {
         }
 
         let q = node.mean_value;
+        let green_value = if root_player == 0 { q } else { -q };
         let result = SearchResult {
             version: SEARCH_RESULT_VERSION,
             policy: probs,
-            q: if player == 0 { [q, -q] } else { [-q, q] },
+            q: [green_value, -green_value],
             visits,
             full_search,
         };

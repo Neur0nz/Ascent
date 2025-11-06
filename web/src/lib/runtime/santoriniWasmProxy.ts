@@ -282,8 +282,8 @@ export class SantoriniWasmProxy {
       const { policy, q } = await this.runSearch(this.player, { temperature: 0, forceFullSearch: true }, baseBytes);
       this.lastPolicy = policy;
 
-      const value = this.player === 0 ? q[0] : -q[0];
-      this.currentEval = [value, -value];
+      const greenValue = q[0];
+      this.currentEval = [greenValue, -greenValue];
 
       let bestAction = 0;
       let bestProb = -Infinity;
@@ -321,8 +321,8 @@ export class SantoriniWasmProxy {
           evalMcts,
         );
         this.lastPolicy = policy;
-        const value = this.player === 0 ? q[0] : -q[0];
-        this.currentEval = [value, -value];
+        const greenValue = q[0];
+        this.currentEval = [greenValue, -greenValue];
         return [this.currentEval[0], this.currentEval[1]];
       } finally {
         evalMcts.free?.();
@@ -368,7 +368,7 @@ export class SantoriniWasmProxy {
           evalMcts,
         );
         this.lastPolicy = policy;
-        const baseEval = originalPlayer === 0 ? q[0] : -q[0];
+        const baseEval = q[0];
         this.currentEval = [baseEval, -baseEval];
 
         const rankedActions = policy
@@ -392,7 +392,7 @@ export class SantoriniWasmProxy {
             simulatedBytes,
             evalMcts,
           );
-          const evalAfter = nextPlayer === 0 ? q[0] : -q[0];
+          const evalAfter = q[0];
 
           results.push({
             action,

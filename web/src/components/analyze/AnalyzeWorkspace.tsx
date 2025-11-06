@@ -42,6 +42,15 @@ import type { MatchMoveRecord, MatchRecord, SantoriniMoveAction, PlayerProfile, 
 import type { SupabaseAuthState } from '@hooks/useSupabaseAuth';
 import type { LobbyMatch } from '@hooks/useMatchLobby';
 
+const yieldToMainThread = () =>
+  new Promise<void>((resolve) => {
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => resolve());
+      return;
+    }
+    setTimeout(() => resolve(), 0);
+  });
+
 interface LoadedAnalysis {
   match: MatchRecord;
   moves: MatchMoveRecord<SantoriniMoveAction>[];
@@ -394,6 +403,7 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
           player: entry.action?.by ?? null,
           timestamp: entry.createdAt ?? null,
         });
+        await yieldToMainThread();
       }
 
       computedSeries = points;

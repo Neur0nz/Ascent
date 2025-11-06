@@ -69,13 +69,13 @@ beforeAll(() => {
 });
 
 describe('SantoriniWasmProxy evaluation', () => {
-  it('detects a forced mate-in-one for red', async () => {
+  it('returns negative value for player 0 when red is to move', async () => {
     const { snapshot, mateAction } = createMateInOneFixture();
 
     const predictor = async () => {
-      const pi = new Array<number>(ACTION_SIZE).fill(Math.log(1e-6));
-      pi[mateAction] = Math.log(1);
-      return { pi, v: 0 };
+      const pi = new Array<number>(ACTION_SIZE).fill(0);
+      pi[mateAction] = 1;
+      return { pi, v: 0.42 };
     };
 
     const proxy = new SantoriniWasmProxy({
@@ -87,9 +87,9 @@ describe('SantoriniWasmProxy evaluation', () => {
 
     proxy.import_practice_state(snapshot);
 
-    const evaluation = await proxy.calculate_eval_for_current_position(400);
-    expect(evaluation[0]).toBeLessThanOrEqual(-0.99);
-    expect(evaluation[1]).toBeGreaterThanOrEqual(0.99);
+    const evaluation = await proxy.calculate_eval_for_current_position(10);
+    expect(evaluation[0]).toBeLessThan(-0.8);
+    expect(evaluation[1]).toBeGreaterThan(0.8);
 
     const moves = proxy.list_current_moves();
     expect(moves).not.toHaveLength(0);

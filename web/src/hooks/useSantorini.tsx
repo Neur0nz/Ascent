@@ -566,21 +566,8 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         }
       }
 
-      const baseMoves = await bridge.listCurrentMoves(10);
+      const baseMoves = await bridge.listMovesWithAdv(10, optionsDepthOverride ?? undefined);
       let normalizedMoves = normalizeTopMoves(baseMoves);
-
-      if (normalizedMoves.length === 0 || normalizedMoves.every((move) => move.prob === 0)) {
-        console.log('No moves or zero probabilities from list_current_moves, trying list_current_moves_with_adv...');
-        try {
-          const advMoves = await bridge.listMovesWithAdv(6, optionsDepthOverride ?? undefined);
-          if (snapshotVersion !== wasmStateVersionRef.current) {
-            return null;
-          }
-          normalizedMoves = normalizeTopMoves(advMoves);
-        } catch (advError) {
-          console.error('Failed to get advanced moves:', advError);
-        }
-      }
       nextTopMoves = normalizedMoves;
 
       if (requestId === evaluationRequestIdRef.current) {
