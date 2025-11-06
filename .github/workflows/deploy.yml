@@ -44,7 +44,7 @@ jobs:
       - name: Copy Santorini model
         run: |
           mkdir -p web/public/santorini
-          cp santorini/model_no_god.onnx web/public/santorini/model_no_god.onnx
+          cp web/src/assets/santorini/model_no_god.onnx web/public/santorini/model_no_god.onnx
           echo "Model file copied successfully"
 
       - name: Build static site
