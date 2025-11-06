@@ -206,39 +206,8 @@ export class SantoriniWasmProxy {
     const bytes = boardArrayToBytes(this.boardArray);
     this.board.setState(bytes);
   }
-
   private cloneBoardBytes(): Int8Array {
     return new Int8Array(this.board.getState());
-  }
-
-  private createPolicyForAction(action: number): number[] {
-    const policy = Array.from({ length: ACTION_SIZE }, () => 0);
-    if (action >= 0 && action < policy.length) {
-      policy[action] = 1;
-    }
-    return policy;
-  }
-
-  private detectImmediateWin(
-    baseBytes: Int8Array,
-    player: number,
-    validMask: boolean[],
-  ): { action: number; value: number } | null {
-    for (let action = 0; action < validMask.length; action += 1) {
-      if (!validMask[action]) continue;
-      const tempBoard = new this.BoardCtor();
-      tempBoard.setState(baseBytes);
-      const nextPlayer = tempBoard.applyMove(action, player);
-      const terminal = tempBoard.maybeTerminalScore(nextPlayer);
-      tempBoard.free?.();
-      if (typeof terminal === 'number' && Number.isFinite(terminal)) {
-        const expected = player === 0 ? 1 : -1;
-        if (terminal === expected) {
-          return { action, value: terminal };
-        }
-      }
-    }
-    return null;
   }
 
   private computeValidMoves(player: number): boolean[] {
@@ -310,15 +279,6 @@ export class SantoriniWasmProxy {
   async guessBestAction(): Promise<number> {
     return this.enqueueAsync(async () => {
       const baseBytes = this.cloneBoardBytes();
-      const validMask = this.computeValidMoves(this.player);
-      const immediate = this.detectImmediateWin(baseBytes, this.player, validMask);
-      if (immediate) {
-        this.lastPolicy = this.createPolicyForAction(immediate.action);
-        const value = immediate.value;
-        this.currentEval = [value, -value];
-        return immediate.action;
-      }
-
       const { policy, q } = await this.runSearch(this.player, { temperature: 0, forceFullSearch: true }, baseBytes);
       this.lastPolicy = policy;
 
@@ -352,19 +312,6 @@ export class SantoriniWasmProxy {
         this.ensureMcts(Math.trunc(numMCTSSims));
       }
       const baseBytes = this.cloneBoardBytes();
-      const currentMask = this.computeValidMoves(this.player);
-      const immediateWin = this.detectImmediateWin(baseBytes, this.player, currentMask);
-      if (immediateWin) {
-        this.lastPolicy = this.createPolicyForAction(immediateWin.action);
-        const value = immediateWin.value;
-        this.currentEval = [value, -value];
-        return [this.currentEval[0], this.currentEval[1]];
-      }
-
-      const opponent = this.player === 0 ? 1 : 0;
-      const opponentMask = this.computeValidMoves(opponent);
-      const immediateLoss = this.detectImmediateWin(baseBytes, opponent, opponentMask);
-
       const evalMcts = this.createMcts(this.simulationCount, { dirichlet_weight: 0 });
       try {
         const { policy, q } = await this.runSearch(
@@ -374,10 +321,7 @@ export class SantoriniWasmProxy {
           evalMcts,
         );
         this.lastPolicy = policy;
-        let value = this.player === 0 ? q[0] : -q[0];
-        if (immediateLoss) {
-          value = immediateLoss.value;
-        }
+        const value = this.player === 0 ? q[0] : -q[0];
         this.currentEval = [value, -value];
         return [this.currentEval[0], this.currentEval[1]];
       } finally {
@@ -415,28 +359,8 @@ export class SantoriniWasmProxy {
       const baseBytes = this.cloneBoardBytes();
       const originalPlayer = this.player;
       const evalMcts = this.createMcts(this.simulationCount, { dirichlet_weight: 0 });
-      const currentMask = this.computeValidMoves(originalPlayer);
-      const opponent = originalPlayer === 0 ? 1 : 0;
-      const opponentMask = this.computeValidMoves(opponent);
-      const immediateWin = this.detectImmediateWin(baseBytes, originalPlayer, currentMask);
-      const immediateLoss = this.detectImmediateWin(baseBytes, opponent, opponentMask);
 
       try {
-        if (immediateWin) {
-          const baseEval = immediateWin.value;
-          this.lastPolicy = this.createPolicyForAction(immediateWin.action);
-          this.currentEval = [baseEval, -baseEval];
-          return [
-            {
-              action: immediateWin.action,
-              prob: 1,
-              text: moveToString(immediateWin.action, originalPlayer),
-              eval: baseEval,
-              delta: 0,
-            },
-          ];
-        }
-
         const { policy, q } = await this.runSearch(
           originalPlayer,
           { temperature: 1.0, forceFullSearch: true },
@@ -444,7 +368,7 @@ export class SantoriniWasmProxy {
           evalMcts,
         );
         this.lastPolicy = policy;
-        const baseEval = immediateLoss ? immediateLoss.value : (originalPlayer === 0 ? q[0] : -q[0]);
+        const baseEval = originalPlayer === 0 ? q[0] : -q[0];
         this.currentEval = [baseEval, -baseEval];
 
         const rankedActions = policy

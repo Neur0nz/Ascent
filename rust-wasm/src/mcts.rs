@@ -325,6 +325,8 @@ impl SantoriniMcts {
             return Err(JsValue::from_str("board state must contain 75 entries"));
         }
         let mut board = BoardState::from_vec(&board_state);
+        let root_player = player as usize;
+        board = board.canonicalised(root_player);
 
         let mut full_search = force_full_search;
         if !full_search {
@@ -412,7 +414,7 @@ impl SantoriniMcts {
         let result = SearchResult {
             version: SEARCH_RESULT_VERSION,
             policy: probs,
-            q: [q, -q],
+            q: if player == 0 { [q, -q] } else { [-q, q] },
             visits,
             full_search,
         };
