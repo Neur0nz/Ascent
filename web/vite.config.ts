@@ -1,13 +1,18 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react-swc';
-import path from 'node:path';
+import * as path from 'node:path';
+import { wasmWatchPlugin } from './vite-plugin-wasm-watch';
 
 export default defineConfig(({ mode }) => {
   const envDir = path.resolve(__dirname);
   const env = loadEnv(mode, envDir, '');
+  const isDev = mode === 'development';
 
   return {
-    plugins: [react()],
+    plugins: [
+      react(),
+      ...(isDev ? [wasmWatchPlugin()] : []),
+    ],
     envDir,
     base: env.VITE_PUBLIC_BASE_PATH ?? '/',
     resolve: {

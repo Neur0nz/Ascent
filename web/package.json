@@ -4,7 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:wasm": "cd ../rust-wasm && wasm-pack build --target web --release",
     "dev": "vite",
+    "dev:with-wasm-watch": "npm run build:wasm && vite",
+    "prebuild": "npm run build:wasm",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest"
