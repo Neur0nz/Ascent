@@ -219,18 +219,20 @@ The current implementation is **solid and follows best practices** for Web Push 
 1. No periodic cleanup of stale subscriptions
 2. No proactive subscription refresh
 3. Limited monitoring/analytics
+4. **Android-specific reliability issues** (see [Android Push & Presence Analysis](./android-push-and-presence-analysis.md))
 
 **Will it work as expected?**
-✅ **Yes**, for the most part. The implementation should work correctly for:
+✅ **Yes**, for desktop browsers. The implementation should work correctly for:
 - Desktop browsers (Chrome, Firefox, Edge)
-- Android browsers (when installed as PWA)
 - Multi-device scenarios
 - Notification suppression when user is viewing the match
 
 ⚠️ **Limitations:**
+- **Android**: Service workers may be terminated, causing missed notifications (see detailed analysis in [android-push-and-presence-analysis.md](./android-push-and-presence-analysis.md))
 - iOS support is limited (requires iOS 16.4+ and home screen installation)
-- Service workers may be terminated on mobile, affecting delivery
 - No automatic cleanup of stale subscriptions (only on failed delivery attempts)
+
+**For Android-specific issues and fixes, see:** [Android Push & Presence Analysis](./android-push-and-presence-analysis.md)
 
 The implementation is production-ready with the recommended improvements above.
 

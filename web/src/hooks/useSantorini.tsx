@@ -261,6 +261,8 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
   const processingMoveRef = useRef<boolean>(false); // Prevent rapid clicks
   const workerClientRef = useRef<SantoriniWorkerClient | null>(null);
   const workerPreferenceRef = useRef<EnginePreference>('python');
+  const analysisWorkerRef = useRef<SantoriniWorkerClient | null>(null);
+  const analysisWorkerPreferenceRef = useRef<EnginePreference>('python');
 
   useEffect(() => {
     if (evaluationStatus.state !== 'running') {
@@ -294,6 +296,45 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     }
     return workerClientRef.current;
   }, [enginePreference]);
+
+  const ensureAnalysisWorker = useCallback(async () => {
+    if (!analysisWorkerRef.current) {
+      const client = new SantoriniWorkerClient();
+      analysisWorkerRef.current = client;
+      await client.init(enginePreference);
+      analysisWorkerPreferenceRef.current = enginePreference;
+      return client;
+    }
+    if (analysisWorkerPreferenceRef.current !== enginePreference) {
+      await analysisWorkerRef.current.init(enginePreference);
+      analysisWorkerPreferenceRef.current = enginePreference;
+    }
+    return analysisWorkerRef.current;
+  }, [enginePreference]);
+
+  const prepareAnalysisWorker = useCallback(async () => {
+    const client = await ensureAnalysisWorker();
+    if (!client) {
+      return null;
+    }
+    try {
+      const snapshot = engineRef.current.snapshot as SantoriniStateSnapshot;
+      await client.syncSnapshot(snapshot);
+      return client;
+    } catch (error) {
+      console.error('Failed to synchronize analysis worker state:', error);
+      return null;
+    }
+  }, [ensureAnalysisWorker]);
+
+  useEffect(() => {
+    return () => {
+      workerClientRef.current?.destroy();
+      workerClientRef.current = null;
+      analysisWorkerRef.current?.destroy();
+      analysisWorkerRef.current = null;
+    };
+  }, []);
 
   const getPlacementContext = useCallback((): UiPlacementContext => {
     const enginePlacement: EnginePlacementContext | null = engineRef.current?.getPlacementContext() ?? null;
@@ -528,8 +569,8 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
   }, [getPlacementContext]);
 
   const safeListMoves = useCallback(
-    async (limit: number, depth: number | null) => {
-      const client = workerClientRef.current ?? (await ensureWorkerClient());
+    async (limit: number, depth: number | null, clientOverride?: SantoriniWorkerClient | null) => {
+      const client = clientOverride ?? (await prepareAnalysisWorker());
       if (!client) return [];
       try {
         return await client.listMovesWithAdv(limit, depth ?? null);
@@ -547,7 +588,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         throw error;
       }
     },
-    [ensureWorkerClient],
+    [prepareAnalysisWorker],
   );
 
   const evaluatePosition = useCallback(async (overrides?: EvaluationOverrides): Promise<EvaluationState | null> => {
@@ -612,14 +653,14 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
 
     try {
       const snapshotVersion = wasmStateVersionRef.current;
-      const client = workerClientRef.current ?? (await ensureWorkerClient());
+      const client = await prepareAnalysisWorker();
       if (!client) {
         setEvaluationStatus({
           state: 'error',
           startedAt: evalStart,
           durationMs: performance.now() - evalStart,
           sims: plannedSims,
-          message: 'AI runtime unavailable',
+          message: 'Analysis runtime unavailable',
         });
         return null;
       }
@@ -637,7 +678,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         }
       }
 
-      const baseMoves = await safeListMoves(10, optionsDepth ?? null);
+      const baseMoves = await safeListMoves(10, optionsDepth ?? null, client);
       nextTopMoves = normalizeTopMoves(baseMoves);
 
       if (requestId === evaluationRequestIdRef.current) {
@@ -673,7 +714,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       }
       return null;
     }
-  }, [ensureWorkerClient, evaluationDepthOverride, evaluationEnabled, getPlacementContext, isPlacementPhase, optionsDepthOverride, practiceDifficulty, safeListMoves]);
+  }, [evaluationDepthOverride, evaluationEnabled, getPlacementContext, isPlacementPhase, optionsDepthOverride, practiceDifficulty, prepareAnalysisWorker, safeListMoves]);
 
   const refreshEvaluation = useCallback(() => evaluatePosition(), [evaluatePosition]);
 
@@ -691,7 +732,12 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     try {
       const requestVersion = wasmStateVersionRef.current;
       const depth = optionsDepthOverride ?? evaluationDepthOverride ?? null;
-      const result = await safeListMoves(6, depth ?? null);
+      const client = await prepareAnalysisWorker();
+      if (!client) {
+        setTopMoves([]);
+        return;
+      }
+      const result = await safeListMoves(6, depth ?? null, client);
       if (requestVersion !== wasmStateVersionRef.current) {
         setTopMoves([]);
         return;
@@ -703,7 +749,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     } finally {
       setCalcOptionsBusy(false);
     }
-  }, [evaluationDepthOverride, evaluationEnabled, getPlacementContext, isPlacementPhase, optionsDepthOverride, safeListMoves]);
+  }, [evaluationDepthOverride, evaluationEnabled, getPlacementContext, isPlacementPhase, optionsDepthOverride, prepareAnalysisWorker, safeListMoves]);
 
   const syncUi = useCallback(async (loadingState = false) => {
     // TypeScript engine is source of truth - sync UI from it
