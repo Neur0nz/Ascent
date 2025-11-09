@@ -91,7 +91,6 @@ function PracticeTabContent({ onShowHistory }: { onShowHistory: () => void }) {
     buttons,
     evaluation,
     evaluationStatus,
-    evaluationStatus,
     topMoves,
     controls,
     redo,

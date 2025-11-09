@@ -128,6 +128,37 @@ function EvaluationPanel({
       ? '360px'
       : 'auto'
     : 'auto';
+  const runningEval = evaluationStatus.state === 'running';
+  const statusSims = 'sims' in evaluationStatus ? evaluationStatus.sims : undefined;
+  const statusDurationMs =
+    evaluationStatus.state === 'running' || evaluationStatus.state === 'success' || evaluationStatus.state === 'error'
+      ? evaluationStatus.durationMs
+      : undefined;
+  const expectedMs =
+    statusSims && statusSims > 0
+      ? Math.max(1200, statusSims * 6)
+      : 2000;
+  const elapsedMs = statusDurationMs;
+  const elapsedLabel =
+    elapsedMs != null ? `${(elapsedMs / 1000).toFixed(1)}s` : evaluationStatus.state === 'success' ? 'Just updated' : null;
+  const evaluationProgress =
+    evaluationStatus.state === 'success'
+      ? 100
+      : evaluationStatus.state === 'running'
+        ? Math.min(95, ((statusDurationMs ?? 0) / expectedMs) * 100)
+        : 0;
+  const statusLabel = (() => {
+    switch (evaluationStatus.state) {
+      case 'running':
+        return 'Evaluating position...';
+      case 'success':
+        return 'Evaluation ready';
+      case 'error':
+        return `Evaluation failed${evaluationStatus.message ? `: ${evaluationStatus.message}` : ''}`;
+      default:
+        return 'Idle';
+    }
+  })();
 
   return (
     <Box
@@ -135,7 +166,8 @@ function EvaluationPanel({
       borderWidth="1px"
       borderColor={panelBorder}
       bgGradient={panelGradient}
-      p={disclosure.isOpen ? { base: 5, md: 6 } : 3}
+      px={disclosure.isOpen ? { base: 5, md: 6 } : 3}
+      py={disclosure.isOpen ? { base: 4, md: 5 } : 3}
       minH={panelMinHeight}
       boxShadow="dark-lg"
       transition="all 0.3s ease"
@@ -190,7 +222,7 @@ function EvaluationPanel({
                 <Text fontSize="xs" color={subtleText}>
                   {statusLabel}
                   {elapsedLabel ? ` • ${elapsedLabel}` : ''}
-                  {evaluationStatus.state === 'running' && evaluationStatus.sims ? ` • ~${evaluationStatus.sims} sims` : ''}
+                  {evaluationStatus.state === 'running' && statusSims ? ` • ~${statusSims} sims` : ''}
                 </Text>
                 {(evaluationStatus.state === 'running' || evaluationStatus.state === 'success') && (
                   <Progress
@@ -198,64 +230,51 @@ function EvaluationPanel({
                     size="xs"
                     colorScheme="teal"
                     value={evaluationProgress}
-                    isIndeterminate={runningEval && !evaluationStatus.sims}
+                    isIndeterminate={runningEval && !statusSims}
                   />
                 )}
               </Box>
               <Box>
-            <Text fontSize="sm" color={mutedText} mb={2}>
-              Advantage: {evaluation.advantage}
-            </Text>
             <EvaluationBar value={evaluation.value} />
-            <Text mt={2} fontSize="2xl" fontWeight="bold">
-              {evaluation.label}
-            </Text>
+            <Flex mt={2} align={{ base: 'flex-start', sm: 'center' }} gap={3} flexWrap="wrap">
+              <Text fontSize="2xl" fontWeight="bold">
+                {evaluation.label}
+              </Text>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={movesDisclosure.onToggle}
+                leftIcon={movesDisclosure.isOpen ? <ChevronDownIcon /> : <ChevronRightIcon />}
+              >
+                {movesDisclosure.isOpen ? 'Hide Best Moves' : 'Show Best Moves'}
+              </Button>
+            </Flex>
           </Box>
           <Box>
-            <Flex justify="space-between" align={{ base: 'flex-start', sm: 'center' }} mb={2} wrap="wrap" gap={2}>
-              <Heading size="sm">Best moves</Heading>
-              <HStack spacing={2} align="center">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={movesDisclosure.onToggle}
-                  leftIcon={movesDisclosure.isOpen ? <ChevronDownIcon /> : <ChevronRightIcon />}
-                >
-                  {movesDisclosure.isOpen ? 'Hide' : 'Show'}
-                </Button>
-                {movesDisclosure.isOpen && (
-                  <>
-                    <Select
-                      size="sm"
-                      maxW="180px"
-                      value={optionsSelectValue}
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        updateOptionsDepth(value === 'ai' ? null : Number(value));
-                      }}
-                      aria-label="Best move analysis depth"
-                      title="Best move analysis depth"
-                    >
-                      {resolvedOptionsDepth.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </Select>
-                    <Button
-                      size="sm"
-                      colorScheme="purple"
-                      onClick={calculateOptions}
-                      isLoading={calcOptionsBusy}
-                    >
-                      Analyze
-                    </Button>
-                  </>
-                )}
-              </HStack>
-            </Flex>
             <Collapse in={movesDisclosure.isOpen} animateOpacity>
               <Stack spacing={3} mt={2}>
+                <HStack spacing={2} align="center" flexWrap="wrap">
+                  <Select
+                    size="sm"
+                    maxW="180px"
+                    value={optionsSelectValue}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      updateOptionsDepth(value === 'ai' ? null : Number(value));
+                    }}
+                    aria-label="Best move analysis depth"
+                    title="Best move analysis depth"
+                  >
+                    {resolvedOptionsDepth.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </Select>
+                  <Button size="sm" colorScheme="purple" onClick={calculateOptions} isLoading={calcOptionsBusy}>
+                    Analyze
+                  </Button>
+                </HStack>
                 {topMoves.length === 0 && (
                   <Text fontSize="sm" color={subtleText}>
                     Run a calculation to see detailed options.
@@ -339,32 +358,3 @@ function EvaluationPanel({
 }
 
 export default EvaluationPanel;
-  const runningEval = evaluationStatus.state === 'running';
-  const expectedMs =
-    evaluationStatus.sims && evaluationStatus.sims > 0
-      ? Math.max(1200, evaluationStatus.sims * 6)
-      : 2000;
-  const elapsedMs =
-    evaluationStatus.state === 'running' || evaluationStatus.state === 'success' || evaluationStatus.state === 'error'
-      ? evaluationStatus.durationMs
-      : undefined;
-  const elapsedLabel =
-    elapsedMs != null ? `${(elapsedMs / 1000).toFixed(1)}s` : evaluationStatus.state === 'success' ? 'Just updated' : null;
-  const evaluationProgress =
-    evaluationStatus.state === 'success'
-      ? 100
-      : evaluationStatus.state === 'running'
-        ? Math.min(95, ((evaluationStatus.durationMs ?? 0) / expectedMs) * 100)
-        : 0;
-  const statusLabel = (() => {
-    switch (evaluationStatus.state) {
-      case 'running':
-        return 'Evaluating position...';
-      case 'success':
-        return 'Evaluation ready';
-      case 'error':
-        return `Evaluation failed${evaluationStatus.message ? `: ${evaluationStatus.message}` : ''}`;
-      default:
-        return 'Idle';
-    }
-  })();

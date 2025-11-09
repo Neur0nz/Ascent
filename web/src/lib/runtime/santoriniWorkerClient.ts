@@ -1,5 +1,6 @@
 import type { EnginePreference, SantoriniStateSnapshot } from '@/types/match';
 import type { PythonEvalResult, PythonMoveSummary, HistorySnapshotEntry } from '@/lib/pythonBridge/types';
+import SantoriniWorker from '@/workers/santoriniEngine.worker?worker&module';
 
 type WorkerRequestType =
   | 'init'
@@ -27,7 +28,7 @@ export class SantoriniWorkerClient {
   private pending = new Map<number, { resolve: (value: unknown) => void; reject: (reason: unknown) => void }>();
 
   constructor() {
-    this.worker = new Worker(new URL('../../workers/santoriniEngine.worker.ts', import.meta.url), { type: 'module' });
+    this.worker = new SantoriniWorker({ type: 'module' });
     this.worker.addEventListener('message', (event: MessageEvent<WorkerResponse>) => {
       const { id, success, result, error } = event.data;
       const callbacks = this.pending.get(id);

@@ -45,14 +45,14 @@ export function loadExternalScript(descriptor: ScriptDescriptor): Promise<void> 
 
   const promise = new Promise<void>((resolve, reject) => {
     if (typeof document === 'undefined') {
-      // Worker context: try importScripts() first (classic workers), fall back to fetch+eval (module workers)
+      // Worker context: prefer importScripts when supported, otherwise emulate classic behavior via fetch+eval.
       if (typeof importScripts === 'function') {
         try {
           importScripts(src);
           resolve();
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
-          // Module workers don't support importScripts()
+          // Module workers throw when calling importScripts; gracefully fall back to manual loading.
           if (errorMessage.includes('Module scripts') || errorMessage.includes('importScripts')) {
             loadScriptInWorker(src, integrity, crossOrigin).then(resolve).catch(reject);
           } else {
@@ -61,11 +61,8 @@ export function loadExternalScript(descriptor: ScriptDescriptor): Promise<void> 
         }
         return;
       }
-      
-      // No importScripts available: try dynamic import (ES modules), fall back to fetch+eval (UMD)
-      import(/* @vite-ignore */ src)
-        .then(() => resolve())
-        .catch(() => loadScriptInWorker(src, integrity, crossOrigin).then(resolve).catch(reject));
+
+      loadScriptInWorker(src, integrity, crossOrigin).then(resolve).catch(reject);
       return;
     }
 
