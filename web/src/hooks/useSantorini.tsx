@@ -623,6 +623,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         });
         return null;
       }
+      await client.cancelEvaluation().catch(() => undefined);
       const evalResponse = await client.calculateEvaluation(evalDepth ?? null);
       if (snapshotVersion !== wasmStateVersionRef.current) {
         return null;
@@ -764,7 +765,9 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         moveSelectorRef.current.reset();
         const restored = await restorePracticeState();
         await syncUi(true);
-        await refreshEvaluation();
+        refreshEvaluation().catch((error) => {
+          console.error('Failed to refresh initial evaluation:', error);
+        });
         let statusOverride: string | null = 'Ready to play!';
         if (!restored) {
           await startGuidedSetup();
@@ -837,8 +840,8 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       moveSelectorRef.current.reset();
       updateSelectable();
 
-      await syncPythonFromTypeScript();
       await syncUi();
+      await syncPythonFromTypeScript();
       refreshEvaluation().catch((error) => {
         console.error('Failed to refresh evaluation after importing state:', error);
       });
@@ -891,10 +894,9 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         
         console.log('👤 Move applied to TS. New player:', engineRef.current.player);
         
-        // Sync to Python engine for AI/evaluation
-        await syncPythonFromTypeScript();
-        
+        // Update UI immediately, then sync Python runtime for AI/eval
         await syncUi();
+        await syncPythonFromTypeScript();
         refreshEvaluation().catch((error) => {
           console.error('Failed to refresh evaluation after applying move:', error);
         });

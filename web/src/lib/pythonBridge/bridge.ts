@@ -126,7 +126,13 @@ export class SantoriniPythonBridge {
       return [];
     }
     const snapshot = toPlain<Array<Record<string, unknown>>>(py.get_history_snapshot()) ?? [];
-    return snapshot;
+    return snapshot.map((entry) => {
+      const clone: Record<string, unknown> = {};
+      Object.entries(entry).forEach(([key, value]) => {
+        clone[key] = toPlain(value);
+      });
+      return clone as HistorySnapshotEntry;
+    });
   }
 
   getHistoryLength(): number {

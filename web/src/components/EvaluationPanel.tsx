@@ -14,6 +14,7 @@ import {
   useColorModeValue,
 } from '@chakra-ui/react';
 import { ChevronDownIcon, ChevronRightIcon } from '@chakra-ui/icons';
+import { useEffect, useState } from 'react';
 import type { EvaluationState, EvaluationStatus, TopMove } from '@hooks/useSantorini';
 
 interface EvaluationPanelProps {
@@ -37,6 +38,9 @@ const depthOptions = [
   { label: 'Native (800)', value: '800' },
   { label: 'Boosted (3200)', value: '3200' },
 ];
+
+const getNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+const EVAL_PROGRESS_TICK_MS = 2500;
 
 function EvaluationBar({ value }: { value: number }) {
   const safeValue = Number.isFinite(value) ? Math.max(-1, Math.min(1, value)) : 0;
@@ -128,6 +132,19 @@ function EvaluationPanel({
       ? '360px'
       : 'auto'
     : 'auto';
+  const [liveElapsedMs, setLiveElapsedMs] = useState<number | null>(null);
+  const runStartedAt = evaluationStatus.state === 'running' ? evaluationStatus.startedAt : null;
+  useEffect(() => {
+    if (evaluationStatus.state !== 'running' || runStartedAt == null) {
+      setLiveElapsedMs(null);
+      return;
+    }
+    const startedAt = runStartedAt;
+    const update = () => setLiveElapsedMs(Math.max(0, getNow() - startedAt));
+    update();
+    const interval = setInterval(update, EVAL_PROGRESS_TICK_MS);
+    return () => clearInterval(interval);
+  }, [evaluationStatus.state, runStartedAt]);
   const runningEval = evaluationStatus.state === 'running';
   const statusSims = 'sims' in evaluationStatus ? evaluationStatus.sims : undefined;
   const statusDurationMs =
@@ -138,14 +155,15 @@ function EvaluationPanel({
     statusSims && statusSims > 0
       ? Math.max(1200, statusSims * 6)
       : 2000;
-  const elapsedMs = statusDurationMs;
-  const elapsedLabel =
-    elapsedMs != null ? `${(elapsedMs / 1000).toFixed(1)}s` : evaluationStatus.state === 'success' ? 'Just updated' : null;
+  const elapsedMs =
+    evaluationStatus.state === 'running'
+      ? liveElapsedMs ?? (runStartedAt != null ? Math.max(0, getNow() - runStartedAt) : 0)
+      : statusDurationMs ?? null;
   const evaluationProgress =
     evaluationStatus.state === 'success'
       ? 100
       : evaluationStatus.state === 'running'
-        ? Math.min(95, ((statusDurationMs ?? 0) / expectedMs) * 100)
+        ? Math.min(95, ((elapsedMs ?? 0) / expectedMs) * 100)
         : 0;
   const statusLabel = (() => {
     switch (evaluationStatus.state) {
@@ -221,7 +239,6 @@ function EvaluationPanel({
               <Box>
                 <Text fontSize="xs" color={subtleText}>
                   {statusLabel}
-                  {elapsedLabel ? ` • ${elapsedLabel}` : ''}
                   {evaluationStatus.state === 'running' && statusSims ? ` • ~${statusSims} sims` : ''}
                 </Text>
                 {(evaluationStatus.state === 'running' || evaluationStatus.state === 'success') && (
@@ -250,7 +267,7 @@ function EvaluationPanel({
               </Button>
             </Flex>
           </Box>
-          <Box>
+          <Box mt={movesDisclosure.isOpen ? 0 : -6}>
             <Collapse in={movesDisclosure.isOpen} animateOpacity>
               <Stack spacing={3} mt={2}>
                 <HStack spacing={2} align="center" flexWrap="wrap">

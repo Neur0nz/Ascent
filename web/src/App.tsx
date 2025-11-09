@@ -16,7 +16,7 @@ import {
   useColorModeValue,
   useToast,
 } from '@chakra-ui/react';
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { SearchIcon, TimeIcon } from '@chakra-ui/icons';
 import { SantoriniProvider, useSantorini } from '@hooks/useSantorini';
 import { useSupabaseAuth } from '@hooks/useSupabaseAuth';
@@ -32,6 +32,7 @@ import ProfileWorkspace from '@components/profile/ProfileWorkspace';
 import LeaderboardWorkspace from '@components/leaderboard/LeaderboardWorkspace';
 import { MatchLobbyProvider, useMatchLobbyContext } from '@hooks/matchLobbyContext';
 import { AuthLoadingScreen } from '@components/auth/AuthLoadingScreen';
+import EvaluationJobToasts from '@components/analyze/EvaluationJobToasts';
 
 const TAB_STORAGE_KEY = 'santorini:lastTab';
 
@@ -342,6 +343,7 @@ function App() {
   const { isOpen: isHistoryOpen, onOpen: openHistory, onClose: closeHistory } = useDisclosure();
   const tabOrder = useMemo<AppTab[]>(() => NAV_TABS.map((tab) => tab.key), []);
   const [activeTab, setActiveTab] = useState<AppTab>(() => resolveInitialTab(tabOrder));
+  const [pendingJobId, setPendingJobId] = useState<string | null>(null);
   const activeIndex = Math.max(0, tabOrder.indexOf(activeTab));
   const auth = useSupabaseAuth();
 
@@ -398,6 +400,11 @@ function App() {
     }
   }, [activeTab, openHistory]);
 
+  const handleEvaluationToastNavigate = useCallback((jobId: string) => {
+    setPendingJobId(jobId);
+    setActiveTab('analyze');
+  }, []);
+
   const handleTabChange = (index: number) => {
     const nextTab = tabOrder[index];
     if (!nextTab) {
@@ -423,6 +430,7 @@ function App() {
         profileId={auth.profile?.id ?? null}
         onNavigateToPlay={() => setActiveTab('play')}
       />
+      <EvaluationJobToasts onNavigateToAnalyze={handleEvaluationToastNavigate} />
       <Tabs
         index={activeIndex}
         onChange={handleTabChange}
@@ -478,7 +486,11 @@ function App() {
                     persistState
                     storageNamespace="analysis"
                   >
-                    <AnalyzeWorkspace auth={auth} />
+                    <AnalyzeWorkspace
+                      auth={auth}
+                      pendingJobId={pendingJobId}
+                      onPendingJobConsumed={() => setPendingJobId(null)}
+                    />
                   </SantoriniProvider>
                 </TabPanel>
                 <TabPanel px={0}>

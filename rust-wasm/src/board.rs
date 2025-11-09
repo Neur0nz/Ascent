@@ -5,14 +5,17 @@ pub const BOARD_SIZE: usize = 5;
 pub const CHANNELS: usize = 3;
 pub const CELL_COUNT: usize = BOARD_SIZE * BOARD_SIZE;
 pub const STATE_SIZE: usize = CELL_COUNT * CHANNELS; // 75 i8 entries
+#[allow(dead_code)]
 pub const NUM_PLAYERS: usize = 2;
 
 pub const NB_GODS: usize = 1;
 pub const ACTION_SIZE: usize = NB_GODS * 2 * 9 * 9; // 162 actions, matches legacy model shape
 pub const PLACEMENT_ACTIONS: usize = CELL_COUNT; // First 25 indices are dedicated to placements
 
+#[allow(dead_code)]
 /// Exported for TypeScript bindings: total flattened board size.
 pub type StateSize = usize;
+#[allow(dead_code)]
 /// Exported for TypeScript bindings: total number of actions.
 pub type ActionSize = usize;
 
@@ -35,14 +38,16 @@ const fn idx(y: usize, x: usize) -> usize {
 
 #[inline]
 pub const fn encode_action(worker: usize, move_direction: usize, build_direction: usize) -> usize {
-    // No gods support – power channel is always zero.
-    NB_GODS * 9 * 9 * worker + 9 * 9 * 0 + 9 * move_direction + build_direction
+    let worker_offset = NB_GODS * 9 * 9 * worker;
+    let move_offset = 9 * move_direction;
+    worker_offset + move_offset + build_direction
 }
 
 #[inline]
 pub const fn decode_action(action: usize) -> (usize, usize, usize) {
-    let worker = action / (NB_GODS * 9 * 9);
-    let remainder = action % (NB_GODS * 9 * 9);
+    let worker_stride = NB_GODS * 9 * 9;
+    let worker = action / worker_stride;
+    let remainder = action % worker_stride;
     let move_direction = remainder / 9;
     let build_direction = remainder % 9;
     (worker, move_direction, build_direction)

@@ -1,7 +1,8 @@
-from MCTS import MCTS
+from MCTS import MCTS, SearchCancelled
 from SantoriniGame import SantoriniGame as Game
 from SantoriniDisplay import move_to_str
 import numpy as np
+import js
 
 # Explicitly export functions for Pyodide
 __all__ = [
@@ -264,8 +265,12 @@ async def calculate_eval_for_current_position(numMCTSSims: int | None = None):
             mcts.args.numMCTSSims = int(numMCTSSims)
 
         # Get evaluation for current position
+        controller = getattr(js, "__santoriniEvalController", None)
         canonical_board = g.getCanonicalForm(board, player)
-        probs, q, _ = await mcts.getActionProb(canonical_board, force_full_search=True)
+        try:
+            probs, q, _ = await mcts.getActionProb(canonical_board, force_full_search=True, cancel_controller=controller)
+        except SearchCancelled:
+            raise RuntimeError("EVAL_CANCELLED")
         g.board.copy_state(board, True)  # Restore board state
 
         # Store evaluation values (q is from current player's perspective)

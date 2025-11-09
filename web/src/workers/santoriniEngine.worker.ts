@@ -39,6 +39,7 @@ type WorkerRequest =
   | { id: number; type: 'syncSnapshot'; payload: SyncSnapshotPayload }
   | { id: number; type: 'exportSnapshot'; payload: Record<string, never> }
   | { id: number; type: 'calculateEvaluation'; payload: EvaluationPayload }
+  | { id: number; type: 'cancelEvaluation'; payload: Record<string, never> }
   | { id: number; type: 'listMovesWithAdv'; payload: ListMovesPayload }
   | { id: number; type: 'guessBestAction'; payload: Record<string, never> }
   | { id: number; type: 'getHistorySnapshot'; payload: Record<string, never> }
@@ -54,6 +55,10 @@ type WorkerResponse =
 let bridge: SantoriniPythonBridge | null = null;
 let enginePreference: EnginePreference = 'python';
 
+type EvalController = { cancelled: boolean };
+const workerGlobal = self as typeof self & { __santoriniEvalController?: EvalController };
+let activeEvalController: EvalController | null = null;
+
 function assertBridge(): SantoriniPythonBridge {
   if (!bridge) {
     throw new Error('Santorini runtime is not initialized yet');
@@ -61,10 +66,33 @@ function assertBridge(): SantoriniPythonBridge {
   return bridge;
 }
 
+function beginEvaluationController(): EvalController {
+  if (activeEvalController) {
+    activeEvalController.cancelled = true;
+  }
+  const controller: EvalController = { cancelled: false };
+  workerGlobal.__santoriniEvalController = controller;
+  activeEvalController = controller;
+  return controller;
+}
+
+function cancelEvaluationController(): void {
+  if (activeEvalController) {
+    activeEvalController.cancelled = true;
+  }
+}
+
+function clearEvaluationController(): void {
+  cancelEvaluationController();
+  delete workerGlobal.__santoriniEvalController;
+  activeEvalController = null;
+}
+
 async function ensureRuntime(preference: EnginePreference): Promise<void> {
   if (bridge && preference === enginePreference) {
     return;
   }
+  clearEvaluationController();
   bridge = null;
   resetSantoriniRuntimeCache();
   const runtime = await createSantoriniRuntime({ evaluationEnabled: true, enginePreference: preference });
@@ -94,8 +122,24 @@ async function handleMessage(event: MessageEvent<WorkerRequest>): Promise<void> 
         break;
       }
       case 'calculateEvaluation': {
-        const response = await assertBridge().calculateEvaluation(payload.depth ?? undefined);
-        result = response;
+        beginEvaluationController();
+        try {
+          const response = await assertBridge().calculateEvaluation(payload.depth ?? undefined);
+          result = response;
+        } catch (error) {
+          if (error instanceof Error && error.message === 'EVAL_CANCELLED') {
+            result = { cancelled: true };
+          } else {
+            throw error;
+          }
+        } finally {
+          clearEvaluationController();
+        }
+        break;
+      }
+      case 'cancelEvaluation': {
+        cancelEvaluationController();
+        result = { ok: true };
         break;
       }
       case 'listMovesWithAdv': {

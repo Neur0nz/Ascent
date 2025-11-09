@@ -45,24 +45,35 @@ export function loadExternalScript(descriptor: ScriptDescriptor): Promise<void> 
 
   const promise = new Promise<void>((resolve, reject) => {
     if (typeof document === 'undefined') {
-      // Worker context: prefer importScripts when supported, otherwise emulate classic behavior via fetch+eval.
+      // Worker context: prefer importScripts when supported, otherwise attempt dynamic import with a fetch+eval fallback.
       if (typeof importScripts === 'function') {
         try {
           importScripts(src);
           resolve();
+          return;
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
-          // Module workers throw when calling importScripts; gracefully fall back to manual loading.
-          if (errorMessage.includes('Module scripts') || errorMessage.includes('importScripts')) {
-            loadScriptInWorker(src, integrity, crossOrigin).then(resolve).catch(reject);
-          } else {
+          if (!(errorMessage.includes('Module scripts') || errorMessage.includes('importScripts'))) {
             reject(error instanceof Error ? error : new Error(String(error)));
+            return;
           }
         }
-        return;
       }
 
-      loadScriptInWorker(src, integrity, crossOrigin).then(resolve).catch(reject);
+      import(/* @vite-ignore */ src)
+        .then((module) => {
+          const exportedLoadPyodide =
+            (module && typeof module.loadPyodide === 'function' && module.loadPyodide) ||
+            (module &&
+              module.default &&
+              typeof (module.default as Record<string, unknown>).loadPyodide === 'function' &&
+              ((module.default as { loadPyodide: () => Promise<unknown> }).loadPyodide as unknown));
+          if (exportedLoadPyodide && typeof (globalThis as typeof globalThis & { loadPyodide?: unknown }).loadPyodide !== 'function') {
+            (globalThis as typeof globalThis & { loadPyodide?: unknown }).loadPyodide = exportedLoadPyodide;
+          }
+          resolve();
+        })
+        .catch(() => loadScriptInWorker(src, integrity, crossOrigin).then(resolve).catch(reject));
       return;
     }
 

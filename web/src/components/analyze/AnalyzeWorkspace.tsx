@@ -8,18 +8,36 @@ import {
   CardBody,
   CardHeader,
   Center,
+  Divider,
   Flex,
+  FormControl,
+  FormErrorMessage,
+  FormLabel,
   Heading,
   HStack,
   IconButton,
   Input,
+  Modal,
+  ModalBody,
+  ModalCloseButton,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  ModalOverlay,
+  NumberDecrementStepper,
+  NumberIncrementStepper,
+  NumberInput,
+  NumberInputField,
+  NumberInputStepper,
+  Radio,
+  RadioGroup,
   Spinner,
   Stack,
   Text,
   Tooltip as ChakraTooltip,
   useColorModeValue,
+  useDisclosure,
   useToast,
-  Divider,
 } from '@chakra-ui/react';
 import {
   ResponsiveContainer,
@@ -39,31 +57,29 @@ import { supabase } from '@/lib/supabaseClient';
 import { SantoriniEngine, type SantoriniSnapshot } from '@/lib/santoriniEngine';
 import { useSantorini } from '@hooks/useSantorini';
 import type { MatchMoveRecord, MatchRecord, SantoriniMoveAction, PlayerProfile, SantoriniStateSnapshot } from '@/types/match';
+import type { EvaluationSeriesPoint } from '@/types/evaluation';
 import type { SupabaseAuthState } from '@hooks/useSupabaseAuth';
 import type { LobbyMatch } from '@hooks/useMatchLobby';
-
-const yieldToMainThread = () =>
-  new Promise<void>((resolve) => {
-    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-      window.requestAnimationFrame(() => resolve());
-      return;
-    }
-    setTimeout(() => resolve(), 0);
-  });
+import { useEvaluationJobs } from '@hooks/useEvaluationJobs';
 
 interface LoadedAnalysis {
   match: MatchRecord;
   moves: MatchMoveRecord<SantoriniMoveAction>[];
 }
 
-interface EvaluationSeriesPoint {
-  moveIndex: number;
-  moveNumber: number;
-  evaluation: number;
-  label: string;
-  player: 'creator' | 'opponent' | null;
-  timestamp?: string | null;
-}
+const EVALUATION_DEPTH_PRESETS = [
+  { label: 'Use AI default', value: 'ai', description: 'Follow the engine\'s current practice setting.' },
+  { label: 'Easy (50 sims)', value: '50', description: 'Very fast, lower-quality reads.' },
+  { label: 'Medium (200 sims)', value: '200', description: 'Balanced speed and accuracy.' },
+  { label: 'Native (800 sims)', value: '800', description: 'Matches the default engine depth.' },
+  { label: 'Boosted (3200 sims)', value: '3200', description: 'Slow but the strongest single-eval search.' },
+];
+
+const NUMERIC_PRESET_VALUES = new Set(
+  EVALUATION_DEPTH_PRESETS.filter((preset) => preset.value !== 'ai').map((preset) => preset.value),
+);
+
+const DEFAULT_CUSTOM_DEPTH = 800;
 
 function describeMatch(match: LobbyMatch, profile: PlayerProfile | null) {
   const isCreator = profile ? match.creator_id === profile.id : false;
@@ -82,13 +98,16 @@ function describeMatch(match: LobbyMatch, profile: PlayerProfile | null) {
 
 interface AnalyzeWorkspaceProps {
   auth: SupabaseAuthState;
+  pendingJobId?: string | null;
+  onPendingJobConsumed?: () => void;
 }
 
-function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
+function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: AnalyzeWorkspaceProps) {
   const toast = useToast();
   const santorini = useSantorini(); // AI engine for evaluation
   const initializeSantorini = santorini.initialize;
   const setSantoriniGameMode = santorini.controls.setGameMode;
+  const { jobs, startJob } = useEvaluationJobs();
   const [matchId, setMatchId] = useState(() => localStorage.getItem('santorini:lastAnalyzedMatch') ?? '');
   const [loaded, setLoaded] = useState<LoadedAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
@@ -98,11 +117,36 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
   const [aiInitialized, setAiInitialized] = useState(false);
   const [replaying, setReplaying] = useState(false);
   const [isExploring, setIsExploring] = useState(false);
-  const [evaluationSeries, setEvaluationSeries] = useState<EvaluationSeriesPoint[] | null>(null);
-  const [evaluationLoading, setEvaluationLoading] = useState(false);
   const [evaluationError, setEvaluationError] = useState<string | null>(null);
-  const [evaluationDepthUsed, setEvaluationDepthUsed] = useState<number | null>(null);
   const MIN_EVAL_MOVE_INDEX = 3;
+  const evaluationDepthModal = useDisclosure();
+  const [depthSelection, setDepthSelection] = useState<string>('ai');
+  const [customDepth, setCustomDepth] = useState<number>(DEFAULT_CUSTOM_DEPTH);
+  const [depthError, setDepthError] = useState<string | null>(null);
+  const [confirmingEvalDepth, setConfirmingEvalDepth] = useState(false);
+  const activeEvaluationJob = useMemo(() => {
+    if (!loaded) {
+      return null;
+    }
+    const candidates = Object.values(jobs).filter((job) => job.matchId === loaded.match.id);
+    if (candidates.length === 0) {
+      return null;
+    }
+    return candidates.reduce((latest, job) => (job.updatedAt > latest.updatedAt ? job : latest));
+  }, [jobs, loaded?.match.id]);
+  const evaluationSeries = activeEvaluationJob?.points ?? null;
+  const evaluationLoading =
+    activeEvaluationJob?.status === 'running' || activeEvaluationJob?.status === 'queued';
+  const evaluationDepthUsed = activeEvaluationJob?.depth ?? null;
+  const jobDerivedError =
+    activeEvaluationJob && activeEvaluationJob.status === 'error'
+      ? activeEvaluationJob.error ?? 'Evaluation failed'
+      : null;
+  const combinedEvaluationError = jobDerivedError ?? evaluationError;
+  const evaluationProgressText =
+    activeEvaluationJob && activeEvaluationJob.totalPositions > 0
+      ? `${activeEvaluationJob.evaluatedCount}/${activeEvaluationJob.totalPositions} positions evaluated`
+      : null;
 
   // Initialize AI engine on mount
   useEffect(() => {
@@ -273,10 +317,23 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
   }, [replayToSnapshot, toast]);
 
   useEffect(() => {
-    setEvaluationSeries(null);
     setEvaluationError(null);
-    setEvaluationDepthUsed(null);
   }, [loaded?.match.id]);
+
+  useEffect(() => {
+    if (!pendingJobId) {
+      return;
+    }
+    const targetJob = jobs[pendingJobId];
+    if (!targetJob) {
+      return;
+    }
+    if (matchId !== targetJob.matchId) {
+      setMatchId(targetJob.matchId);
+    }
+    loadMatchById(targetJob.matchId);
+    onPendingJobConsumed?.();
+  }, [jobs, loadMatchById, matchId, onPendingJobConsumed, pendingJobId]);
 
   const loadMatch = useCallback(() => {
     loadMatchById(matchId);
@@ -303,7 +360,7 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
     }
   }, [currentIndex, loaded, replayToSnapshot]);
 
-  const handleGenerateEvaluationGraph = useCallback(async () => {
+  const handleOpenEvaluationModal = useCallback(() => {
     if (!loaded) {
       toast({
         title: 'Load a match first',
@@ -313,135 +370,102 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
       return;
     }
 
-    if (!aiInitialized) {
+    const referenceDepth = evaluationDepthUsed ?? santorini.evaluationDepth ?? null;
+    if (referenceDepth == null) {
+      setDepthSelection('ai');
+      setCustomDepth(DEFAULT_CUSTOM_DEPTH);
+    } else if (NUMERIC_PRESET_VALUES.has(String(referenceDepth))) {
+      setDepthSelection(String(referenceDepth));
+      setCustomDepth(referenceDepth);
+    } else {
+      setDepthSelection('custom');
+      setCustomDepth(referenceDepth);
+    }
+    setDepthError(null);
+    evaluationDepthModal.onOpen();
+  }, [evaluationDepthModal, evaluationDepthUsed, loaded, santorini.evaluationDepth, toast]);
+
+  const handleConfirmEvaluationDepth = useCallback(async () => {
+    if (!loaded) {
       toast({
-        title: 'AI still loading',
-        description: 'Evaluation tools are not ready yet. Please wait a moment and try again.',
-        status: 'warning',
+        title: 'Load a match first',
+        description: 'Choose a game to analyze before generating the evaluation graph.',
+        status: 'info',
       });
       return;
     }
 
-    const initialSnapshot = loaded.match.initial_state as SantoriniSnapshot | null;
-    if (!initialSnapshot) {
-      toast({
-        title: 'Match snapshot unavailable',
-        description: 'This match is missing its initial snapshot and cannot be analyzed.',
-        status: 'error',
-      });
+    let resolvedDepth: number | null;
+    if (depthSelection === 'ai') {
+      resolvedDepth = null;
+    } else if (depthSelection === 'custom') {
+      resolvedDepth = customDepth;
+    } else {
+      resolvedDepth = Number(depthSelection);
+    }
+
+    if (
+      depthSelection === 'custom' &&
+      (!Number.isFinite(resolvedDepth) || resolvedDepth == null || resolvedDepth <= 0)
+    ) {
+      setDepthError('Enter a positive number of simulations.');
       return;
     }
 
-    setEvaluationLoading(true);
-    setEvaluationError(null);
+    const lobbyMatch = myCompletedGames.find((game) => game.id === loaded.match.id) ?? null;
+    const matchLabel = lobbyMatch
+      ? describeMatch(lobbyMatch, auth?.profile ?? null)
+      : `Match ${loaded.match.id.slice(0, 8)}`;
 
-    const analysis = loaded;
-    const restoreIndex = currentIndex;
-    let computedSeries: EvaluationSeriesPoint[] | null = null;
-    let failureMessage: string | null = null;
-    let depthDetected: number | null = null;
-
+    setDepthError(null);
+    setConfirmingEvalDepth(true);
     try {
-      let playbackEngine = SantoriniEngine.fromSnapshot(initialSnapshot);
-      const snapshots: Array<{
-        snapshot: SantoriniSnapshot;
-        moveIndex: number;
-        action: SantoriniMoveAction | null;
-        createdAt: string | null;
-      }> = [
-        {
-          snapshot: playbackEngine.snapshot,
-          moveIndex: -1,
-          action: null,
-          createdAt: analysis.match.created_at ?? null,
-        },
-      ];
-
-      for (const move of analysis.moves) {
-        const action = move.action;
-        if (action && action.kind === 'santorini.move' && typeof action.move === 'number') {
-          try {
-            const result = playbackEngine.applyMove(action.move);
-            snapshots.push({
-              snapshot: result.snapshot,
-              moveIndex: move.move_index,
-              action,
-              createdAt: move.created_at ?? null,
-            });
-            playbackEngine = SantoriniEngine.fromSnapshot(result.snapshot);
-          } catch (moveError) {
-            console.warn('Skipping move during evaluation replay', {
-              moveIndex: move.move_index,
-              action: action.move,
-            }, moveError);
-          }
-        }
-      }
-
-      const filteredSnapshots = snapshots.filter((entry) => entry.moveIndex >= MIN_EVAL_MOVE_INDEX);
-
-      if (filteredSnapshots.length === 0) {
-        failureMessage = 'Not enough moves yet to build an evaluation graph.';
-        return;
-      }
-
-      const points: EvaluationSeriesPoint[] = [];
-
-      for (const entry of filteredSnapshots) {
-        await santorini.importState(entry.snapshot as SantoriniStateSnapshot, { waitForEvaluation: false });
-        const evaluation = await santorini.controls.refreshEvaluation();
-        const value = evaluation?.value ?? 0;
-        const label = evaluation?.label ?? (value >= 0 ? `+${value.toFixed(3)}` : value.toFixed(3));
-        if (depthDetected === null) {
-          depthDetected = santorini.evaluationDepth ?? null;
-        }
-        points.push({
-          moveIndex: entry.moveIndex,
-          moveNumber: entry.moveIndex === -1 ? 0 : entry.moveIndex + 1,
-          evaluation: value,
-          label,
-          player: entry.action?.by ?? null,
-          timestamp: entry.createdAt ?? null,
-        });
-        await yieldToMainThread();
-      }
-
-      computedSeries = points;
-    } catch (error) {
-      failureMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error('Failed to generate evaluation series', error);
-    } finally {
-      try {
-        await replayToSnapshot(restoreIndex, analysis);
-      } catch (restoreError) {
-        console.warn('Failed to restore analysis position after evaluation calculation', restoreError);
-      }
-      setEvaluationLoading(false);
-    }
-
-    if (failureMessage) {
-      setEvaluationError(failureMessage);
-      setEvaluationSeries(null);
-      setEvaluationDepthUsed(null);
-      toast({
-        title: 'Evaluation graph failed',
-        status: 'error',
-        description: failureMessage,
+      await startJob({
+        match: loaded.match,
+        moves: loaded.moves,
+        minMoveIndex: MIN_EVAL_MOVE_INDEX,
+        depth: resolvedDepth,
+        enginePreference: auth.profile?.engine_preference ?? 'python',
+        matchLabel,
       });
-      return;
-    }
-
-    if (computedSeries) {
-      setEvaluationSeries(computedSeries);
-      setEvaluationDepthUsed(depthDetected);
+      setEvaluationError(null);
+      evaluationDepthModal.onClose();
       toast({
-        title: 'Evaluation graph ready',
-        status: 'success',
-        description: `Calculated ${computedSeries.length} positions`,
+        title: 'Evaluation started',
+        description: 'The AI is generating the graph in the background.',
+        status: 'info',
         duration: 4000,
       });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to start evaluation.';
+      setEvaluationError(message);
+      toast({
+        title: 'Unable to start evaluation',
+        description: message,
+        status: 'error',
+      });
+    } finally {
+      setConfirmingEvalDepth(false);
     }
-  }, [aiInitialized, currentIndex, loaded, replayToSnapshot, santorini, toast]);
+  }, [
+    MIN_EVAL_MOVE_INDEX,
+    auth,
+    customDepth,
+    depthSelection,
+    evaluationDepthModal,
+    loaded,
+    myCompletedGames,
+    startJob,
+    toast,
+  ]);
+
+  const handleCloseDepthModal = useCallback(() => {
+    if (confirmingEvalDepth) {
+      return;
+    }
+    setDepthError(null);
+    evaluationDepthModal.onClose();
+  }, [confirmingEvalDepth, evaluationDepthModal]);
 
   const goToMove = useCallback(
     async (index: number) => {
@@ -640,7 +664,8 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
   }, [currentIndex, isExploring, loaded?.moves.length, replaying, santorini.buttons]);
 
   return (
-    <Stack spacing={6} py={{ base: 6, md: 10 }}>
+    <>
+      <Stack spacing={6} py={{ base: 6, md: 10 }}>
       <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder}>
         <CardHeader>
           <Flex align="center" justify="space-between" gap={3} flexWrap="wrap">
@@ -648,18 +673,23 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
             <Button
               size="sm"
               colorScheme="teal"
-              onClick={handleGenerateEvaluationGraph}
+              onClick={handleOpenEvaluationModal}
               isLoading={evaluationLoading}
-              isDisabled={!loaded || loading || !aiInitialized}
+              isDisabled={!loaded || loading}
             >
               {evaluationSeries ? 'Recalculate eval graph' : 'Generate eval graph'}
             </Button>
           </Flex>
         </CardHeader>
         <CardBody as={Stack} spacing={4}>
-          {evaluationError && (
+          {combinedEvaluationError && (
             <Text color="red.400" fontSize="sm">
-              {evaluationError}
+              {combinedEvaluationError}
+            </Text>
+          )}
+          {evaluationLoading && evaluationProgressText && (
+            <Text color={mutedText} fontSize="sm">
+              {evaluationProgressText}
             </Text>
           )}
           {/* Your Completed Games */}
@@ -1077,6 +1107,113 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
         </Stack>
       )}
     </Stack>
+    <Modal
+      isOpen={evaluationDepthModal.isOpen}
+      onClose={handleCloseDepthModal}
+      isCentered
+      size="lg"
+      closeOnOverlayClick={!confirmingEvalDepth}
+      closeOnEsc={!confirmingEvalDepth}
+    >
+      <ModalOverlay />
+      <ModalContent>
+        <ModalHeader>Configure evaluation depth</ModalHeader>
+        <ModalCloseButton isDisabled={confirmingEvalDepth} />
+        <ModalBody>
+          <Stack spacing={5}>
+            <Text fontSize="sm" color={mutedText}>
+              Choose how deep the AI should search while generating the evaluation graph. Higher values are slower but
+              more accurate.
+            </Text>
+            <FormControl isInvalid={Boolean(depthError)}>
+              <FormLabel>Search depth (simulations)</FormLabel>
+              <RadioGroup
+                value={depthSelection}
+                onChange={(value) => {
+                  setDepthSelection(value);
+                  setDepthError(null);
+                }}
+              >
+                <Stack spacing={3}>
+                  {EVALUATION_DEPTH_PRESETS.map((preset) => {
+                    const isSelected = depthSelection === preset.value;
+                    return (
+                      <Box
+                        key={preset.value}
+                        borderWidth="1px"
+                        borderRadius="md"
+                        borderColor={isSelected ? highlightBorder : cardBorder}
+                        bg={isSelected ? highlightBg : 'transparent'}
+                        px={3}
+                        py={2}
+                      >
+                        <HStack align="flex-start" spacing={3}>
+                          <Radio value={preset.value}>{preset.label}</Radio>
+                          <Text fontSize="sm" color={mutedText}>
+                            {preset.description}
+                          </Text>
+                        </HStack>
+                      </Box>
+                    );
+                  })}
+                  <Box
+                    borderWidth="1px"
+                    borderRadius="md"
+                    borderColor={depthSelection === 'custom' ? highlightBorder : cardBorder}
+                    bg={depthSelection === 'custom' ? highlightBg : 'transparent'}
+                    px={3}
+                    py={2}
+                  >
+                    <Stack spacing={3}>
+                      <HStack spacing={3} align="center" flexWrap="wrap">
+                        <Radio value="custom">Custom</Radio>
+                        {depthSelection === 'custom' && (
+                          <NumberInput
+                            size="sm"
+                            min={1}
+                            max={50000}
+                            step={50}
+                            w="140px"
+                            value={Number.isFinite(customDepth) ? customDepth : DEFAULT_CUSTOM_DEPTH}
+                            onChange={(_, valueAsNumber) =>
+                              setCustomDepth(
+                                Number.isFinite(valueAsNumber) && valueAsNumber > 0
+                                  ? valueAsNumber
+                                  : DEFAULT_CUSTOM_DEPTH,
+                              )
+                            }
+                            clampValueOnBlur
+                          >
+                            <NumberInputField />
+                            <NumberInputStepper>
+                              <NumberIncrementStepper />
+                              <NumberDecrementStepper />
+                            </NumberInputStepper>
+                          </NumberInput>
+                        )}
+                      </HStack>
+                      <Text fontSize="sm" color={mutedText}>
+                        Provide any positive number of simulations to match your preferred strength.
+                      </Text>
+                    </Stack>
+                  </Box>
+                </Stack>
+              </RadioGroup>
+              {depthError && <FormErrorMessage>{depthError}</FormErrorMessage>}
+            </FormControl>
+          </Stack>
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="ghost" mr={3} onClick={handleCloseDepthModal} isDisabled={confirmingEvalDepth}>
+            Cancel
+          </Button>
+          <Button colorScheme="teal" onClick={handleConfirmEvaluationDepth} isLoading={confirmingEvalDepth}>
+            Set depth & generate
+          </Button>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
+    </>
   );
 }
 

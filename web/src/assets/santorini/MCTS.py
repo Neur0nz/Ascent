@@ -6,6 +6,9 @@ NAN = -42.
 k = 0.5
 MINFLOAT = float('-inf')
 
+class SearchCancelled(Exception):
+    pass
+
 
 class MCTS():
     """
@@ -36,7 +39,7 @@ class MCTS():
         self.last_cleaning = 0
         self.batch_info = batch_info
 
-    async def getActionProb(self, canonicalBoard, temp=1, force_full_search=False):
+    async def getActionProb(self, canonicalBoard, temp=1, force_full_search=False, cancel_controller=None):
         """
         This function performs numMCTSSims simulations of MCTS starting from
         canonicalBoard.
@@ -49,6 +52,8 @@ class MCTS():
         nb_MCTS_sims = self.args.numMCTSSims if is_full_search else self.args.numMCTSSims // self.args.ratio_fullMCTS
         forced_playouts = (is_full_search and self.args.forced_playouts)
         for self.step in range(nb_MCTS_sims):
+            if cancel_controller is not None and getattr(cancel_controller, "cancelled", False):
+                raise SearchCancelled()
             dir_noise = (self.step == 0 and is_full_search and self.dirichlet_noise)
             await self.search(canonicalBoard, dirichlet_noise=dir_noise, forced_playouts=forced_playouts)
 

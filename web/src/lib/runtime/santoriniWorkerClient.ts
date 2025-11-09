@@ -7,6 +7,7 @@ type WorkerRequestType =
   | 'syncSnapshot'
   | 'exportSnapshot'
   | 'calculateEvaluation'
+  | 'cancelEvaluation'
   | 'listMovesWithAdv'
   | 'guessBestAction'
   | 'getHistorySnapshot'
@@ -67,8 +68,23 @@ export class SantoriniWorkerClient {
     return this.call('exportSnapshot') as Promise<SantoriniStateSnapshot | null>;
   }
 
-  calculateEvaluation(depth?: number | null): Promise<PythonEvalResult | null> {
-    return this.call('calculateEvaluation', { depth: depth ?? null }) as Promise<PythonEvalResult | null>;
+  async calculateEvaluation(depth?: number | null): Promise<PythonEvalResult | null> {
+    try {
+      const response = (await this.call('calculateEvaluation', { depth: depth ?? null })) as (PythonEvalResult & { cancelled?: false }) | { cancelled: true } | null;
+      if (response && typeof response === 'object' && 'cancelled' in response) {
+        return null;
+      }
+      return response as PythonEvalResult | null;
+    } catch (error) {
+      if (error instanceof Error && error.message === 'EVAL_CANCELLED') {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  cancelEvaluation(): Promise<void> {
+    return this.call('cancelEvaluation');
   }
 
   listMovesWithAdv(limit: number, depth?: number | null): Promise<PythonMoveSummary[]> {
@@ -97,5 +113,11 @@ export class SantoriniWorkerClient {
 
   changeDifficulty(numSimulations: number): Promise<void> {
     return this.call('changeDifficulty', { numSimulations });
+  }
+
+  destroy(): void {
+    this.pending.forEach(({ reject }) => reject(new Error('Santorini worker terminated')));
+    this.pending.clear();
+    this.worker.terminate();
   }
 }
