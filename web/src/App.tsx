@@ -90,6 +90,8 @@ function PracticeTabContent({ onShowHistory }: { onShowHistory: () => void }) {
     onCellLeave,
     buttons,
     evaluation,
+    evaluationStatus,
+    evaluationStatus,
     topMoves,
     controls,
     redo,
@@ -192,6 +194,7 @@ function PracticeTabContent({ onShowHistory }: { onShowHistory: () => void }) {
           <EvaluationPanel
             loading={loading}
             evaluation={evaluation}
+            evaluationStatus={evaluationStatus}
             topMoves={topMoves}
             calcOptionsBusy={calcOptionsBusy}
             evaluationDepth={evaluationDepth}

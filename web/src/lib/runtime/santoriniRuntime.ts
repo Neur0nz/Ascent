@@ -16,6 +16,19 @@ import proxyPy from '@/assets/santorini/proxy.py?raw';
 type WasmModule = typeof import('@wasm/santorini_wasm.js');
 type PredictorFn = (board: Int8Array, mask: Uint8Array) => Promise<{ pi: number[]; v: number[] }>;
 type RuntimeResult = { game: Santorini; selector: MoveSelector };
+type OrtModule = {
+  env: {
+    wasm: {
+      proxy: boolean;
+      wasmPaths: string | Record<string, string>;
+    };
+  };
+  InferenceSession: {
+    create(model: ArrayBuffer, options: Record<string, unknown>): Promise<any>;
+  };
+  Tensor: new (type: string, data: ArrayBufferView, dims: number[]) => any;
+  version?: string;
+};
 
 const PYTHON_FILES = [
   { filename: 'Game.py', content: gamePy },
@@ -36,8 +49,15 @@ import proxy as santorini_proxy
 importlib.reload(santorini_proxy)
 `;
 
+const runtimeGlobal = typeof globalThis !== 'undefined'
+  ? (globalThis as typeof globalThis & { ort?: any; loadPyodide?: (options: { indexURL?: string; fullStdLib?: boolean }) => Promise<any> })
+  : (typeof window !== 'undefined'
+      ? (window as typeof window & { ort?: any; loadPyodide?: (options: { indexURL?: string; fullStdLib?: boolean }) => Promise<any> })
+      : ({} as typeof globalThis & { ort?: any; loadPyodide?: (options: { indexURL?: string; fullStdLib?: boolean }) => Promise<any> }));
+
 let wasmModulePromise: Promise<WasmModule> | null = null;
 let predictorPromise: Promise<PredictorFn> | null = null;
+let ortModulePromise: Promise<OrtModule> | null = null;
 let onnxSessionCache: { url: string; session: any } | null = null;
 let pyodidePromise: Promise<any> | null = null;
 
@@ -53,26 +73,30 @@ async function ensureWasmModule(): Promise<WasmModule> {
   return wasmModulePromise;
 }
 
+async function ensureOrtModule(): Promise<OrtModule> {
+  if (!ortModulePromise) {
+    ortModulePromise = (async () => {
+      const moduleUrl =
+        import.meta.env.VITE_ORT_MODULE_URL ??
+        'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.0/dist/ort.min.mjs';
+      const ort = await import(/* @vite-ignore */ moduleUrl);
+      const inferredBase = moduleUrl.replace(/[^/]+$/, '');
+      const wasmBasePath = import.meta.env.VITE_ORT_WASM_PATH ?? inferredBase;
+      ort.env.wasm.proxy = true;
+      ort.env.wasm.wasmPaths = wasmBasePath;
+      return ort;
+    })();
+  }
+  return ortModulePromise;
+}
+
 async function ensureOnnxPredictor(): Promise<PredictorFn> {
   if (predictorPromise) {
     return predictorPromise;
   }
 
   predictorPromise = (async () => {
-    const onnxUrl = import.meta.env.VITE_ONNX_URL as string | undefined;
-    if (!onnxUrl) {
-      throw new Error('Missing VITE_ONNX_URL environment variable');
-    }
-
-    await loadExternalScript({
-      src: onnxUrl,
-      integrity: import.meta.env.VITE_ONNX_INTEGRITY,
-      crossOrigin: 'anonymous',
-    });
-
-    if (!window.ort) {
-      throw new Error('ONNX runtime script failed to register window.ort');
-    }
+    const ort = await ensureOrtModule();
 
     if (!onnxSessionCache || onnxSessionCache.url !== SANTORINI_MODEL_URL) {
       const response = await fetch(SANTORINI_MODEL_URL, { cache: 'force-cache' });
@@ -88,7 +112,7 @@ async function ensureOnnxPredictor(): Promise<PredictorFn> {
         enableProfiling: false,
         logLevel: 'warning' as const,
       };
-      const session = await window.ort.InferenceSession.create(modelBuffer, sessionOptions);
+      const session = await ort.InferenceSession.create(modelBuffer, sessionOptions);
       onnxSessionCache = { url: SANTORINI_MODEL_URL, session };
     }
 
@@ -97,6 +121,7 @@ async function ensureOnnxPredictor(): Promise<PredictorFn> {
     const OUTPUT_SIZE = SANTORINI_CONSTANTS.ACTION_SIZE;
 
     return async (boardBytes: Int8Array, validMask: Uint8Array) => {
+      const ort = await ensureOrtModule();
       const boardData = new Float32Array(BOARD_SIZE);
       for (let i = 0; i < boardBytes.length && i < BOARD_SIZE; i += 1) {
         boardData[i] = boardBytes[i];
@@ -107,8 +132,8 @@ async function ensureOnnxPredictor(): Promise<PredictorFn> {
         maskData[i] = validMask[i];
       }
 
-      const tensorBoard = new window.ort.Tensor('float32', boardData, [1, 25, 3]);
-      const tensorValid = new window.ort.Tensor('bool', maskData, [1, OUTPUT_SIZE]);
+      const tensorBoard = new ort.Tensor('float32', boardData, [1, 25, 3]);
+      const tensorValid = new ort.Tensor('bool', maskData, [1, OUTPUT_SIZE]);
       const results = await session.run({
         board: tensorBoard,
         valid_actions: tensorValid,
@@ -130,10 +155,10 @@ async function ensureOnnxPredictor(): Promise<PredictorFn> {
 
 function resolvePyodideIndexURL(pyodideUrl: string): string {
   try {
-    if (typeof window === 'undefined') {
+    if (typeof location === 'undefined') {
       return pyodideUrl;
     }
-    const base = new URL(pyodideUrl, window.location.href);
+    const base = new URL(pyodideUrl, location.href);
     base.search = '';
     base.hash = '';
     base.pathname = base.pathname.replace(/\/[^/]*$/, '/');
@@ -150,8 +175,8 @@ function resolvePyodideIndexURL(pyodideUrl: string): string {
 async function ensurePyodide(): Promise<any> {
   if (!pyodidePromise) {
     pyodidePromise = (async () => {
-      if (typeof window === 'undefined') {
-        throw new Error('Santorini Python engine is only available in the browser.');
+      if (!runtimeGlobal) {
+        throw new Error('Santorini Python engine is only available in browser-like environments.');
       }
       const pyodideUrl = import.meta.env.VITE_PYODIDE_URL as string | undefined;
       if (!pyodideUrl) {
@@ -163,11 +188,11 @@ async function ensurePyodide(): Promise<any> {
         crossOrigin: 'anonymous',
       });
 
-      if (typeof window.loadPyodide !== 'function') {
+      if (typeof runtimeGlobal.loadPyodide !== 'function') {
         throw new Error('Pyodide script failed to expose loadPyodide');
       }
 
-      const pyodide = await window.loadPyodide({
+      const pyodide = await runtimeGlobal.loadPyodide({
         indexURL: resolvePyodideIndexURL(pyodideUrl),
         fullStdLib: false,
       });

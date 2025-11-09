@@ -14,11 +14,12 @@ import {
   useColorModeValue,
 } from '@chakra-ui/react';
 import { ChevronDownIcon, ChevronRightIcon } from '@chakra-ui/icons';
-import type { EvaluationState, TopMove } from '@hooks/useSantorini';
+import type { EvaluationState, EvaluationStatus, TopMove } from '@hooks/useSantorini';
 
 interface EvaluationPanelProps {
   loading: boolean;
   evaluation: EvaluationState;
+  evaluationStatus: EvaluationStatus;
   topMoves: TopMove[];
   calcOptionsBusy: boolean;
   evaluationDepth: number | null;
@@ -94,6 +95,7 @@ function EvaluationBar({ value }: { value: number }) {
 function EvaluationPanel({
   loading,
   evaluation,
+  evaluationStatus,
   topMoves,
   calcOptionsBusy,
   evaluationDepth,
@@ -177,14 +179,30 @@ function EvaluationPanel({
               <Button size="sm" variant="outline" onClick={disclosure.onToggle}>
                 Hide
               </Button>
-              <Button size="sm" colorScheme="teal" onClick={refreshEvaluation} isLoading={loading}>
+              <Button size="sm" colorScheme="teal" onClick={refreshEvaluation} isLoading={loading || runningEval} isDisabled={runningEval}>
                 Refresh
               </Button>
             </HStack>
           </Flex>
           <Collapse in={disclosure.isOpen} animateOpacity>
             <Stack spacing={5}>
-          <Box>
+              <Box>
+                <Text fontSize="xs" color={subtleText}>
+                  {statusLabel}
+                  {elapsedLabel ? ` • ${elapsedLabel}` : ''}
+                  {evaluationStatus.state === 'running' && evaluationStatus.sims ? ` • ~${evaluationStatus.sims} sims` : ''}
+                </Text>
+                {(evaluationStatus.state === 'running' || evaluationStatus.state === 'success') && (
+                  <Progress
+                    mt={2}
+                    size="xs"
+                    colorScheme="teal"
+                    value={evaluationProgress}
+                    isIndeterminate={runningEval && !evaluationStatus.sims}
+                  />
+                )}
+              </Box>
+              <Box>
             <Text fontSize="sm" color={mutedText} mb={2}>
               Advantage: {evaluation.advantage}
             </Text>
@@ -321,3 +339,32 @@ function EvaluationPanel({
 }
 
 export default EvaluationPanel;
+  const runningEval = evaluationStatus.state === 'running';
+  const expectedMs =
+    evaluationStatus.sims && evaluationStatus.sims > 0
+      ? Math.max(1200, evaluationStatus.sims * 6)
+      : 2000;
+  const elapsedMs =
+    evaluationStatus.state === 'running' || evaluationStatus.state === 'success' || evaluationStatus.state === 'error'
+      ? evaluationStatus.durationMs
+      : undefined;
+  const elapsedLabel =
+    elapsedMs != null ? `${(elapsedMs / 1000).toFixed(1)}s` : evaluationStatus.state === 'success' ? 'Just updated' : null;
+  const evaluationProgress =
+    evaluationStatus.state === 'success'
+      ? 100
+      : evaluationStatus.state === 'running'
+        ? Math.min(95, ((evaluationStatus.durationMs ?? 0) / expectedMs) * 100)
+        : 0;
+  const statusLabel = (() => {
+    switch (evaluationStatus.state) {
+      case 'running':
+        return 'Evaluating position...';
+      case 'success':
+        return 'Evaluation ready';
+      case 'error':
+        return `Evaluation failed${evaluationStatus.message ? `: ${evaluationStatus.message}` : ''}`;
+      default:
+        return 'Idle';
+    }
+  })();

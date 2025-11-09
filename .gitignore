@@ -33,3 +33,8 @@ web/node_modules/
 rust-wasm/target/
 /cestpasphoto.github.io-main
 /alpha-zero-general-master
+/.cargo
+/.wasm-pack
+/rust-wasm/pkg
+/rust-wasm/pkg
+rust-wasm/pkg/santorini_wasm_bg.wasm

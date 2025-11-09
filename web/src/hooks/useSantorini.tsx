@@ -1,7 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Santorini } from '@game/santorini';
-import { MoveSelector } from '@game/moveSelector';
 import { renderCellSvg, type CellState } from '@game/svg';
 import { GAME_CONSTANTS } from '@game/constants';
 import type { SantoriniStateSnapshot, EnginePreference } from '@/types/match';
@@ -13,7 +11,7 @@ import {
 } from '@/lib/santoriniEngine';
 import { TypeScriptMoveSelector } from '@/lib/moveSelectorTS';
 import { useToast } from '@chakra-ui/react';
-import { createSantoriniRuntime } from '@/lib/runtime/santoriniRuntime';
+import { SantoriniWorkerClient } from '@/lib/runtime/santoriniWorkerClient';
 import {
   DEFAULT_PRACTICE_DIFFICULTY,
   DEFAULT_PRACTICE_MODE,
@@ -25,7 +23,6 @@ import {
   writePracticeSnapshot,
   clearPracticeSnapshot,
 } from '@/lib/practiceState';
-import { SantoriniPythonBridge } from '@/lib/pythonBridge/bridge';
 import {
   applyActionToBoard,
   formatCoordinate,
@@ -176,6 +173,12 @@ const yieldToMainThread = () =>
 
 const normalizeTopMoves = (rawMoves: unknown): TopMove[] => normalizePracticeTopMoves(rawMoves);
 
+export type EvaluationStatus =
+  | { state: 'idle' }
+  | { state: 'running'; startedAt: number; durationMs: number; sims?: number; message?: string }
+  | { state: 'success'; startedAt: number; durationMs: number; sims?: number }
+  | { state: 'error'; startedAt: number; durationMs: number; sims?: number; message: string };
+
 function useSantoriniInternal(options: UseSantoriniOptions = {}) {
   const {
     evaluationEnabled = true,
@@ -196,6 +199,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     setupMode: false,
     setupTurn: 0
   });
+  const [editMode, setEditModeState] = useState(0);
   const [practiceMode, setPracticeMode] = useState<PracticeGameMode>(DEFAULT_PRACTICE_MODE);
   const [practiceDifficulty, setPracticeDifficulty] = useState<number>(DEFAULT_PRACTICE_DIFFICULTY);
   const buttonsRef = useRef(buttons);
@@ -238,7 +242,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
   const [history, setHistory] = useState<MoveSummary[]>([]);
   const [nextPlayer, setNextPlayer] = useState(0);
   const [calcOptionsBusy, setCalcOptionsBusy] = useState(false);
-  const [evaluationLoading, setEvaluationLoading] = useState(false);
+  const [evaluationStatus, setEvaluationStatus] = useState<EvaluationStatus>({ state: 'idle' });
   const [evaluationDepthOverride, setEvaluationDepthOverride] = useState<number | null>(null);
   const [optionsDepthOverride, setOptionsDepthOverride] = useState<number | null>(null);
   const evaluationRequestIdRef = useRef(0);
@@ -252,11 +256,44 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
   const moveSelectorRef = useRef<TypeScriptMoveSelector>(new TypeScriptMoveSelector());
   
   // Python engine for AI features only
-  const gameRef = useRef<Santorini>();
-  const selectorRef = useRef<MoveSelector>();
   const aiPromiseRef = useRef<Promise<void>>(Promise.resolve());
   const guidedSetupPlacementsRef = useRef<Array<[number, number]>>([]);
   const processingMoveRef = useRef<boolean>(false); // Prevent rapid clicks
+  const workerClientRef = useRef<SantoriniWorkerClient | null>(null);
+  const workerPreferenceRef = useRef<EnginePreference>('python');
+
+  useEffect(() => {
+    if (evaluationStatus.state !== 'running') {
+      return undefined;
+    }
+    const timer = window.setInterval(() => {
+      setEvaluationStatus((prev) => {
+        if (prev.state !== 'running') {
+          return prev;
+        }
+        return {
+          ...prev,
+          durationMs: performance.now() - prev.startedAt,
+        };
+      });
+    }, 200);
+    return () => window.clearInterval(timer);
+  }, [evaluationStatus.state]);
+
+  const ensureWorkerClient = useCallback(async () => {
+    if (!workerClientRef.current) {
+      const client = new SantoriniWorkerClient();
+      workerClientRef.current = client;
+      await client.init(enginePreference);
+      workerPreferenceRef.current = enginePreference;
+      return client;
+    }
+    if (workerPreferenceRef.current !== enginePreference) {
+      await workerClientRef.current.init(enginePreference);
+      workerPreferenceRef.current = enginePreference;
+    }
+    return workerClientRef.current;
+  }, [enginePreference]);
 
   const getPlacementContext = useCallback((): UiPlacementContext => {
     const enginePlacement: EnginePlacementContext | null = engineRef.current?.getPlacementContext() ?? null;
@@ -268,15 +305,9 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       player: enginePlacement.player,
       workerId: enginePlacement.workerId,
     };
-  }, []);
+  }, [practiceMode]);
 
   const updateSelectable = useCallback(() => {
-    const selector = selectorRef.current;
-    if (!selector) {
-      return;
-    }
-
-    selector.selectRelevantCells();
     const placement = getPlacementContext();
     if (buttonsRef.current.setupMode || placement.phase === 'placement') {
       const snapshot = engineRef.current.snapshot;
@@ -286,8 +317,10 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       setSelectable(cells);
       return;
     }
-
-    setSelectable(selector.cells.map((row) => row.slice()));
+    const snapshot = engineRef.current.snapshot;
+    const validMoves = engineRef.current.getValidMoves();
+    const nextSelectable = moveSelectorRef.current.computeSelectable(snapshot.board, validMoves, snapshot.player);
+    setSelectable(nextSelectable);
   }, [getPlacementContext]);
 
   // Helper to sync TypeScript engine state to UI and Python engine
@@ -313,8 +346,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     // Update selectable based on TypeScript engine state
     const placement = engineRef.current.getPlacementContext();
     const validMoves = engineRef.current.getValidMoves();
-    const game = gameRef.current;
-    
+
     if (placement) {
       // During placement, all empty cells are selectable
       const cells = Array.from({ length: 5 }, (_, y) =>
@@ -324,21 +356,16 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       setCancelSelectable(INITIAL_SELECTABLE.map((row) => row.slice()));
     } else {
       // During game phase, check if it's human's turn
-      let isHumanTurn = true; // Default to true if no game mode set
-      
-      if (game && game.gameMode && game.gameMode !== 'Human') {
-        const currentPlayer = snapshot.player; // 0 or 1
-        
-        if (game.gameMode === 'P0') {
-          // Human is Player 0 (Green)
-          isHumanTurn = currentPlayer === 0;
-        } else if (game.gameMode === 'P1') {
-          // Human is Player 1 (Red)
-          isHumanTurn = currentPlayer === 1;
-        } else if (game.gameMode === 'AI') {
-          // Both are AI - no human turns
-          isHumanTurn = false;
-        }
+      let isHumanTurn = true;
+      const currentPlayer = snapshot.player;
+      if (practiceMode === 'P0') {
+        isHumanTurn = currentPlayer === 0;
+      } else if (practiceMode === 'P1') {
+        isHumanTurn = currentPlayer === 1;
+      } else if (practiceMode === 'AI') {
+        isHumanTurn = false;
+      } else if (practiceMode === 'Human') {
+        isHumanTurn = true;
       }
       
       if (isHumanTurn) {
@@ -385,46 +412,38 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     }
   }, [persistState, storageNamespace]);
 
-  const restorePracticeSettings = useCallback((game: Santorini) => {
-    const validModes: PracticeGameMode[] = ['P0', 'P1', 'Human', 'AI'];
+  const restorePracticeSettings = useCallback(async () => {
     const stored = persistState ? readPracticeSettings(storageNamespace) : null;
-    const modeToApply =
-      typeof game.gameMode === 'string' && validModes.includes(game.gameMode as PracticeGameMode)
-        ? (game.gameMode as PracticeGameMode)
-        : stored?.mode ?? DEFAULT_PRACTICE_MODE;
-
-    game.gameMode = modeToApply;
+    const modeToApply = stored?.mode ?? DEFAULT_PRACTICE_MODE;
     setPracticeMode(modeToApply);
 
     const difficultyToApply = stored?.difficulty ?? DEFAULT_PRACTICE_DIFFICULTY;
+    setPracticeDifficulty(difficultyToApply);
 
     try {
-      game.change_difficulty(difficultyToApply);
+      const client = workerClientRef.current ?? (await ensureWorkerClient());
+      if (client) {
+        await client.changeDifficulty(difficultyToApply);
+      }
     } catch (error) {
-      console.error('Failed to apply difficulty to practice game:', error);
+      console.error('Failed to apply difficulty to backend:', error);
     }
-    setPracticeDifficulty(difficultyToApply);
-  }, [persistState, storageNamespace]);
+  }, [ensureWorkerClient, persistState, storageNamespace]);
 
-  // Sync Python engine FROM TypeScript engine (for AI and evaluation)
+  // Sync background engine FROM TypeScript engine (for AI and evaluation)
   const syncPythonFromTypeScript = useCallback(async () => {
-    const game = gameRef.current;
-    const bridge = pythonBridgeRef.current;
-    if (!game || !bridge) {
-      console.error('🔄 Cannot sync: missing Python runtime');
+    const client = workerClientRef.current ?? (await ensureWorkerClient());
+    if (!client) {
+      console.error('🔄 Cannot sync: missing worker client');
       return;
     }
     const snapshot = engineRef.current.snapshot;
-    const result = bridge.importPracticeState(snapshot);
-    if (!result) {
-      console.error('🔄 import_practice_state unavailable');
-      return;
+    try {
+      await client.syncSnapshot(snapshot);
+    } catch (error) {
+      console.error('Failed to synchronize worker state:', error);
     }
-    game.nextPlayer = result.nextPlayer;
-    game.gameEnded = result.gameEnded;
-    game.validMoves =
-      result.validMoves.length > 0 ? result.validMoves : Array(GAME_CONSTANTS.TOTAL_MOVES).fill(false);
-  }, []);
+  }, [ensureWorkerClient]);
 
   // Restore TypeScript engine state from localStorage
   const restorePracticeState = useCallback(async () => {
@@ -448,39 +467,9 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     }
   }, [persistState, storageNamespace, syncPythonFromTypeScript]);
 
-  const loadSantoriniRuntime = useCallback(async () => {
-    try {
-      const { game, selector } = await createSantoriniRuntime({ evaluationEnabled, enginePreference });
-      gameRef.current = game;
-      selectorRef.current = selector;
-      pythonBridgeRef.current = new SantoriniPythonBridge(game);
-    } catch (error) {
-      console.error('Failed to load Santorini runtime:', error);
-      throw error;
-    }
-  }, [enginePreference, evaluationEnabled]);
-
-  const pythonBridgeRef = useRef<SantoriniPythonBridge | null>(null);
-
-  const readBoard = useCallback(() => {
-    const game = gameRef.current;
-    const bridge = pythonBridgeRef.current;
-    if (!game || !game.py || !bridge) return;
-    const nextBoard: BoardCell[][] = Array.from({ length: GAME_CONSTANTS.BOARD_SIZE }, (_, y) =>
-      Array.from({ length: GAME_CONSTANTS.BOARD_SIZE }, (_, x) => {
-        const cell = bridge.readBoardCell(y, x);
-        const boardCell: CellState = { worker: cell.worker, levels: cell.levels };
-        const highlight = game.has_changed_on_last_move([y, x]);
-        return { ...boardCell, svg: renderCellSvg(boardCell), highlight };
-      }),
-    );
-    setBoard(nextBoard);
-  }, []);
-
   const updateButtons = useCallback(async (loadingState = false) => {
-    const selector = selectorRef.current;
     const engine = engineRef.current;
-    if (!selector || !engine) return;
+    if (!engine) return;
     
     // Use TypeScript engine for undo/redo status
     const canUndo = engine.canUndo();
@@ -511,33 +500,39 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         loading: loadingState,
         canUndo,
         canRedo,
-        editMode: selector.editMode,
+        editMode,
         status,
       };
     });
     setNextPlayer(engine.player);
-  }, [getPlacementContext, updateButtonsState]);
+  }, [editMode, getPlacementContext, updateButtonsState]);
 
-  const refreshHistory = useCallback(() => {
-    const bridge = pythonBridgeRef.current;
-    if (!bridge) return;
-    const snapshot = bridge.getHistorySnapshot() as Array<Record<string, unknown>>;
-    setHistory(summarizeHistoryEntries(snapshot));
-  }, []);
+  const refreshHistory = useCallback(async () => {
+    const client = workerClientRef.current ?? (await ensureWorkerClient());
+    if (!client) {
+      return;
+    }
+    try {
+      const snapshot = await client.getHistorySnapshot();
+      setHistory(summarizeHistoryEntries(snapshot as Array<Record<string, unknown>>));
+    } catch (error) {
+      console.error('Failed to refresh history snapshot:', error);
+    }
+  }, [ensureWorkerClient]);
 
   type EvaluationOverrides = { evaluationDepth?: number | null; optionsDepth?: number | null };
 
   const isPlacementPhase = useCallback(() => {
-    const placementContext = engineRef.current.getPlacementContext();
-    return Boolean(placementContext && placementContext.phase === 'placement');
-  }, []);
+    const placementContext = getPlacementContext();
+    return placementContext.phase === 'placement';
+  }, [getPlacementContext]);
 
   const safeListMoves = useCallback(
     async (limit: number, depth: number | null) => {
-      const bridge = pythonBridgeRef.current;
-      if (!bridge) return [];
+      const client = workerClientRef.current ?? (await ensureWorkerClient());
+      if (!client) return [];
       try {
-        return await bridge.listMovesWithAdv(limit, depth ?? undefined);
+        return await client.listMovesWithAdv(limit, depth ?? null);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error ?? '');
         if (
@@ -552,7 +547,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         throw error;
       }
     },
-    [],
+    [ensureWorkerClient],
   );
 
   const evaluatePosition = useCallback(async (overrides?: EvaluationOverrides): Promise<EvaluationState | null> => {
@@ -560,10 +555,8 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     const evalDepth = overrides?.evaluationDepth ?? evaluationDepthOverride;
     const optionsDepth = overrides?.optionsDepth ?? optionsDepthOverride ?? evalDepth;
 
-    const game = gameRef.current;
-
     const terminalEvaluation = (() => {
-      const ended = game?.gameEnded;
+      const ended = engineRef.current.getGameEnded();
       if (!ended || ended.length < 2) {
         return null;
       }
@@ -580,36 +573,57 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     if (terminalEvaluation) {
       setEvaluation(terminalEvaluation);
       setTopMoves([]);
+      setEvaluationStatus({
+        state: 'success',
+        startedAt: performance.now(),
+        durationMs: 0,
+        sims: evalDepth ?? practiceDifficulty,
+      });
       return terminalEvaluation;
     }
 
     if (!evaluationEnabled || isPlacementPhase()) {
       setEvaluation(balancedEvaluation);
       setTopMoves([]);
+      setEvaluationStatus({ state: 'idle' });
       return balancedEvaluation;
     }
 
-    const bridge = pythonBridgeRef.current;
-    if (!game || !bridge) {
-      return null;
-    }
-
-    const placementContext = engineRef.current.getPlacementContext();
-    if (placementContext && placementContext.phase === 'placement') {
+    const placementContext = getPlacementContext();
+    if (placementContext.phase === 'placement') {
       const placementEvaluation: EvaluationState = { value: 0, advantage: 'Placement phase', label: '0.00' };
       setEvaluation(placementEvaluation);
       setTopMoves([]);
+      setEvaluationStatus({ state: 'idle' });
       return placementEvaluation;
     }
 
     const requestId = ++evaluationRequestIdRef.current;
+    const evalStart = performance.now();
+    const plannedSims = evalDepth ?? practiceDifficulty;
+    setEvaluationStatus({
+      state: 'running',
+      startedAt: evalStart,
+      durationMs: 0,
+      sims: plannedSims,
+    });
     let nextEvaluation: EvaluationState | undefined;
     let nextTopMoves: TopMove[] | undefined;
 
     try {
       const snapshotVersion = wasmStateVersionRef.current;
-
-      const evalResponse = await bridge.calculateEvaluation(evalDepth ?? undefined);
+      const client = workerClientRef.current ?? (await ensureWorkerClient());
+      if (!client) {
+        setEvaluationStatus({
+          state: 'error',
+          startedAt: evalStart,
+          durationMs: performance.now() - evalStart,
+          sims: plannedSims,
+          message: 'AI runtime unavailable',
+        });
+        return null;
+      }
+      const evalResponse = await client.calculateEvaluation(evalDepth ?? null);
       if (snapshotVersion !== wasmStateVersionRef.current) {
         return null;
       }
@@ -626,6 +640,12 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       nextTopMoves = normalizeTopMoves(baseMoves);
 
       if (requestId === evaluationRequestIdRef.current) {
+        setEvaluationStatus({
+          state: 'success',
+          startedAt: evalStart,
+          durationMs: performance.now() - evalStart,
+          sims: plannedSims,
+        });
         if (nextEvaluation !== undefined) {
           setEvaluation(nextEvaluation);
         }
@@ -641,11 +661,18 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         const errorEvaluation: EvaluationState = { value: 0, advantage: 'Error', label: '0.00' };
         setEvaluation(errorEvaluation);
         setTopMoves([]);
+        setEvaluationStatus({
+          state: 'error',
+          startedAt: evalStart,
+          durationMs: performance.now() - evalStart,
+          sims: plannedSims,
+          message: error instanceof Error ? error.message : 'Evaluation failed',
+        });
         return errorEvaluation;
       }
       return null;
     }
-  }, [evaluationDepthOverride, evaluationEnabled, isPlacementPhase, optionsDepthOverride, safeListMoves]);
+  }, [ensureWorkerClient, evaluationDepthOverride, evaluationEnabled, getPlacementContext, isPlacementPhase, optionsDepthOverride, practiceDifficulty, safeListMoves]);
 
   const refreshEvaluation = useCallback(() => evaluatePosition(), [evaluatePosition]);
 
@@ -654,13 +681,8 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       setTopMoves([]);
       return;
     }
-    const bridge = pythonBridgeRef.current;
-    if (!bridge) {
-      console.warn('calculateOptions skipped: Python bridge unavailable');
-      return;
-    }
-    const placementContext = engineRef.current.getPlacementContext();
-    if (placementContext && placementContext.phase === 'placement') {
+    const placementContext = getPlacementContext();
+    if (placementContext.phase === 'placement') {
       setTopMoves([]);
       return;
     }
@@ -680,13 +702,13 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     } finally {
       setCalcOptionsBusy(false);
     }
-  }, [evaluationDepthOverride, evaluationEnabled, isPlacementPhase, optionsDepthOverride, safeListMoves]);
+  }, [evaluationDepthOverride, evaluationEnabled, getPlacementContext, isPlacementPhase, optionsDepthOverride, safeListMoves]);
 
   const syncUi = useCallback(async (loadingState = false) => {
     // TypeScript engine is source of truth - sync UI from it
     syncEngineToUi();
     await updateButtons(loadingState);
-    refreshHistory();
+    await refreshHistory();
     await persistPracticeState();
   }, [persistPracticeState, refreshHistory, syncEngineToUi, updateButtons]);
 
@@ -698,12 +720,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     const { engine } = SantoriniEngine.createInitial();
     engineRef.current = engine;
     moveSelectorRef.current.reset();
-
-    const selector = selectorRef.current;
-    if (selector) {
-      selector.setEditMode(0);
-      selector.resetAndStart();
-    }
+    setEditModeState(0);
 
     updateButtonsState((prev) => ({
       ...prev,
@@ -717,7 +734,8 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     
     setHistory([]);
     await syncUi();
-  }, [syncUi, updateButtonsState]);
+    await syncPythonFromTypeScript();
+  }, [syncPythonFromTypeScript, syncUi, updateButtonsState]);
 
   const initializeStartedRef = useRef(false);
   const initializePromiseRef = useRef<Promise<void> | null>(null);
@@ -738,17 +756,13 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         // Don't block UI - just update status
         updateButtonsState((prev) => ({ ...prev, status: 'Loading game engine...' }));
         await yieldToMainThread();
-        await loadSantoriniRuntime();
-        const game = gameRef.current;
-        const selector = selectorRef.current;
-        if (!game || !selector) {
-          return;
+        const client = await ensureWorkerClient();
+        if (!client) {
+          throw new Error('Failed to initialize Santorini worker');
         }
-        game.init_game();
-        restorePracticeSettings(game);
-
+        await restorePracticeSettings();
+        moveSelectorRef.current.reset();
         const restored = await restorePracticeState();
-        selector.resetAndStart();
         await syncUi(true);
         await refreshEvaluation();
         let statusOverride: string | null = 'Ready to play!';
@@ -773,62 +787,43 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
 
     initializePromiseRef.current = initPromise;
     await initPromise;
-  }, [loadSantoriniRuntime, refreshEvaluation, restorePracticeSettings, restorePracticeState, startGuidedSetup, syncUi, updateButtonsState]);
+  }, [ensureWorkerClient, refreshEvaluation, restorePracticeSettings, restorePracticeState, startGuidedSetup, syncUi, updateButtonsState]);
 
   const aiPlayIfNeeded = useCallback(async () => {
     if (!evaluationEnabled) {
       return;
     }
-    const game = gameRef.current;
-    const selector = selectorRef.current;
-    if (!game || !selector) return;
-    
-    console.log('🤖 AI Check - Game mode:', game.gameMode, 'Current player:', engineRef.current.player);
-    
-    // Check if it's AI's turn using TypeScript engine (source of truth)
+
     const engine = engineRef.current;
     const currentPlayer = engine.player;
     let isAiTurn = false;
-    
-    if (game.gameMode === 'P0') {
-      // Player 0 is human, Player 1 is AI
+    if (practiceMode === 'P0') {
       isAiTurn = currentPlayer === 1;
-    } else if (game.gameMode === 'P1') {
-      // Player 0 is AI, Player 1 is human
+    } else if (practiceMode === 'P1') {
       isAiTurn = currentPlayer === 0;
-    } else if (game.gameMode === 'AI') {
-      // Both are AI
+    } else if (practiceMode === 'AI') {
       isAiTurn = true;
     }
-    
-    console.log('🤖 Is AI turn?', isAiTurn);
-    
+
     if (!isAiTurn) {
-      console.log('🤖 Not AI\'s turn, skipping');
       return;
     }
-    
+
     await updateButtons(true);
-    
-    // Check if game is not ended
+
     const gameEnded = engine.getGameEnded();
     if (gameEnded[0] !== 0 || gameEnded[1] !== 0) {
-      console.log('🤖 Game ended, skipping AI');
       await updateButtons(false);
       return;
     }
-    
-    console.log('🤖 AI making move...');
-    selector.selectNone();
-    
+
     try {
-      const bridge = pythonBridgeRef.current;
-      if (!bridge) {
-        throw new Error('Python bridge unavailable for AI move');
+      const client = workerClientRef.current ?? (await ensureWorkerClient());
+      if (!client) {
+        throw new Error('Worker client unavailable for AI move');
       }
-      // Get AI's chosen action
       const requestVersion = wasmStateVersionRef.current;
-      const bestAction = await bridge.guessBestAction();
+      const bestAction = await client.guessBestAction();
       if (requestVersion !== wasmStateVersionRef.current) {
         console.warn('AI result ignored; state changed during request');
         return;
@@ -836,17 +831,13 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       if (bestAction == null) {
         throw new Error('AI did not return a move');
       }
-      console.log('🤖 AI chose action:', bestAction, 'Current TS player:', engineRef.current.player);
-      
-      // Apply to TypeScript engine (source of truth)
+
       const result = engineRef.current.applyMove(bestAction);
       engineRef.current = SantoriniEngine.fromSnapshot(result.snapshot);
       moveSelectorRef.current.reset();
-      console.log('🤖 AI move applied to TypeScript, new player:', engineRef.current.player);
-      
-      // Sync TypeScript → Python (AI made move in Python, but we re-apply from TS as source of truth)
+      updateSelectable();
+
       await syncPythonFromTypeScript();
-      
       await syncUi();
       refreshEvaluation().catch((error) => {
         console.error('Failed to refresh evaluation after importing state:', error);
@@ -854,9 +845,18 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     } catch (error) {
       console.error('🤖 AI move failed:', error);
     }
-    
+
     await updateButtons(false);
-  }, [evaluationEnabled, refreshEvaluation, syncPythonFromTypeScript, syncUi, updateButtons]);
+  }, [
+    ensureWorkerClient,
+    evaluationEnabled,
+    practiceMode,
+    refreshEvaluation,
+    syncPythonFromTypeScript,
+    syncUi,
+    updateButtons,
+    updateSelectable,
+  ]);
 
   const ensureAiIdle = useCallback(() => aiPromiseRef.current, []);
 
@@ -869,11 +869,10 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     });
     
     // Trigger AI if it should move first
-    const game = gameRef.current;
-    if (game && game.gameMode) {
+    if (practiceMode && practiceMode !== 'Human') {
       aiPromiseRef.current = aiPlayIfNeeded();
     }
-  }, [aiPlayIfNeeded, refreshEvaluation, syncPythonFromTypeScript]);
+  }, [aiPlayIfNeeded, practiceMode, refreshEvaluation, syncPythonFromTypeScript]);
 
   const applyMove = useCallback(
     async (move: number, options: ApplyMoveOptions = {}) => {
@@ -925,23 +924,17 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       const validMoves = engine.getValidMoves();
       const placement = engine.getPlacementContext();
       const moveSelector = moveSelectorRef.current;
-      const pythonSelector = selectorRef.current;
-      const game = gameRef.current;
       
       // Edit mode (requires Python for board manipulation)
-      if (pythonSelector && (pythonSelector.editMode === 1 || pythonSelector.editMode === 2)) {
-        const bridge = pythonBridgeRef.current;
-        if (!game || !game.py || !bridge) return;
+      if (editMode === 1 || editMode === 2) {
+        const client = workerClientRef.current ?? (await ensureWorkerClient());
+        if (!client) return;
         processingMoveRef.current = true;
         try {
-          game.editCell(y, x, pythonSelector.editMode);
-          
-          // Sync back to TypeScript engine
-          const snapshot = bridge.exportPracticeState();
+          const snapshot = await client.editCell(y, x, editMode);
           if (snapshot) {
             engineRef.current = SantoriniEngine.fromSnapshot(snapshot as SantoriniSnapshot);
           }
-          
           syncEngineToUi();
           await updateButtons(false);
           await persistPracticeState();
@@ -952,22 +945,16 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       }
       
       // Check turn enforcement for game phase (not placement)
-      if (!placement && game && game.gameMode && game.gameMode !== 'Human') {
-        // Determine which player is human based on game mode
-        const currentPlayer = engine.player; // 0 or 1
-        let isHumanTurn = false;
-        
-        if (game.gameMode === 'P0') {
-          // Human is Player 0 (Green)
+      if (!placement && practiceMode !== 'Human') {
+        const currentPlayer = engine.player;
+        let isHumanTurn = true;
+        if (practiceMode === 'P0') {
           isHumanTurn = currentPlayer === 0;
-        } else if (game.gameMode === 'P1') {
-          // Human is Player 1 (Red)
+        } else if (practiceMode === 'P1') {
           isHumanTurn = currentPlayer === 1;
-        } else if (game.gameMode === 'AI') {
-          // Both are AI - no human turns
+        } else if (practiceMode === 'AI') {
           isHumanTurn = false;
         }
-        
         if (!isHumanTurn) {
           toast({ title: "It's the AI's turn", status: 'info' });
           return;
@@ -1031,7 +1018,10 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     },
     [
       applyMove,
+      editMode,
+      ensureWorkerClient,
       finalizeGuidedSetup,
+      practiceMode,
       persistPracticeState,
       syncEngineToUi,
       toast,
@@ -1097,83 +1087,75 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     engineRef.current = engine;
     moveSelectorRef.current.reset();
     
-    const selector = selectorRef.current;
-    if (selector) {
-      selector.resetAndStart();
-    }
-    
     await startGuidedSetup();
   }, [ensureAiIdle, startGuidedSetup]);
 
   const setGameMode = useCallback(
     async (mode: PracticeGameMode) => {
-      const game = gameRef.current;
-      const selector = selectorRef.current;
-      if (!game || !selector) return;
-      game.gameMode = mode;
       setPracticeMode(mode);
       persistPracticeMode(mode);
       await ensureAiIdle();
-      selector.resetAndStart();
+      moveSelectorRef.current.reset();
       await aiPlayIfNeeded();
       await syncUi();
     },
     [aiPlayIfNeeded, ensureAiIdle, persistPracticeMode, syncUi],
   );
 
-  const changeDifficulty = useCallback((sims: number) => {
-    const game = gameRef.current;
-    if (!game) return;
-    const sanitized = Number.isFinite(sims) && sims > 0 ? sims : DEFAULT_PRACTICE_DIFFICULTY;
-    game.change_difficulty(sanitized);
-    setPracticeDifficulty(sanitized);
-    persistPracticeDifficulty(sanitized);
-  }, [persistPracticeDifficulty]);
+  const changeDifficulty = useCallback(
+    (sims: number) => {
+      const sanitized = Number.isFinite(sims) && sims > 0 ? sims : DEFAULT_PRACTICE_DIFFICULTY;
+      setPracticeDifficulty(sanitized);
+      persistPracticeDifficulty(sanitized);
+      (async () => {
+        const client = workerClientRef.current ?? (await ensureWorkerClient());
+        if (client) {
+          await client.changeDifficulty(sanitized);
+        }
+      })().catch((error) => {
+        console.error('Failed to update worker difficulty:', error);
+      });
+    },
+    [ensureWorkerClient, persistPracticeDifficulty],
+  );
 
   const toggleEdit = useCallback(() => {
-    const selector = selectorRef.current;
-    if (!selector) return;
-    selector.edit();
+    setEditModeState((prev) => {
+      const next = (prev + 1) % 3;
+      updateButtonsState((current) => ({ ...current, editMode: next }));
+      return next;
+    });
     updateSelectable();
     updateButtons(false);
-  }, [updateButtons, updateSelectable]);
+  }, [updateButtons, updateButtonsState, updateSelectable]);
 
-  const setEditMode = useCallback(
+  const changeEditMode = useCallback(
     (mode: number) => {
-      const selector = selectorRef.current;
-      if (!selector) return;
-      selector.setEditMode(mode);
+      setEditModeState(mode);
+      updateButtonsState((current) => ({ ...current, editMode: mode }));
       updateSelectable();
       updateButtons(false);
     },
-    [updateButtons, updateSelectable],
+    [updateButtons, updateButtonsState, updateSelectable],
   );
 
   const jumpToMove = useCallback(
     async (index: number) => {
-      const game = gameRef.current;
-      const selector = selectorRef.current;
-      const bridge = pythonBridgeRef.current;
-      if (!game || !selector || !bridge) return;
-      const historyLength = bridge.getHistoryLength();
+      const client = workerClientRef.current ?? (await ensureWorkerClient());
+      if (!client) return;
+      const historyLength = await client.getHistoryLength();
       const reverseIndex = historyLength - 1 - index;
-      const jumpResult = bridge.jumpToMoveIndex(reverseIndex);
-      if (jumpResult) {
-        game.nextPlayer = jumpResult.nextPlayer;
-        game.gameEnded = jumpResult.gameEnded;
-        game.validMoves = jumpResult.validMoves;
-        const snapshot = bridge.exportPracticeState();
-        if (snapshot) {
-          engineRef.current = SantoriniEngine.fromSnapshot(snapshot as SantoriniSnapshot);
-        }
+      const jumpResult = await client.jumpToMoveIndex(reverseIndex);
+      if (jumpResult?.snapshot) {
+        engineRef.current = SantoriniEngine.fromSnapshot(jumpResult.snapshot as SantoriniSnapshot);
       }
-      selector.resetAndStart();
+      moveSelectorRef.current.reset();
       await syncUi();
       refreshEvaluation().catch((error) => {
         console.error('Failed to refresh evaluation after jumping to move:', error);
       });
     },
-    [refreshEvaluation, syncUi],
+    [ensureWorkerClient, refreshEvaluation, syncUi],
   );
 
   const importState = useCallback(
@@ -1197,16 +1179,6 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       }
 
       await syncPythonFromTypeScript();
-
-      const selector = selectorRef.current;
-      if (selector) {
-        if (typeof selector.resetAndStart === 'function') {
-          selector.resetAndStart();
-        } else {
-          selector.reset?.();
-          selector.start?.();
-        }
-      }
 
       await syncUi();
       if (waitForEvaluation) {
@@ -1240,7 +1212,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       setGameMode,
       changeDifficulty,
       toggleEdit,
-      setEditMode,
+      setEditMode: changeEditMode,
       refreshEvaluation,
       calculateOptions,
       updateEvaluationDepth,
@@ -1253,7 +1225,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       jumpToMove,
       refreshEvaluation,
       reset,
-      setEditMode,
+      changeEditMode,
       setGameMode,
       toggleEdit,
       updateEvaluationDepth,
@@ -1273,6 +1245,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     onCellLeave,
     buttons,
     evaluation,
+    evaluationStatus,
     topMoves,
     controls,
     history,
@@ -1282,7 +1255,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     optionsDepth: optionsDepthOverride,
     calcOptionsBusy,
     nextPlayer,
-    gameEnded: gameRef.current?.gameEnded ?? [0, 0],
+    gameEnded: engineRef.current?.getGameEnded() ?? [0, 0],
     importState,
     gameMode: practiceMode,
     difficulty: practiceDifficulty,

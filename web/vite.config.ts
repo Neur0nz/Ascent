@@ -37,6 +37,15 @@ export default defineConfig(({ mode }) => {
       port: Number(env.VITE_PREVIEW_PORT ?? 4173),
       host: true
     },
+    worker: {
+      format: 'es',
+      rollupOptions: {
+        output: {
+          manualChunks: undefined,
+          inlineDynamicImports: true,
+        },
+      },
+    },
     build: {
       outDir: 'dist',
       emptyOutDir: true,

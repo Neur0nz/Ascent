@@ -895,6 +895,7 @@ function AnalyzeWorkspace({ auth }: AnalyzeWorkspaceProps) {
                     <EvaluationPanel
                       loading={santorini.loading}
                       evaluation={santorini.evaluation}
+                      evaluationStatus={santorini.evaluationStatus}
                       topMoves={santorini.topMoves}
                       calcOptionsBusy={santorini.calcOptionsBusy}
                       evaluationDepth={santorini.evaluationDepth}
