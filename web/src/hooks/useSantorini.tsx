@@ -4,7 +4,7 @@ import { Santorini } from '@game/santorini';
 import { MoveSelector } from '@game/moveSelector';
 import { renderCellSvg, type CellState } from '@game/svg';
 import { GAME_CONSTANTS } from '@game/constants';
-import type { SantoriniStateSnapshot } from '@/types/match';
+import type { SantoriniStateSnapshot, EnginePreference } from '@/types/match';
 import {
   SantoriniEngine,
   SANTORINI_CONSTANTS,
@@ -42,6 +42,9 @@ import {
 
 export interface UseSantoriniOptions {
   evaluationEnabled?: boolean;
+  enginePreference?: EnginePreference;
+  persistState?: boolean;
+  storageNamespace?: string;
 }
 
 
@@ -174,7 +177,12 @@ const yieldToMainThread = () =>
 const normalizeTopMoves = (rawMoves: unknown): TopMove[] => normalizePracticeTopMoves(rawMoves);
 
 function useSantoriniInternal(options: UseSantoriniOptions = {}) {
-  const { evaluationEnabled = true } = options;
+  const {
+    evaluationEnabled = true,
+    enginePreference = 'python',
+    persistState = true,
+    storageNamespace = 'practice',
+  } = options;
   const [loading, setLoading] = useState(false); // Start with UI enabled
   const [board, setBoard] = useState<BoardCell[][]>(INITIAL_BOARD);
   const [selectable, setSelectable] = useState<boolean[][]>(INITIAL_SELECTABLE);
@@ -209,20 +217,22 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     [],
   );
   const persistPracticeMode = useCallback((mode: PracticeGameMode) => {
+    if (!persistState) return;
     try {
-      storePracticeMode(mode);
+      storePracticeMode(mode, storageNamespace);
     } catch (error) {
       console.error('Failed to persist practice mode:', error);
     }
-  }, []);
+  }, [persistState, storageNamespace]);
 
   const persistPracticeDifficulty = useCallback((value: number) => {
+    if (!persistState) return;
     try {
-      storePracticeDifficulty(value);
+      storePracticeDifficulty(value, storageNamespace);
     } catch (error) {
       console.error('Failed to persist practice difficulty:', error);
     }
-  }, []);
+  }, [persistState, storageNamespace]);
   const [evaluation, setEvaluation] = useState<EvaluationState>({ value: 0, advantage: 'Balanced', label: '0.00' });
   const [topMoves, setTopMoves] = useState<TopMove[]>([]);
   const [history, setHistory] = useState<MoveSummary[]>([]);
@@ -365,25 +375,28 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
 
   // Persist TypeScript engine state (single source of truth)
   const persistPracticeState = useCallback(async () => {
+    if (!persistState) {
+      return;
+    }
     try {
-      writePracticeSnapshot(engineRef.current.snapshot);
+      writePracticeSnapshot(engineRef.current.snapshot, storageNamespace);
     } catch (error) {
       console.error('Failed to persist practice state:', error);
     }
-  }, []);
+  }, [persistState, storageNamespace]);
 
   const restorePracticeSettings = useCallback((game: Santorini) => {
     const validModes: PracticeGameMode[] = ['P0', 'P1', 'Human', 'AI'];
-    const stored = readPracticeSettings();
+    const stored = persistState ? readPracticeSettings(storageNamespace) : null;
     const modeToApply =
       typeof game.gameMode === 'string' && validModes.includes(game.gameMode as PracticeGameMode)
         ? (game.gameMode as PracticeGameMode)
-        : stored.mode ?? DEFAULT_PRACTICE_MODE;
+        : stored?.mode ?? DEFAULT_PRACTICE_MODE;
 
     game.gameMode = modeToApply;
     setPracticeMode(modeToApply);
 
-    const difficultyToApply = stored.difficulty ?? DEFAULT_PRACTICE_DIFFICULTY;
+    const difficultyToApply = stored?.difficulty ?? DEFAULT_PRACTICE_DIFFICULTY;
 
     try {
       game.change_difficulty(difficultyToApply);
@@ -391,26 +404,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       console.error('Failed to apply difficulty to practice game:', error);
     }
     setPracticeDifficulty(difficultyToApply);
-  }, []);
-
-  // Restore TypeScript engine state from localStorage
-  const restorePracticeState = useCallback(async () => {
-    const snapshot = readPracticeSnapshot();
-    if (!snapshot) {
-      return false;
-    }
-
-    try {
-      engineRef.current = SantoriniEngine.fromSnapshot(snapshot as SantoriniSnapshot);
-      moveSelectorRef.current.reset();
-      await syncPythonFromTypeScript();
-      return true;
-    } catch (error) {
-      console.error('Failed to restore practice state:', error);
-      clearPracticeSnapshot();
-      return false;
-    }
-  }, []);
+  }, [persistState, storageNamespace]);
 
   // Sync Python engine FROM TypeScript engine (for AI and evaluation)
   const syncPythonFromTypeScript = useCallback(async () => {
@@ -432,9 +426,31 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       result.validMoves.length > 0 ? result.validMoves : Array(GAME_CONSTANTS.TOTAL_MOVES).fill(false);
   }, []);
 
+  // Restore TypeScript engine state from localStorage
+  const restorePracticeState = useCallback(async () => {
+    if (!persistState) {
+      return false;
+    }
+    const snapshot = readPracticeSnapshot(storageNamespace);
+    if (!snapshot) {
+      return false;
+    }
+
+    try {
+      engineRef.current = SantoriniEngine.fromSnapshot(snapshot as SantoriniSnapshot);
+      moveSelectorRef.current.reset();
+      await syncPythonFromTypeScript();
+      return true;
+    } catch (error) {
+      console.error('Failed to restore practice state:', error);
+      clearPracticeSnapshot(storageNamespace);
+      return false;
+    }
+  }, [persistState, storageNamespace, syncPythonFromTypeScript]);
+
   const loadSantoriniRuntime = useCallback(async () => {
     try {
-      const { game, selector } = await createSantoriniRuntime({ evaluationEnabled });
+      const { game, selector } = await createSantoriniRuntime({ evaluationEnabled, enginePreference });
       gameRef.current = game;
       selectorRef.current = selector;
       pythonBridgeRef.current = new SantoriniPythonBridge(game);
@@ -442,7 +458,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       console.error('Failed to load Santorini runtime:', error);
       throw error;
     }
-  }, [evaluationEnabled]);
+  }, [enginePreference, evaluationEnabled]);
 
   const pythonBridgeRef = useRef<SantoriniPythonBridge | null>(null);
 
@@ -509,8 +525,40 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     setHistory(summarizeHistoryEntries(snapshot));
   }, []);
 
-  const refreshEvaluation = useCallback(async (): Promise<EvaluationState | null> => {
+  type EvaluationOverrides = { evaluationDepth?: number | null; optionsDepth?: number | null };
+
+  const isPlacementPhase = useCallback(() => {
+    const placementContext = engineRef.current.getPlacementContext();
+    return Boolean(placementContext && placementContext.phase === 'placement');
+  }, []);
+
+  const safeListMoves = useCallback(
+    async (limit: number, depth: number | null) => {
+      const bridge = pythonBridgeRef.current;
+      if (!bridge) return [];
+      try {
+        return await bridge.listMovesWithAdv(limit, depth ?? undefined);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error ?? '');
+        if (
+          message.includes('place a worker') ||
+          message.includes('placement') ||
+          message.includes('occupied tile') ||
+          message.includes('NoneType')
+        ) {
+          console.warn('Skipping best-move listing during placement/setup phase:', message);
+          return [];
+        }
+        throw error;
+      }
+    },
+    [],
+  );
+
+  const evaluatePosition = useCallback(async (overrides?: EvaluationOverrides): Promise<EvaluationState | null> => {
     const balancedEvaluation: EvaluationState = { value: 0, advantage: 'Balanced', label: '0.00' };
+    const evalDepth = overrides?.evaluationDepth ?? evaluationDepthOverride;
+    const optionsDepth = overrides?.optionsDepth ?? optionsDepthOverride ?? evalDepth;
 
     const game = gameRef.current;
 
@@ -535,7 +583,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       return terminalEvaluation;
     }
 
-    if (!evaluationEnabled) {
+    if (!evaluationEnabled || isPlacementPhase()) {
       setEvaluation(balancedEvaluation);
       setTopMoves([]);
       return balancedEvaluation;
@@ -546,6 +594,14 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       return null;
     }
 
+    const placementContext = engineRef.current.getPlacementContext();
+    if (placementContext && placementContext.phase === 'placement') {
+      const placementEvaluation: EvaluationState = { value: 0, advantage: 'Placement phase', label: '0.00' };
+      setEvaluation(placementEvaluation);
+      setTopMoves([]);
+      return placementEvaluation;
+    }
+
     const requestId = ++evaluationRequestIdRef.current;
     let nextEvaluation: EvaluationState | undefined;
     let nextTopMoves: TopMove[] | undefined;
@@ -553,7 +609,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     try {
       const snapshotVersion = wasmStateVersionRef.current;
 
-      const evalResponse = await bridge.calculateEvaluation(evaluationDepthOverride ?? undefined);
+      const evalResponse = await bridge.calculateEvaluation(evalDepth ?? undefined);
       if (snapshotVersion !== wasmStateVersionRef.current) {
         return null;
       }
@@ -566,9 +622,8 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         }
       }
 
-      const baseMoves = await bridge.listMovesWithAdv(10, optionsDepthOverride ?? undefined);
-      let normalizedMoves = normalizeTopMoves(baseMoves);
-      nextTopMoves = normalizedMoves;
+      const baseMoves = await safeListMoves(10, optionsDepth ?? null);
+      nextTopMoves = normalizeTopMoves(baseMoves);
 
       if (requestId === evaluationRequestIdRef.current) {
         if (nextEvaluation !== undefined) {
@@ -590,10 +645,12 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       }
       return null;
     }
-  }, [evaluationDepthOverride, evaluationEnabled, optionsDepthOverride]);
+  }, [evaluationDepthOverride, evaluationEnabled, isPlacementPhase, optionsDepthOverride, safeListMoves]);
+
+  const refreshEvaluation = useCallback(() => evaluatePosition(), [evaluatePosition]);
 
   const calculateOptions = useCallback(async () => {
-    if (!evaluationEnabled) {
+    if (!evaluationEnabled || isPlacementPhase()) {
       setTopMoves([]);
       return;
     }
@@ -602,10 +659,16 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       console.warn('calculateOptions skipped: Python bridge unavailable');
       return;
     }
+    const placementContext = engineRef.current.getPlacementContext();
+    if (placementContext && placementContext.phase === 'placement') {
+      setTopMoves([]);
+      return;
+    }
     setCalcOptionsBusy(true);
     try {
       const requestVersion = wasmStateVersionRef.current;
-      const result = await bridge.listMovesWithAdv(6, optionsDepthOverride ?? undefined);
+      const depth = optionsDepthOverride ?? evaluationDepthOverride ?? null;
+      const result = await safeListMoves(6, depth ?? null);
       if (requestVersion !== wasmStateVersionRef.current) {
         setTopMoves([]);
         return;
@@ -617,7 +680,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     } finally {
       setCalcOptionsBusy(false);
     }
-  }, [evaluationEnabled, optionsDepthOverride]);
+  }, [evaluationDepthOverride, evaluationEnabled, isPlacementPhase, optionsDepthOverride, safeListMoves]);
 
   const syncUi = useCallback(async (loadingState = false) => {
     // TypeScript engine is source of truth - sync UI from it
@@ -1160,11 +1223,11 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
   const updateEvaluationDepth = useCallback(
     (depth: number | null) => {
       setEvaluationDepthOverride(depth);
-      refreshEvaluation().catch((error) => {
+      evaluatePosition({ evaluationDepth: depth }).catch((error) => {
         console.error('Failed to refresh evaluation with updated depth:', error);
       });
     },
-    [refreshEvaluation],
+    [evaluatePosition],
   );
 
   const updateOptionsDepth = useCallback((depth: number | null) => {
@@ -1233,10 +1296,13 @@ const SantoriniContext = createContext<SantoriniStore | null>(null);
 export interface SantoriniProviderProps {
   children: ReactNode;
   evaluationEnabled?: boolean;
+  enginePreference?: EnginePreference;
+  persistState?: boolean;
+  storageNamespace?: string;
 }
 
-export function SantoriniProvider({ children, evaluationEnabled }: SantoriniProviderProps) {
-  const store = useSantoriniInternal({ evaluationEnabled });
+export function SantoriniProvider({ children, evaluationEnabled, enginePreference, persistState, storageNamespace }: SantoriniProviderProps) {
+  const store = useSantoriniInternal({ evaluationEnabled, enginePreference, persistState, storageNamespace });
   return <SantoriniContext.Provider value={store}>{children}</SantoriniContext.Provider>;
 }
 

@@ -31,3 +31,5 @@ web/node_modules/
 .env.*
 *.env
 rust-wasm/target/
+/cestpasphoto.github.io-main
+/alpha-zero-general-master

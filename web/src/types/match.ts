@@ -11,6 +11,8 @@ export interface SantoriniStateSnapshot {
   validMoves: boolean[];
 }
 
+export type EnginePreference = 'python' | 'rust';
+
 export interface PlayerProfile {
   id: string;
   auth_user_id: string | null;
@@ -20,6 +22,7 @@ export interface PlayerProfile {
   games_played: number;
   created_at: string;
   updated_at: string;
+  engine_preference: EnginePreference;
 }
 
 export interface MatchRecord {

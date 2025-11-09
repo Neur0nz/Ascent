@@ -464,13 +464,18 @@ function App() {
                   />
                 </TabPanel>
                 <TabPanel px={0}>
-                  <SantoriniProvider>
+                  <SantoriniProvider enginePreference={auth.profile?.engine_preference ?? 'python'}>
                     <PracticeTabContent onShowHistory={openHistory} />
                     <PracticeHistoryModal isOpen={isHistoryOpen} onClose={closeHistory} />
                   </SantoriniProvider>
                 </TabPanel>
                 <TabPanel px={0}>
-                  <SantoriniProvider evaluationEnabled={true}>
+                  <SantoriniProvider
+                    evaluationEnabled={true}
+                    enginePreference={auth.profile?.engine_preference ?? 'python'}
+                    persistState
+                    storageNamespace="analysis"
+                  >
                     <AnalyzeWorkspace auth={auth} />
                   </SantoriniProvider>
                 </TabPanel>

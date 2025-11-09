@@ -1957,7 +1957,11 @@ function GamePlayWorkspace({
 
       {/* Active Game In Progress */}
       {sessionMode === 'online' && isInProgress && (
-        <SantoriniProvider evaluationEnabled={false}>
+        <SantoriniProvider
+          evaluationEnabled={false}
+          enginePreference={auth.profile?.engine_preference ?? 'python'}
+          persistState={false}
+        >
           <ActiveMatchContent
             match={lobby.activeMatch}
             role={lobby.activeRole}

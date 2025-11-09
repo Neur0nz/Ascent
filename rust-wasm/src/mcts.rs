@@ -498,6 +498,9 @@ impl SantoriniMcts {
 
     fn backpropagate(&mut self, path: &[([i8; STATE_SIZE], usize, bool)], mut value: f32) {
         for (key, action, flipped) in path.iter().rev() {
+            if *flipped {
+                value = -value;
+            }
             if let Some(node) = self.nodes.get_mut(key) {
                 node.record_value(value);
 
@@ -506,9 +509,6 @@ impl SantoriniMcts {
                 let edge_visits_f = *edge_visits as f32;
                 let edge_value = &mut node.qsa[*action];
                 *edge_value += (value - *edge_value) / edge_visits_f;
-            }
-            if *flipped {
-                value = -value;
             }
         }
     }

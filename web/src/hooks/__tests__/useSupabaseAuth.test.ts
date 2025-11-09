@@ -41,6 +41,7 @@ const mockProfile: PlayerProfile = {
   games_played: 0,
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
+  engine_preference: 'python',
 };
 
 describe('useSupabaseAuth helpers', () => {

@@ -22,6 +22,8 @@ import {
   HStack,
   Input,
   Image as ChakraImage,
+  Radio,
+  RadioGroup,
   Modal,
   ModalBody,
   ModalCloseButton,
@@ -46,6 +48,7 @@ import type { SupabaseAuthState } from '@hooks/useSupabaseAuth';
 import { generateDisplayName, validateDisplayName } from '@/utils/generateDisplayName';
 import { useSurfaceTokens } from '@/theme/useSurfaceTokens';
 import { cropImageToFile, type CropArea } from '@/utils/cropImage';
+import type { EnginePreference } from '@/types/match';
 
 const MAX_AVATAR_FILE_BYTES = 2 * 1024 * 1024;
 const MIN_ZOOM = 1;
@@ -110,6 +113,7 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
     signOut,
     updateDisplayName,
     updateAvatar,
+    updateEnginePreference,
     refreshProfile,
   } = auth;
   const [savingName, setSavingName] = useBoolean(false);
@@ -117,9 +121,11 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
   const [signingOut, setSigningOut] = useBoolean(false);
   const [retrying, setRetrying] = useBoolean(false);
   const [savingAvatar, setSavingAvatar] = useBoolean(false);
+  const [savingEnginePreference, setSavingEnginePreference] = useBoolean(false);
   const [displayNameValue, setDisplayNameValue] = useState('');
   const [nameError, setNameError] = useState<string | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [enginePreference, setEnginePreference] = useState<EnginePreference>('python');
   const { isOpen: isCropOpen, onOpen: openCrop, onClose: closeCrop } = useDisclosure();
   const [cropImageUrl, setCropImageUrl] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -150,6 +156,10 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
       setNameError(null);
     }
   }, [profile]);
+
+  useEffect(() => {
+    setEnginePreference(profile?.engine_preference ?? 'python');
+  }, [profile?.engine_preference]);
 
   useEffect(() => {
     setAvatarPreview(null);
@@ -210,6 +220,32 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
       toast({ title: 'Update failed', status: 'error', description: message });
     } finally {
       setSavingName.off();
+    }
+  };
+
+  const handleSaveEnginePreference = async () => {
+    if (!profile || enginePreference === profile.engine_preference) {
+      return;
+    }
+    setSavingEnginePreference.on();
+    try {
+      await updateEnginePreference(enginePreference);
+      toast({
+        title: 'Engine preference updated',
+        status: 'success',
+        description: 'Changes apply the next time the practice board loads.',
+      });
+    } catch (updateError) {
+      const description =
+        updateError instanceof Error ? updateError.message : 'Unable to update engine preference.';
+      toast({
+        title: 'Update failed',
+        status: 'error',
+        description,
+      });
+      setEnginePreference(profile.engine_preference);
+    } finally {
+      setSavingEnginePreference.off();
     }
   };
 
@@ -620,6 +656,7 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
   }
 
   const displayNameChanged = Boolean(profile && displayNameValue.trim() !== profile.display_name);
+  const enginePreferenceChanged = Boolean(profile && enginePreference !== profile.engine_preference);
   const avatarSrc = avatarPreview
     ?? profile?.avatar_url
     ?? (typeof session?.user.user_metadata?.avatar_url === 'string' ? session.user.user_metadata.avatar_url : undefined);
@@ -732,6 +769,57 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
           </Text>
         </Stack>
       </CardBody>
+      </Card>
+      <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder} w="100%" mt={{ base: 6, md: 8 }}>
+        <CardBody as={Stack} spacing={5}>
+          <Stack spacing={1}>
+            <Heading size="sm" color={accentHeading}>
+              AI engine preference
+            </Heading>
+            <Text fontSize="sm" color={mutedText}>
+              Practice and analysis use the Python engine by default. Switch to the experimental Rust build if you want to
+              try the latest work-in-progress.
+            </Text>
+          </Stack>
+          <FormControl>
+            <FormLabel>Practice AI runtime</FormLabel>
+            <RadioGroup
+              value={enginePreference}
+              onChange={(next) => setEnginePreference(next === 'rust' ? 'rust' : 'python')}
+            >
+              <Stack direction={{ base: 'column', md: 'row' }} spacing={6}>
+                <Radio value="python">
+                  <Stack spacing={0} align="flex-start">
+                    <Text fontWeight="medium">Python (Pyodide)</Text>
+                    <Text fontSize="xs" color={mutedText}>
+                      Stable baseline that mirrors the original AI.
+                    </Text>
+                  </Stack>
+                </Radio>
+                <Radio value="rust">
+                  <Stack spacing={0} align="flex-start">
+                    <Text fontWeight="medium">Rust / WASM</Text>
+                    <Text fontSize="xs" color={mutedText}>
+                      Faster but currently experimental and may be unstable.
+                    </Text>
+                  </Stack>
+                </Radio>
+              </Stack>
+            </RadioGroup>
+            <FormHelperText color={helperText}>
+              Preference syncs across devices and applies the next time Practice or Analyze loads.
+            </FormHelperText>
+          </FormControl>
+          <Button
+            alignSelf="flex-start"
+            colorScheme="teal"
+            onClick={handleSaveEnginePreference}
+            isDisabled={!enginePreferenceChanged || savingEnginePreference}
+            isLoading={savingEnginePreference}
+          >
+            Save preference
+          </Button>
+        </CardBody>
       </Card>
       <Modal isOpen={isCropOpen} onClose={handleCancelCrop} size="lg" isCentered>
         <ModalOverlay />

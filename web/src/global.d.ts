@@ -8,6 +8,11 @@ declare module '*.py?url' {
   export default src;
 }
 
+declare module '*.py?raw' {
+  const content: string;
+  export default content;
+}
+
 declare module '*.onnx?url' {
   const src: string;
   export default src;

@@ -58,7 +58,7 @@ import { useLocalSantorini } from '@hooks/useLocalSantorini';
 import GameBoard from '@components/GameBoard';
 import GoogleIcon from '@components/auth/GoogleIcon';
 import ConnectionIndicator from '@components/play/ConnectionIndicator';
-import type { SantoriniMoveAction, MatchStatus } from '@/types/match';
+import type { SantoriniMoveAction, MatchStatus, EnginePreference } from '@/types/match';
 import MyMatchesPanel from './MyMatchesPanel';
 import { useSurfaceTokens } from '@/theme/useSurfaceTokens';
 
@@ -452,6 +452,7 @@ function ActiveMatchPanel({
   connectionStates,
   currentUserId,
   onlineEnabled,
+  enginePreference,
 }: {
   sessionMode: ReturnType<typeof useMatchLobby>['sessionMode'];
   match: LobbyMatch | null;
@@ -466,6 +467,7 @@ function ActiveMatchPanel({
   connectionStates: ReturnType<typeof useMatchLobby>['connectionStates'];
   currentUserId: string | null;
   onlineEnabled: boolean;
+  enginePreference: EnginePreference;
 }) {
   if (sessionMode === 'local') {
     return <LocalMatchPanel onExit={onStopLocal} />;
@@ -473,7 +475,7 @@ function ActiveMatchPanel({
 
   if (sessionMode === 'online') {
     return (
-      <SantoriniProvider evaluationEnabled={false}>
+      <SantoriniProvider evaluationEnabled={false} enginePreference={enginePreference} persistState={false}>
         <ActiveMatchContent
           match={match}
           role={role}
@@ -1404,6 +1406,7 @@ function PlayWorkspace({ auth }: { auth: SupabaseAuthState }) {
         connectionStates={lobby.connectionStates}
         currentUserId={auth.profile?.id ?? null}
         onlineEnabled={lobby.onlineEnabled}
+        enginePreference={auth.profile?.engine_preference ?? 'python'}
       />
     </Stack>
   );
