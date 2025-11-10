@@ -104,7 +104,7 @@ export const syncPushSubscription = async ({ permission, profile }: SyncOptions)
   if (!subscription) {
     try {
       const vapidKey = base64UrlToUint8Array(VAPID_PUBLIC_KEY);
-      const applicationServerKey: BufferSource = vapidKey;
+      const applicationServerKey = vapidKey.buffer as ArrayBuffer;
       subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey,
