@@ -74,6 +74,14 @@ export interface EmojiReaction {
   offset?: number;
 }
 
+export interface PingOpponentResult {
+  matchId: string;
+  recordedAt: string;
+  notificationsAttempted: number;
+  notificationsDelivered: number;
+  cooldownMs: number;
+}
+
 export type ConnectionQuality = 'connecting' | 'offline' | 'weak' | 'moderate' | 'strong';
 
 export interface PlayerConnectionState {
@@ -135,8 +143,10 @@ const CONNECTION_THRESHOLDS = {
   weak: 20000,
 } as const;
 
+export const MATCH_PING_COOLDOWN_MS = 60_000;
+
 const PRESENCE_HEARTBEAT_INTERVAL = 5000;
-const CONNECTION_MONITOR_INTERVAL = 6000;
+const CONNECTION_MONITOR_INTERVAL = 4500;
 
 function determineConnectionQuality(lastSeen: number | null, now: number): ConnectionQuality {
   if (lastSeen === null) {
@@ -1623,11 +1633,6 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         throw new Error('Authentication required.');
       }
 
-      const selectedStartingPlayer: 'creator' | 'opponent' =
-        payload.startingPlayer === 'random'
-          ? (Math.random() < 0.5 ? 'creator' : 'opponent')
-          : payload.startingPlayer;
-
       const { data, error } = await invokeAuthorizedFunction(client, 'create-match', {
         body: {
           visibility: payload.visibility,
@@ -1635,7 +1640,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
           hasClock: payload.hasClock,
           clockInitialMinutes: payload.clockInitialMinutes,
           clockIncrementSeconds: payload.clockIncrementSeconds,
-          startingPlayer: selectedStartingPlayer,
+          startingPlayer: payload.startingPlayer,
         },
       });
 
@@ -2614,6 +2619,44 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
     [profile, pushEmojiReaction, state.sessionMode],
   );
 
+  const pingOpponent = useCallback(async (): Promise<PingOpponentResult> => {
+    if (!onlineEnabled || state.sessionMode !== 'online') {
+      throw new Error('Online play must be active to ping an opponent.');
+    }
+    const client = supabase;
+    if (!client || !profile) {
+      throw new Error('Authentication required.');
+    }
+    const match = activeMatchRef.current;
+    if (!match) {
+      throw new Error('No active match to ping.');
+    }
+    const role = activeRoleRef.current;
+    if (!role) {
+      throw new Error('Only participants can ping their opponent.');
+    }
+    const { data, error } = await invokeAuthorizedFunction<PingOpponentResult>(client, 'ping-opponent', {
+      body: {
+        matchId: match.id,
+      },
+    });
+    if (error) {
+      const contextBody = (error as any)?.context?.body;
+      if (contextBody?.code === 'PING_RATE_LIMIT') {
+        const err = new Error(contextBody.error ?? 'Please wait before pinging again.');
+        (err as any).code = 'PING_RATE_LIMIT';
+        (err as any).retryAfterMs = contextBody.retryAfterMs ?? MATCH_PING_COOLDOWN_MS;
+        (err as any).lastPingAt = contextBody.lastPingAt ?? null;
+        throw err;
+      }
+      throw new Error(error.message || 'Failed to ping opponent');
+    }
+    if (!data) {
+      throw new Error('Malformed ping response from server.');
+    }
+    return data as PingOpponentResult;
+  }, [onlineEnabled, profile, state.sessionMode]);
+
   const clearAbortRequest = useCallback((matchId: string) => {
     setState((prev) => {
       if (!prev.abortRequests[matchId]) {
@@ -2814,6 +2857,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
     respondAbort,
     clearAbortRequest,
     sendEmojiReaction,
+    pingOpponent,
   };
 }
 

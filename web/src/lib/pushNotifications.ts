@@ -106,7 +106,7 @@ export const syncPushSubscription = async ({ permission, profile }: SyncOptions)
       const vapidKey = base64UrlToUint8Array(VAPID_PUBLIC_KEY);
       subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: vapidKey.buffer as ArrayBuffer,
+        applicationServerKey: vapidKey,
       });
     } catch (error) {
       console.error('pushNotifications: failed to subscribe to push manager', error);

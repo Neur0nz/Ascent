@@ -47,7 +47,15 @@ import {
 } from '@chakra-ui/react';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { SupabaseAuthState } from '@hooks/useSupabaseAuth';
-import type { EmojiReaction, LobbyMatch, UndoRequestState, UseMatchLobbyReturn } from '@hooks/useMatchLobby';
+import { MATCH_PING_COOLDOWN_MS } from '@hooks/useMatchLobby';
+import type {
+  EmojiReaction,
+  LobbyMatch,
+  PingOpponentResult,
+  PlayerConnectionState,
+  UndoRequestState,
+  UseMatchLobbyReturn,
+} from '@hooks/useMatchLobby';
 import { useMatchLobbyContext } from '@hooks/matchLobbyContext';
 import { useOnlineSantorini } from '@hooks/useOnlineSantorini';
 import { SantoriniProvider } from '@hooks/useSantorini';
@@ -60,7 +68,6 @@ import { useMatchVisibilityReporter } from '@hooks/useMatchVisibilityReporter';
 import GameBoard from '@components/GameBoard';
 import ConnectionIndicator from '@components/play/ConnectionIndicator';
 import type { SantoriniMoveAction, MatchStatus, PlayerProfile } from '@/types/match';
-import type { PlayerConnectionState } from '@hooks/useMatchLobby';
 import { useSurfaceTokens } from '@/theme/useSurfaceTokens';
 import { EMOJIS } from '@components/EmojiPicker';
 
@@ -216,6 +223,7 @@ function ActiveMatchContent({
   opponentReactions = [],
   canSendEmoji = false,
   onSendEmoji,
+  onPingOpponent,
 }: {
   match: LobbyMatch | null;
   role: 'creator' | 'opponent' | null;
@@ -235,6 +243,7 @@ function ActiveMatchContent({
   opponentReactions?: EmojiReaction[];
   canSendEmoji?: boolean;
   onSendEmoji?: (emoji: string) => void;
+  onPingOpponent?: () => Promise<PingOpponentResult>;
 }) {
   const toast = useToast();
   const [leaveBusy, setLeaveBusy] = useBoolean();
@@ -310,9 +319,25 @@ function ActiveMatchContent({
   const notificationPromptBorder = useColorModeValue('teal.400', 'teal.300');
   const [requestingUndo, setRequestingUndo] = useBoolean(false);
   const [respondingUndo, setRespondingUndo] = useBoolean(false);
+  const [pingBusy, setPingBusy] = useBoolean(false);
+  const [pingFeedback, setPingFeedback] = useState<{ recordedAt: string; delivered: number } | null>(null);
+  const [pingCooldownUntil, setPingCooldownUntil] = useState<number | null>(null);
+  const [pingCooldownTick, setPingCooldownTick] = useState(0);
   const myProfile = role === 'creator' ? lobbyMatch?.creator : role === 'opponent' ? lobbyMatch?.opponent : null;
   const opponentProfile = role === 'creator' ? lobbyMatch?.opponent : role === 'opponent' ? lobbyMatch?.creator : null;
-  
+
+  useEffect(() => {
+    if (!pingCooldownUntil || typeof window === 'undefined') {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setPingCooldownTick((value) => value + 1);
+    }, 1000);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [pingCooldownUntil]);
+
   // Resolve connection states for creator and opponent
   const resolveConnectionState = useCallback(
     (playerId: string | null | undefined): PlayerConnectionState | null => {
@@ -330,6 +355,40 @@ function ActiveMatchContent({
     () => resolveConnectionState(lobbyMatch?.opponent_id),
     [lobbyMatch?.opponent_id, resolveConnectionState],
   );
+
+  const pingMenuEnabled = useMemo(
+    () => Boolean(onPingOpponent && opponentProfile && lobbyMatch?.status === 'in_progress'),
+    [lobbyMatch?.status, onPingOpponent, opponentProfile],
+  );
+  const pingCooldownRemaining = useMemo(() => {
+    if (!pingCooldownUntil) {
+      return 0;
+    }
+    return Math.max(0, pingCooldownUntil - Date.now());
+  }, [pingCooldownTick, pingCooldownUntil]);
+  const opponentAppearsActive = opponentConnection ? opponentConnection.status !== 'offline' : false;
+  const pingDisabled = !pingMenuEnabled || pingBusy || opponentAppearsActive || pingCooldownRemaining > 0;
+  const pingHelperText = useMemo(() => {
+    if (!pingMenuEnabled || !opponentProfile) {
+      return null;
+    }
+    if (opponentAppearsActive) {
+      return `${opponentProfile.display_name ?? 'Opponent'} is already viewing this match.`;
+    }
+    if (pingCooldownRemaining > 0) {
+      return `Try again in ${Math.ceil(pingCooldownRemaining / 1000)}s.`;
+    }
+    if (pingFeedback) {
+      const timestamp = new Date(pingFeedback.recordedAt);
+      const timeLabel = Number.isNaN(timestamp.getTime())
+        ? pingFeedback.recordedAt
+        : timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return pingFeedback.delivered > 0
+        ? `Last ping delivered at ${timeLabel}.`
+        : `Last ping queued at ${timeLabel}.`;
+    }
+    return 'Send a push notification if they leave the game.';
+  }, [pingMenuEnabled, opponentProfile, opponentAppearsActive, pingCooldownRemaining, pingFeedback]);
 
   const {
     permission: notificationPermission,
@@ -813,6 +872,86 @@ function ActiveMatchContent({
     }
   };
 
+  const handlePingOpponent = useCallback(async () => {
+    if (!onPingOpponent || !pingMenuEnabled) {
+      return;
+    }
+    if (pingBusy) {
+      return;
+    }
+    if (opponentAppearsActive) {
+      toast({
+        title: `${opponentProfile?.display_name ?? 'Opponent'} is already here`,
+        description: 'They are still connected to this match.',
+        status: 'info',
+        duration: 3000,
+      });
+      return;
+    }
+    if (pingCooldownRemaining > 0) {
+      toast({
+        title: 'Please wait',
+        description: `You can ping again in ${Math.ceil(pingCooldownRemaining / 1000)}s.`,
+        status: 'info',
+        duration: 2500,
+      });
+      return;
+    }
+    setPingBusy.on();
+    try {
+      const result = await onPingOpponent();
+      const recordedAtMs = Date.parse(result.recordedAt) || Date.now();
+      setPingCooldownUntil(recordedAtMs + (result.cooldownMs ?? MATCH_PING_COOLDOWN_MS));
+      setPingFeedback({
+        recordedAt: result.recordedAt,
+        delivered: result.notificationsDelivered,
+      });
+      toast({
+        title: result.notificationsDelivered > 0 ? 'Opponent notified' : 'Ping recorded',
+        description:
+          result.notificationsDelivered > 0
+            ? 'We sent a push notification to your opponent.'
+            : 'We logged the ping, but they have no push targets right now.',
+        status: result.notificationsDelivered > 0 ? 'success' : 'info',
+        duration: 4000,
+      });
+    } catch (error) {
+      const code =
+        (error as { code?: string } | null)?.code ??
+        ((error as { context?: { body?: { code?: string } } })?.context?.body?.code ?? null);
+      if (code === 'PING_RATE_LIMIT') {
+        const retryAfterMs =
+          typeof (error as any)?.retryAfterMs === 'number'
+            ? Math.max(0, (error as any).retryAfterMs)
+            : MATCH_PING_COOLDOWN_MS;
+        setPingCooldownUntil(Date.now() + retryAfterMs);
+        toast({
+          title: 'Slow down',
+          description: `You can ping again in ${Math.ceil(retryAfterMs / 1000)}s.`,
+          status: 'warning',
+          duration: 4000,
+        });
+      } else {
+        toast({
+          title: 'Unable to ping opponent',
+          status: 'error',
+          description: error instanceof Error ? error.message : 'Please try again.',
+        });
+      }
+    } finally {
+      setPingBusy.off();
+    }
+  }, [
+    onPingOpponent,
+    opponentAppearsActive,
+    opponentProfile?.display_name,
+    pingBusy,
+    pingCooldownRemaining,
+    pingMenuEnabled,
+    setPingBusy,
+    toast,
+  ]);
+
   return (
     <Stack spacing={6}>
       <Stack spacing={{ base: 5, md: 6 }} align="center">
@@ -836,6 +975,11 @@ function ActiveMatchContent({
             reactions={creatorReactions}
             showEmojiPicker={Boolean(canSendEmoji && role === 'creator')}
             onSendEmoji={onSendEmoji}
+            showPingMenu={Boolean(pingMenuEnabled && role === 'opponent')}
+            onPingOpponent={role === 'opponent' ? handlePingOpponent : undefined}
+            pingBusy={pingBusy}
+            pingDisabled={pingDisabled}
+            pingHelperText={role === 'opponent' ? pingHelperText : undefined}
           />
           <PlayerClockCard
             label={opponentClockLabel}
@@ -848,6 +992,11 @@ function ActiveMatchContent({
             reactions={opponentReactions}
             showEmojiPicker={Boolean(canSendEmoji && role === 'opponent')}
             onSendEmoji={onSendEmoji}
+            showPingMenu={Boolean(pingMenuEnabled && role === 'creator')}
+            onPingOpponent={role === 'creator' ? handlePingOpponent : undefined}
+            pingBusy={pingBusy}
+            pingDisabled={pingDisabled}
+            pingHelperText={role === 'creator' ? pingHelperText : undefined}
           />
         </Stack>
       </Stack>
@@ -1055,6 +1204,11 @@ interface PlayerClockCardProps {
   reactions?: EmojiReaction[];
   showEmojiPicker?: boolean;
   onSendEmoji?: (emoji: string) => void;
+  showPingMenu?: boolean;
+  onPingOpponent?: () => void;
+  pingBusy?: boolean;
+  pingDisabled?: boolean;
+  pingHelperText?: string | null;
 }
 
 function PlayerClockCard({
@@ -1068,6 +1222,11 @@ function PlayerClockCard({
   reactions,
   showEmojiPicker,
   onSendEmoji,
+  showPingMenu,
+  onPingOpponent,
+  pingBusy,
+  pingDisabled,
+  pingHelperText,
 }: PlayerClockCardProps) {
   const { cardBorder, mutedText, strongText } = useSurfaceTokens();
   const activeBg = useColorModeValue('teal.50', 'teal.900');
@@ -1142,41 +1301,75 @@ function PlayerClockCard({
     </Box>
   );
 
-  const avatarNode =
-    showEmojiPicker && onSendEmoji ? (
-      <Popover placement="bottom-start" closeOnBlur={false} closeOnEsc>
-        <PopoverTrigger>
-          <Box cursor="pointer">{renderAvatarContent()}</Box>
-        </PopoverTrigger>
-        <PopoverContent width="auto">
-          <PopoverArrow />
-          <PopoverBody px={2} py={2}>
-            <Wrap spacing={1.5} justify="center" maxW="220px">
-              {EMOJIS.map((emoji) => (
-                <WrapItem key={emoji}>
-                  <Button
-                    size="md"
-                    variant="ghost"
-                    fontSize="2xl"
-                    px={2}
-                    py={1}
-                    onClick={() => {
-                      onSendEmoji(emoji);
-                    }}
-                  >
-                    <span role="img" aria-label="emoji">
-                      {emoji}
-                    </span>
-                  </Button>
-                </WrapItem>
-              ))}
-            </Wrap>
-          </PopoverBody>
-        </PopoverContent>
-      </Popover>
-    ) : (
-      renderAvatarContent()
-    );
+  const shouldShowEmojiPicker = Boolean(showEmojiPicker && onSendEmoji);
+  const shouldShowPingMenu = Boolean(showPingMenu && onPingOpponent);
+
+  const avatarNode = shouldShowEmojiPicker ? (
+    <Popover placement="bottom-start" closeOnBlur={false} closeOnEsc>
+      <PopoverTrigger>
+        <Box cursor="pointer">{renderAvatarContent()}</Box>
+      </PopoverTrigger>
+      <PopoverContent width="auto">
+        <PopoverArrow />
+        <PopoverBody px={2} py={2}>
+          <Wrap spacing={1.5} justify="center" maxW="220px">
+            {EMOJIS.map((emoji) => (
+              <WrapItem key={emoji}>
+                <Button
+                  size="md"
+                  variant="ghost"
+                  fontSize="2xl"
+                  px={2}
+                  py={1}
+                  onClick={() => {
+                    onSendEmoji(emoji);
+                  }}
+                >
+                  <span role="img" aria-label="emoji">
+                    {emoji}
+                  </span>
+                </Button>
+              </WrapItem>
+            ))}
+          </Wrap>
+        </PopoverBody>
+      </PopoverContent>
+    </Popover>
+  ) : shouldShowPingMenu ? (
+    <Popover placement="bottom-end" closeOnBlur closeOnEsc>
+      <PopoverTrigger>
+        <Box cursor={pingDisabled ? 'not-allowed' : 'pointer'} opacity={pingDisabled ? 0.75 : 1}>
+          {renderAvatarContent()}
+        </Box>
+      </PopoverTrigger>
+      <PopoverContent width="260px">
+        <PopoverArrow />
+        <PopoverBody px={3} py={3}>
+          <Stack spacing={2}>
+            <Text fontSize="sm" color={mutedText}>
+              Send a gentle push notification if they left the game screen.
+            </Text>
+            <Button
+              size="sm"
+              colorScheme="teal"
+              onClick={onPingOpponent}
+              isDisabled={pingDisabled}
+              isLoading={pingBusy}
+            >
+              Notify opponent
+            </Button>
+            {pingHelperText ? (
+              <Text fontSize="xs" color={mutedText}>
+                {pingHelperText}
+              </Text>
+            ) : null}
+          </Stack>
+        </PopoverBody>
+      </PopoverContent>
+    </Popover>
+  ) : (
+    renderAvatarContent()
+  );
 
   const nameRow = (
     <HStack spacing={1.5} align="center" justify={nameJustify} w="100%">
@@ -1972,16 +2165,17 @@ function GamePlayWorkspace({
             onGameComplete={lobby.updateMatchStatus}
             undoState={activeUndoState}
             onRequestUndo={lobby.requestUndo}
-            onRespondUndo={lobby.respondUndo}
-            onClearUndo={handleClearUndoState}
-            profileId={auth.profile?.id ?? null}
-            connectionStates={lobby.connectionStates}
-            currentUserId={auth.profile?.id ?? null}
-            creatorReactions={creatorReactions}
-            opponentReactions={opponentReactions}
-            canSendEmoji={canSendEmoji}
-            onSendEmoji={handleSendEmoji}
-          />
+          onRespondUndo={lobby.respondUndo}
+          onClearUndo={handleClearUndoState}
+          profileId={auth.profile?.id ?? null}
+          connectionStates={lobby.connectionStates}
+          currentUserId={auth.profile?.id ?? null}
+          creatorReactions={creatorReactions}
+          opponentReactions={opponentReactions}
+          canSendEmoji={canSendEmoji}
+          onSendEmoji={handleSendEmoji}
+          onPingOpponent={lobby.pingOpponent}
+        />
         </SantoriniProvider>
       )}
 
