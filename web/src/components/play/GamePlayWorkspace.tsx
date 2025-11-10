@@ -1322,7 +1322,7 @@ function PlayerClockCard({
                   px={2}
                   py={1}
                   onClick={() => {
-                    onSendEmoji(emoji);
+                    onSendEmoji?.(emoji);
                   }}
                 >
                   <span role="img" aria-label="emoji">
