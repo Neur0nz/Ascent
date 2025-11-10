@@ -100,8 +100,19 @@ export const useMatchVisibilityReporter = (matchId: string | null): void => {
     }
 
     if (!matchId) {
+      void postMatchVisibilityMessage({
+        type: 'santorini:match-visibility',
+        matchId: null,
+        visible: false,
+        timestamp: Date.now(),
+      });
       return () => {
-        // No active match to report.
+        void postMatchVisibilityMessage({
+          type: 'santorini:match-visibility',
+          matchId: null,
+          visible: false,
+          timestamp: Date.now(),
+        });
       };
     }
 
