@@ -12,6 +12,7 @@ import {
   CardBody,
   CardHeader,
   Center,
+  CloseButton,
   Flex,
   FormControl,
   FormLabel,
@@ -282,50 +283,6 @@ function PublicLobbies({
   );
 }
 
-function MatchModeSelector({
-  onSelectOnline,
-  onOpenPractice,
-  onlineAvailable,
-}: {
-  onSelectOnline: () => void;
-  onOpenPractice: () => void;
-  onlineAvailable: boolean;
-}) {
-  return (
-    <Card>
-      <CardBody>
-        <Stack direction={{ base: 'column', md: 'row' }} justify="space-between" align={{ base: 'stretch', md: 'center' }} spacing={4}>
-          <Stack spacing={1}>
-            <Heading size="sm">Choose how to play</Heading>
-            <Text fontSize="sm" color="gray.500">
-              Join online matchmaking or open the Practice tab for same-device games.
-            </Text>
-          </Stack>
-          <ButtonGroup isAttached variant="outline">
-            <Tooltip
-              label={onlineAvailable ? undefined : 'Sign in to play rated games and join online lobbies'}
-              isDisabled={onlineAvailable}
-            >
-              <Button
-                colorScheme="teal"
-                variant="solid"
-                onClick={onSelectOnline}
-              >
-                Online lobby
-              </Button>
-            </Tooltip>
-            <Tooltip label="Practice → Human vs Human replaces the old local mode" hasArrow>
-              <Button variant="ghost" colorScheme="teal" onClick={onOpenPractice}>
-                Open Practice
-              </Button>
-            </Tooltip>
-          </ButtonGroup>
-        </Stack>
-      </CardBody>
-    </Card>
-  );
-}
-
 function ActiveMatchPanel({
   sessionMode,
   match,
@@ -367,19 +324,6 @@ function ActiveMatchPanel({
               Use the Practice tab and set the opponent to Human vs Human for same-device games. This Play tab now
               focuses on online matches only.
             </Text>
-            <Button
-              alignSelf="flex-start"
-              colorScheme="teal"
-              onClick={() => {
-                try {
-                  window.location.hash = '#practice';
-                } catch (_error) {
-                  // ignore
-                }
-              }}
-            >
-              Open Practice
-            </Button>
           </Stack>
         </CardBody>
       </Card>
@@ -1043,62 +987,29 @@ function PlayWorkspace({ auth }: { auth: SupabaseAuthState }) {
     <Stack spacing={6} py={{ base: 6, md: 10 }}>
       <PlaySignInGate auth={auth} />
       
-      {/* Combined Mode Selector + Action Buttons */}
-      {auth.profile && (
+      {/* Action Buttons */}
+      {auth.profile && sessionMode === 'online' && (
         <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder}>
           <CardBody>
-            <Flex justify="space-between" align="center" flexWrap="wrap" gap={4}>
-              {/* Mode Selector */}
-              <HStack spacing={2}>
+            <Flex justify="flex-end" align="center" flexWrap="wrap" gap={4}>
+              <HStack spacing={3}>
                 <Button
-                  colorScheme={sessionMode === 'online' ? 'teal' : undefined}
-                  variant={sessionMode === 'online' ? 'solid' : 'outline'}
-                  onClick={() => {
-                    if (sessionMode !== 'online') {
-                      lobby.enableOnline();
-                    }
-                  }}
+                  leftIcon={<AddIcon />}
+                  colorScheme="teal"
+                  onClick={onCreateOpen}
+                  size="md"
                 >
-                  Online lobby
+                  Create Match
                 </Button>
-                <Tooltip label="Local mode now lives under Practice → Human vs Human" hasArrow>
-                  <Button
-                    variant="ghost"
-                    colorScheme="teal"
-                    onClick={() => {
-                      try {
-                        window.location.hash = '#practice';
-                      } catch (_error) {
-                        // ignore
-                      }
-                    }}
-                  >
-                    Open Practice
-                  </Button>
-                </Tooltip>
+                <Button
+                  variant="outline"
+                  colorScheme="teal"
+                  onClick={onJoinOpen}
+                  size="md"
+                >
+                  Join by Code
+                </Button>
               </HStack>
-
-              {/* Action Buttons (only for online mode) */}
-              {sessionMode === 'online' && (
-                <HStack spacing={3}>
-                  <Button
-                    leftIcon={<AddIcon />}
-                    colorScheme="teal"
-                    onClick={onCreateOpen}
-                    size="md"
-                  >
-                    Create Match
-                  </Button>
-                  <Button
-                    variant="outline"
-                    colorScheme="teal"
-                    onClick={onJoinOpen}
-                    size="md"
-                  >
-                    Join by Code
-                  </Button>
-                </HStack>
-              )}
             </Flex>
           </CardBody>
         </Card>
@@ -1123,49 +1034,24 @@ function PlayWorkspace({ auth }: { auth: SupabaseAuthState }) {
       )}
 
       {showLocalNotice && (
-        <Alert status="info" variant="left-accent" borderRadius="md" alignItems="flex-start">
+        <Alert status="info" variant="left-accent" borderRadius="md" alignItems="flex-start" position="relative" pr={8}>
           <AlertIcon />
           <Stack spacing={2} fontSize="sm" w="100%">
             <AlertTitle fontSize="sm">Local games moved</AlertTitle>
             <AlertDescription>
               Head to the Practice tab and choose Human vs Human for same-device matches. This Play tab now focuses on online games.
             </AlertDescription>
-            <Button
-              size="sm"
-              colorScheme="teal"
-              alignSelf="flex-start"
-              onClick={() => {
-                setShowLocalNotice(false);
-                try {
-                  window.location.hash = '#practice';
-                } catch (_error) {
-                  // ignore hash errors
-                }
-              }}
-            >
-              Open Practice
-            </Button>
           </Stack>
+          <CloseButton
+            size="sm"
+            position="absolute"
+            top={2}
+            right={2}
+            onClick={() => setShowLocalNotice(false)}
+          />
         </Alert>
       )}
 
-      {!auth.profile && (
-        <MatchModeSelector
-          onSelectOnline={() => {
-            if (sessionMode !== 'online') {
-              lobby.enableOnline();
-            }
-          }}
-          onOpenPractice={() => {
-            try {
-              window.location.hash = '#practice';
-            } catch (_error) {
-              // ignore hash errors
-            }
-          }}
-          onlineAvailable={Boolean(auth.profile)}
-        />
-      )}
       {sessionMode === 'online' && !auth.profile && (
         <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder}>
           <CardBody>

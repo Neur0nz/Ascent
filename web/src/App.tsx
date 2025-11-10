@@ -473,7 +473,6 @@ function App() {
                     auth={auth}
                     onNavigateToLobby={() => setActiveTab('lobby')}
                     onNavigateToAnalysis={() => setActiveTab('analysis')}
-                    onNavigateToPractice={() => setActiveTab('practice')}
                   />
                 </TabPanel>
                 <TabPanel px={0}>

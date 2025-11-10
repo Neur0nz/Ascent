@@ -1549,12 +1549,10 @@ function GamePlayWorkspace({
   auth,
   onNavigateToLobby,
   onNavigateToAnalysis,
-  onNavigateToPractice,
 }: {
   auth: SupabaseAuthState;
   onNavigateToLobby: () => void;
   onNavigateToAnalysis: () => void;
-  onNavigateToPractice: () => void;
 }) {
   const lobby = useMatchLobbyContext();
   const workspaceToast = useToast();
@@ -1917,76 +1915,53 @@ function GamePlayWorkspace({
 
   return (
     <Stack spacing={6} py={{ base: 6, md: 10 }}>
-      {/* Persistent Mode Switcher - Always visible */}
+      {/* Active match summary */}
       <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder}>
         <CardBody py={3}>
-          <Flex justify="space-between" align="center" gap={4} flexWrap="wrap">
-            <HStack spacing={2}>
-              <Button
-                size="sm"
-                colorScheme={sessionMode === 'online' ? 'teal' : undefined}
-                variant={sessionMode === 'online' ? 'solid' : 'outline'}
-                onClick={() => lobby.enableOnline()}
-                isDisabled={!auth.profile}
-              >
-                Online play
-              </Button>
-              <Tooltip label="Local matches now live under Practice → Human vs Human" hasArrow>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  colorScheme="teal"
-                  onClick={() => onNavigateToPractice()}
-                >
-                  Open Practice
-                </Button>
-              </Tooltip>
-            </HStack>
-            {activeMatchSummary ? (
-              <Wrap
-                spacing={3}
-                align="center"
-                justify={{ base: 'flex-start', md: 'flex-end' }}
-                flex="1"
-              >
+          {activeMatchSummary ? (
+            <Wrap
+              spacing={3}
+              align="center"
+              justify={{ base: 'flex-start', md: 'flex-end' }}
+              flex="1"
+            >
+              <WrapItem>
+                <Text fontSize="sm" fontWeight="semibold" color={accentHeading}>
+                  {activeMatchSummary.vsLabel}
+                </Text>
+              </WrapItem>
+              {activeMatchSummary.joinCode && (
                 <WrapItem>
-                  <Text fontSize="sm" fontWeight="semibold" color={accentHeading}>
-                    {activeMatchSummary.vsLabel}
-                  </Text>
-                </WrapItem>
-                {activeMatchSummary.joinCode && (
-                  <WrapItem>
-                    <Badge colorScheme="orange" fontSize="xs">
-                      Code: {activeMatchSummary.joinCode}
-                    </Badge>
-                  </WrapItem>
-                )}
-                <WrapItem>
-                  <Badge colorScheme={activeMatchSummary.ratedLabel === 'Rated' ? 'purple' : 'gray'} fontSize="xs">
-                    {activeMatchSummary.ratedLabel}
+                  <Badge colorScheme="orange" fontSize="xs">
+                    Code: {activeMatchSummary.joinCode}
                   </Badge>
                 </WrapItem>
-                {activeMatchSummary.clockLabel && (
-                  <WrapItem>
-                    <Badge colorScheme="green" fontSize="xs">
-                      {activeMatchSummary.clockLabel}
-                    </Badge>
-                  </WrapItem>
-                )}
+              )}
+              <WrapItem>
+                <Badge colorScheme={activeMatchSummary.ratedLabel === 'Rated' ? 'purple' : 'gray'} fontSize="xs">
+                  {activeMatchSummary.ratedLabel}
+                </Badge>
+              </WrapItem>
+              {activeMatchSummary.clockLabel && (
                 <WrapItem>
-                  <Text fontSize="xs" color={mutedText}>
-                    {activeMatchSummary.moveCount} moves
-                  </Text>
+                  <Badge colorScheme="green" fontSize="xs">
+                    {activeMatchSummary.clockLabel}
+                  </Badge>
                 </WrapItem>
-              </Wrap>
-            ) : (
-              !auth.profile && (
-                <Text fontSize="xs" color="orange.500">
-                  Sign in to play online
+              )}
+              <WrapItem>
+                <Text fontSize="xs" color={mutedText}>
+                  {activeMatchSummary.moveCount} moves
                 </Text>
-              )
-            )}
-          </Flex>
+              </WrapItem>
+            </Wrap>
+          ) : (
+            !auth.profile && (
+              <Text fontSize="xs" color="orange.500">
+                Sign in to play online
+              </Text>
+            )
+          )}
         </CardBody>
       </Card>
 
@@ -2038,7 +2013,7 @@ function GamePlayWorkspace({
 
       {/* Local mode deprecated */}
       {showLocalMigrationNotice && (
-        <Alert status="info" borderRadius="md" variant="left-accent">
+        <Alert status="info" borderRadius="md" variant="left-accent" position="relative" pr={8}>
           <AlertIcon />
           <Flex align={{ base: 'flex-start', md: 'center' }} direction={{ base: 'column', md: 'row' }} gap={4} w="100%">
             <Stack spacing={1} flex="1">
@@ -2048,16 +2023,13 @@ function GamePlayWorkspace({
                 local session has been paused.
               </AlertDescription>
             </Stack>
-            <Button
-              colorScheme="teal"
-              variant="solid"
-              onClick={() => {
-                setShowLocalMigrationNotice(false);
-                onNavigateToPractice();
-              }}
-            >
-              Open Practice
-            </Button>
+            <CloseButton
+              size="sm"
+              position="absolute"
+              top={2}
+              right={2}
+              onClick={() => setShowLocalMigrationNotice(false)}
+            />
           </Flex>
         </Alert>
       )}
