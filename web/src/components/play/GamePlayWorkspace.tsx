@@ -59,7 +59,6 @@ import type {
 import { useMatchLobbyContext } from '@hooks/matchLobbyContext';
 import { useOnlineSantorini } from '@hooks/useOnlineSantorini';
 import { SantoriniProvider } from '@hooks/useSantorini';
-import { useLocalSantorini } from '@hooks/useLocalSantorini';
 import { buildMatchJoinLink } from '@/utils/joinLinks';
 import { scheduleAutoOpenCreate } from '@/utils/lobbyStorage';
 import { useBrowserNotifications } from '@hooks/useBrowserNotifications';
@@ -92,117 +91,6 @@ const computeEloDeltas = (playerRating: number, opponentRating: number) => {
   const drawDelta = Math.round(K_FACTOR * (0.5 - expectedScore));
   return { winDelta, lossDelta, drawDelta };
 };
-
-function LocalMatchPanel({ onExit }: { onExit: () => void }) {
-  const { cardBg, cardBorder, mutedText } = useSurfaceTokens();
-  return <LocalMatchContent onExit={onExit} cardBg={cardBg} cardBorder={cardBorder} mutedText={mutedText} />;
-}
-
-function LocalMatchContent({
-  onExit,
-  cardBg,
-  cardBorder,
-  mutedText,
-}: {
-  onExit: () => void;
-  cardBg: string;
-  cardBorder: string;
-  mutedText: string;
-}) {
-  const {
-    loading,
-    initialize,
-    board,
-    selectable,
-    cancelSelectable,
-    onCellClick,
-    onCellHover,
-    onCellLeave,
-    buttons,
-    undo,
-    redo,
-    nextPlayer,
-    controls,
-  } = useLocalSantorini();
-  const [initialized, setInitialized] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        await initialize();
-        if (!cancelled) {
-          await controls.setGameMode('Human');
-          setInitialized(true);
-        }
-      } catch (error) {
-        console.error('Failed to initialize local match engine', error);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [controls, initialize]);
-
-  const currentPlayer = nextPlayer === 0 ? 'Green (Player 1)' : 'Red (Player 2)';
-  const turnHighlightColor = nextPlayer === 0 ? 'green.400' : 'red.400';
-
-  return (
-    <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder} w="100%">
-      <CardHeader>
-        <Flex justify="space-between" align={{ base: 'flex-start', md: 'center' }} direction={{ base: 'column', md: 'row' }} gap={3}>
-          <Stack spacing={1}>
-            <Heading size="md">Local match</Heading>
-            <Text fontSize="sm" color={mutedText}>
-              Pass the device between players. {initialized ? `Current turn: ${currentPlayer}` : 'Preparing board...'}
-            </Text>
-          </Stack>
-          <Button variant="outline" size="sm" onClick={onExit}>
-            End local match
-          </Button>
-        </Flex>
-      </CardHeader>
-      <CardBody>
-        <Stack spacing={6}>
-          <Box display="flex" justifyContent="center">
-            {loading ? (
-              <Center py={8} w="100%">
-                <Spinner />
-              </Center>
-            ) : (
-              <GameBoard
-                board={board}
-                selectable={selectable}
-                cancelSelectable={cancelSelectable}
-                onCellClick={onCellClick}
-                onCellHover={onCellHover}
-                onCellLeave={onCellLeave}
-              buttons={buttons}
-              undo={undo}
-              redo={redo}
-              showPrimaryControls={false}
-              isTurnActive
-              turnHighlightColor={turnHighlightColor}
-            />
-            )}
-          </Box>
-          <HStack spacing={3} justify="center" wrap="wrap">
-            <Button colorScheme="teal" onClick={() => controls.reset()} isDisabled={loading}>
-              Reset board
-            </Button>
-            <Button variant="outline" onClick={undo} isDisabled={loading || !buttons.canUndo}>
-              Undo
-            </Button>
-            <Button variant="outline" onClick={redo} isDisabled={loading || !buttons.canRedo}>
-              Redo
-            </Button>
-            <Badge colorScheme={nextPlayer === 0 ? 'green' : 'red'}>{currentPlayer}</Badge>
-          </HStack>
-        </Stack>
-      </CardBody>
-    </Card>
-  );
-}
 
 function ActiveMatchContent({
   match,
@@ -1181,7 +1069,7 @@ function CompletedMatchSummary({
               Request rematch
             </Button>
             <Button variant="outline" onClick={() => onPrepareAnalyze(match)}>
-              Review in Analyze
+              Review in Analysis
             </Button>
           </HStack>
           <Text fontSize="xs" color={mutedText}>
@@ -1660,11 +1548,13 @@ function WaitingForOpponentState({
 function GamePlayWorkspace({
   auth,
   onNavigateToLobby,
-  onNavigateToAnalyze,
+  onNavigateToAnalysis,
+  onNavigateToPractice,
 }: {
   auth: SupabaseAuthState;
   onNavigateToLobby: () => void;
-  onNavigateToAnalyze: () => void;
+  onNavigateToAnalysis: () => void;
+  onNavigateToPractice: () => void;
 }) {
   const lobby = useMatchLobbyContext();
   const workspaceToast = useToast();
@@ -1679,6 +1569,7 @@ function GamePlayWorkspace({
   const [joiningRematchId, setJoiningRematchId] = useState<string | null>(null);
   const [cancellingActiveMatch, setCancellingActiveMatch] = useBoolean(false);
   const [requestingSummaryRematch, setRequestingSummaryRematch] = useBoolean(false);
+  const [showLocalMigrationNotice, setShowLocalMigrationNotice] = useState(false);
   const [lastCancelledMatchId, setLastCancelledMatchId] = useState<string | null>(null);
   const myRole = lobby.activeRole;
   const canSendEmoji = Boolean(lobby.activeMatch && lobby.sessionMode === 'online' && myRole);
@@ -1936,6 +1827,13 @@ function GamePlayWorkspace({
     }
   }, [activeMatchId, clearUndoRequest]);
 
+  useEffect(() => {
+    if (lobby.sessionMode === 'local') {
+      setShowLocalMigrationNotice(true);
+      lobby.enableOnline();
+    }
+  }, [lobby.enableOnline, lobby.sessionMode]);
+
   // Auto-select first in-progress game if none is selected
   useEffect(() => {
     if (sessionMode === 'online' && !lobby.activeMatch && lobby.myMatches.length > 0) {
@@ -2009,13 +1907,13 @@ function GamePlayWorkspace({
       console.warn('Unable to store last analyzed match', error);
     }
     workspaceToast({
-      title: 'Opening Analyze tab',
+      title: 'Opening Analysis tab',
       description: 'Loading the completed game for review.',
       status: 'success',
       duration: 3000,
     });
-    onNavigateToAnalyze();
-  }, [onNavigateToAnalyze, workspaceToast]);
+    onNavigateToAnalysis();
+  }, [onNavigateToAnalysis, workspaceToast]);
 
   return (
     <Stack spacing={6} py={{ base: 6, md: 10 }}>
@@ -2023,23 +1921,27 @@ function GamePlayWorkspace({
       <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder}>
         <CardBody py={3}>
           <Flex justify="space-between" align="center" gap={4} flexWrap="wrap">
-            <ButtonGroup size="sm" isAttached variant="outline">
+            <HStack spacing={2}>
               <Button
+                size="sm"
                 colorScheme={sessionMode === 'online' ? 'teal' : undefined}
                 variant={sessionMode === 'online' ? 'solid' : 'outline'}
                 onClick={() => lobby.enableOnline()}
                 isDisabled={!auth.profile}
               >
-                Online
+                Online play
               </Button>
-              <Button
-                colorScheme={sessionMode === 'local' ? 'teal' : undefined}
-                variant={sessionMode === 'local' ? 'solid' : 'outline'}
-                onClick={() => lobby.startLocalMatch()}
-              >
-                Local
-              </Button>
-            </ButtonGroup>
+              <Tooltip label="Local matches now live under Practice → Human vs Human" hasArrow>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  colorScheme="teal"
+                  onClick={() => onNavigateToPractice()}
+                >
+                  Open Practice
+                </Button>
+              </Tooltip>
+            </HStack>
             {activeMatchSummary ? (
               <Wrap
                 spacing={3}
@@ -2134,8 +2036,31 @@ function GamePlayWorkspace({
         />
       )}
 
-      {/* Game Board - Local */}
-      {sessionMode === 'local' && <LocalMatchPanel onExit={lobby.stopLocalMatch} />}
+      {/* Local mode deprecated */}
+      {showLocalMigrationNotice && (
+        <Alert status="info" borderRadius="md" variant="left-accent">
+          <AlertIcon />
+          <Flex align={{ base: 'flex-start', md: 'center' }} direction={{ base: 'column', md: 'row' }} gap={4} w="100%">
+            <Stack spacing={1} flex="1">
+              <AlertTitle>Local games moved</AlertTitle>
+              <AlertDescription>
+                Use the Practice tab and set the opponent to Human vs Human for same-device play. Your current
+                local session has been paused.
+              </AlertDescription>
+            </Stack>
+            <Button
+              colorScheme="teal"
+              variant="solid"
+              onClick={() => {
+                setShowLocalMigrationNotice(false);
+                onNavigateToPractice();
+              }}
+            >
+              Open Practice
+            </Button>
+          </Flex>
+        </Alert>
+      )}
 
       {/* Waiting for Opponent State */}
       {sessionMode === 'online' && isWaitingForOpponent && lobby.activeMatch && (

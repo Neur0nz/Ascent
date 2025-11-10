@@ -181,4 +181,4 @@ your project, the Replication UI may not be available, so follow whichever path 
 ## 7. (Optional) Service role automation
 If you later add rating updates or scheduled tasks, create SQL functions that run with the service role and call them from backend jobs. For the current frontend-only prototype no extra functions are required.
 
-After completing these steps the Practice, Play, and Analyze workspaces should function end-to-end with your Supabase project.
+After completing these steps the Practice, Play, and Analysis workspaces should function end-to-end with your Supabase project.

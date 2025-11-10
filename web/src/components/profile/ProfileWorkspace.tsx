@@ -807,7 +807,7 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
               </Stack>
             </RadioGroup>
             <FormHelperText color={helperText}>
-              Preference syncs across devices and applies the next time Practice or Analyze loads.
+              Preference syncs across devices and applies the next time Practice or Analysis loads.
             </FormHelperText>
           </FormControl>
           <Button

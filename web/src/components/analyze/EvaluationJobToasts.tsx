@@ -4,10 +4,10 @@ import type { EvaluationJobStatus } from '@/types/evaluation';
 import { useEvaluationJobs } from '@hooks/useEvaluationJobs';
 
 interface EvaluationJobToastsProps {
-  onNavigateToAnalyze: (jobId: string) => void;
+  onNavigateToAnalysis: (jobId: string) => void;
 }
 
-export function EvaluationJobToasts({ onNavigateToAnalyze }: EvaluationJobToastsProps) {
+export function EvaluationJobToasts({ onNavigateToAnalysis }: EvaluationJobToastsProps) {
   const toast = useToast();
   const { jobs } = useEvaluationJobs();
   const notifiedRef = useRef<Map<string, EvaluationJobStatus>>(new Map());
@@ -42,11 +42,11 @@ export function EvaluationJobToasts({ onNavigateToAnalyze }: EvaluationJobToasts
                   size="sm"
                   colorScheme="teal"
                   onClick={() => {
-                    onNavigateToAnalyze(job.id);
+                    onNavigateToAnalysis(job.id);
                     onClose();
                   }}
                 >
-                  Go to Analyze
+                  Go to Analysis
                 </Button>
               </HStack>
             </Box>
@@ -63,10 +63,9 @@ export function EvaluationJobToasts({ onNavigateToAnalyze }: EvaluationJobToasts
         });
       }
     });
-  }, [jobs, onNavigateToAnalyze, toast]);
+  }, [jobs, onNavigateToAnalysis, toast]);
 
   return null;
 }
 
 export default EvaluationJobToasts;
-

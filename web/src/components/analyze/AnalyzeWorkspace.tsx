@@ -669,7 +669,7 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
       <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder}>
         <CardHeader>
           <Flex align="center" justify="space-between" gap={3} flexWrap="wrap">
-            <Heading size="md">Analyze a completed match</Heading>
+            <Heading size="md">Run analysis on a completed match</Heading>
             <Button
               size="sm"
               colorScheme="teal"
@@ -752,7 +752,7 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
                               }}
                               isLoading={loading && matchId === game.id}
                             >
-                              {isCurrentlyLoaded ? 'Loaded' : 'Analyze'}
+                              {isCurrentlyLoaded ? 'Loaded' : 'Load analysis'}
                             </Button>
                           </Flex>
                         </Box>

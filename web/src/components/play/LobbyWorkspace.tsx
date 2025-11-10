@@ -127,7 +127,7 @@ function LobbyHero({
   onOpenCreate,
   onOpenJoin,
   onNavigateToPractice,
-  onNavigateToAnalyze,
+  onNavigateToAnalysis,
   onNavigateToLeaderboard,
   hasActiveGame,
 }: {
@@ -136,7 +136,7 @@ function LobbyHero({
   onOpenCreate: () => void;
   onOpenJoin: () => void;
   onNavigateToPractice?: () => void;
-  onNavigateToAnalyze?: () => void;
+  onNavigateToAnalysis?: () => void;
   onNavigateToLeaderboard?: () => void;
   hasActiveGame: boolean;
 }) {
@@ -150,10 +150,10 @@ function LobbyHero({
       icon: RepeatIcon,
       onClick: onNavigateToPractice,
     },
-    onNavigateToAnalyze && {
-      label: 'Analyze games',
+    onNavigateToAnalysis && {
+      label: 'Analysis',
       icon: SearchIcon,
-      onClick: onNavigateToAnalyze,
+      onClick: onNavigateToAnalysis,
     },
     onNavigateToLeaderboard && {
       label: 'View rankings',
@@ -777,13 +777,13 @@ function LobbyWorkspace({
   auth,
   onNavigateToPlay,
   onNavigateToPractice,
-  onNavigateToAnalyze,
+  onNavigateToAnalysis,
   onNavigateToLeaderboard,
 }: {
   auth: SupabaseAuthState;
   onNavigateToPlay: () => void;
   onNavigateToPractice: () => void;
-  onNavigateToAnalyze: () => void;
+  onNavigateToAnalysis: () => void;
   onNavigateToLeaderboard: () => void;
 }) {
   const lobby = useMatchLobbyContext();
@@ -1197,7 +1197,7 @@ function LobbyWorkspace({
         onOpenCreate={onCreateOpen}
         onOpenJoin={onJoinOpen}
         onNavigateToPractice={onNavigateToPractice}
-        onNavigateToAnalyze={onNavigateToAnalyze}
+        onNavigateToAnalysis={onNavigateToAnalysis}
         onNavigateToLeaderboard={onNavigateToLeaderboard}
         hasActiveGame={lobby.hasActiveGame}
       />

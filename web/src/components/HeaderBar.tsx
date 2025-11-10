@@ -18,7 +18,7 @@ import { MoonIcon, SunIcon } from '@chakra-ui/icons';
 import AuthJourney from '@components/auth/AuthJourney';
 import type { SupabaseAuthState } from '@hooks/useSupabaseAuth';
 
-export type AppTab = 'lobby' | 'play' | 'leaderboard' | 'practice' | 'analyze' | 'profile';
+export type AppTab = 'lobby' | 'play' | 'leaderboard' | 'practice' | 'analysis' | 'profile';
 
 interface HeaderBarProps {
   activeTab: AppTab;
@@ -32,7 +32,7 @@ export const NAV_TABS: ReadonlyArray<{ key: AppTab; label: string; helper: strin
   { key: 'play', label: 'Play', helper: 'Your active game' },
   { key: 'leaderboard', label: 'Leaderboard', helper: 'Player rankings' },
   { key: 'practice', label: 'Practice', helper: 'Play vs AI' },
-  { key: 'analyze', label: 'Analyze', helper: 'Review games' },
+  { key: 'analysis', label: 'Analysis', helper: 'Review games' },
   { key: 'profile', label: 'Profile', helper: 'Your stats' },
 ];
 

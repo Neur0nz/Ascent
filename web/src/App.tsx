@@ -36,18 +36,26 @@ import EvaluationJobToasts from '@components/analyze/EvaluationJobToasts';
 
 const TAB_STORAGE_KEY = 'santorini:lastTab';
 
+function normalizeTabKey(value: string | null): AppTab | null {
+  if (!value) return null;
+  if (value === 'analyze') {
+    return 'analysis';
+  }
+  return value as AppTab;
+}
+
 function resolveInitialTab(tabOrder: readonly AppTab[]): AppTab {
   if (typeof window === 'undefined') {
     return 'lobby';
   }
 
   const { hash, pathname, search } = window.location;
-  const hashTab = hash.slice(1) as AppTab;
+  const hashTab = normalizeTabKey(hash.slice(1));
   if (hashTab && tabOrder.includes(hashTab)) {
     return hashTab;
   }
 
-  if (hash && !tabOrder.includes(hashTab)) {
+  if (hash && (!hashTab || !tabOrder.includes(hashTab))) {
     try {
       window.history.replaceState(null, '', `${pathname}${search}#lobby`);
     } catch (error) {
@@ -56,7 +64,7 @@ function resolveInitialTab(tabOrder: readonly AppTab[]): AppTab {
   }
 
   try {
-    const storedTab = window.localStorage.getItem(TAB_STORAGE_KEY) as AppTab | null;
+    const storedTab = normalizeTabKey(window.localStorage.getItem(TAB_STORAGE_KEY));
     if (storedTab && tabOrder.includes(storedTab)) {
       const targetUrl = `${pathname}${search}#${storedTab}`;
       if (`#${storedTab}` !== hash) {
@@ -367,7 +375,7 @@ function App() {
   // Listen for browser back/forward navigation
   useEffect(() => {
     const handleHashChange = () => {
-      const hash = window.location.hash.slice(1) as AppTab;
+      const hash = normalizeTabKey(window.location.hash.slice(1));
       if (hash && tabOrder.includes(hash)) {
         setActiveTab(hash);
       }
@@ -387,7 +395,7 @@ function App() {
         return null;
       case 'practice':
         return null;
-      case 'analyze':
+      case 'analysis':
         return (
           <Tooltip label="Search saved games (coming soon)" hasArrow>
             <IconButton aria-label="Search games" icon={<SearchIcon />} size="sm" variant="outline" isDisabled />
@@ -402,7 +410,7 @@ function App() {
 
   const handleEvaluationToastNavigate = useCallback((jobId: string) => {
     setPendingJobId(jobId);
-    setActiveTab('analyze');
+    setActiveTab('analysis');
   }, []);
 
   const handleTabChange = (index: number) => {
@@ -430,7 +438,7 @@ function App() {
         profileId={auth.profile?.id ?? null}
         onNavigateToPlay={() => setActiveTab('play')}
       />
-      <EvaluationJobToasts onNavigateToAnalyze={handleEvaluationToastNavigate} />
+      <EvaluationJobToasts onNavigateToAnalysis={handleEvaluationToastNavigate} />
       <Tabs
         index={activeIndex}
         onChange={handleTabChange}
@@ -456,7 +464,7 @@ function App() {
                     auth={auth}
                     onNavigateToPlay={() => setActiveTab('play')}
                     onNavigateToPractice={() => setActiveTab('practice')}
-                    onNavigateToAnalyze={() => setActiveTab('analyze')}
+                    onNavigateToAnalysis={() => setActiveTab('analysis')}
                     onNavigateToLeaderboard={() => setActiveTab('leaderboard')}
                   />
                 </TabPanel>
@@ -464,7 +472,8 @@ function App() {
                   <GamePlayWorkspace
                     auth={auth}
                     onNavigateToLobby={() => setActiveTab('lobby')}
-                    onNavigateToAnalyze={() => setActiveTab('analyze')}
+                    onNavigateToAnalysis={() => setActiveTab('analysis')}
+                    onNavigateToPractice={() => setActiveTab('practice')}
                   />
                 </TabPanel>
                 <TabPanel px={0}>

@@ -289,7 +289,7 @@ function EvaluationPanel({
                     ))}
                   </Select>
                   <Button size="sm" colorScheme="purple" onClick={calculateOptions} isLoading={calcOptionsBusy}>
-                    Analyze
+                    Run analysis
                   </Button>
                 </HStack>
                 {topMoves.length === 0 && (

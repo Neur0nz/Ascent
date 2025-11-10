@@ -44,7 +44,7 @@
 - The Supabase edge functions reuse a TypeScript port of the Python logic (`supabase/functions/_shared/santorini.ts`) to validate moves server-side. Keep behaviour changes in sync across Python, the TS bridge, and the shared engine.
 
 ## Supabase Backend & Configuration
-- Front-end code accesses Supabase through `src/lib/supabaseClient.ts`, which creates a browser client when `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are present. Without them the Play/Analyze tabs gracefully disable online features but leave Practice offline mode untouched.
+- Front-end code accesses Supabase through `src/lib/supabaseClient.ts`, which creates a browser client when `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are present. Without them the Play/Analysis tabs gracefully disable online features but leave Practice offline mode untouched.
 - Provision Supabase using the CLI config in `supabase/config.toml`. The project expects the `players`, `matches`, and `match_moves` schema plus the RLS policies defined in [`../setup/supabase.md`](../setup/supabase.md); run `supabase start` locally to mirror the hosted stack.
 - Three edge functions (`supabase/functions/create-match`, `submit-move`, and `update-match-status`) enforce server authority. They authenticate the caller with a bearer token, load match data via RPCs, run the shared `SantoriniEngine` to validate requested actions, and then write back to `public.matches` / `public.match_moves`.
 - Deploy edge functions with `supabase functions deploy <name>`; each function needs `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` environment variables in production. Keep their return payloads aligned with the React callers in `src/hooks/useMatchLobby.ts`.

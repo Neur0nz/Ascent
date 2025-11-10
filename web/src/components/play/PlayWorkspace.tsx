@@ -54,7 +54,6 @@ import {
 } from '@hooks/useMatchLobby';
 import { useOnlineSantorini } from '@hooks/useOnlineSantorini';
 import { SantoriniProvider, useSantorini } from '@hooks/useSantorini';
-import { useLocalSantorini } from '@hooks/useLocalSantorini';
 import GameBoard from '@components/GameBoard';
 import GoogleIcon from '@components/auth/GoogleIcon';
 import ConnectionIndicator from '@components/play/ConnectionIndicator';
@@ -284,14 +283,12 @@ function PublicLobbies({
 }
 
 function MatchModeSelector({
-  mode,
-  onSelectLocal,
   onSelectOnline,
+  onOpenPractice,
   onlineAvailable,
 }: {
-  mode: 'local' | 'online';
-  onSelectLocal: () => void;
   onSelectOnline: () => void;
+  onOpenPractice: () => void;
   onlineAvailable: boolean;
 }) {
   return (
@@ -301,7 +298,7 @@ function MatchModeSelector({
           <Stack spacing={1}>
             <Heading size="sm">Choose how to play</Heading>
             <Text fontSize="sm" color="gray.500">
-              Join online matchmaking or start a local game on this device.
+              Join online matchmaking or open the Practice tab for same-device games.
             </Text>
           </Stack>
           <ButtonGroup isAttached variant="outline">
@@ -310,128 +307,19 @@ function MatchModeSelector({
               isDisabled={onlineAvailable}
             >
               <Button
-                colorScheme={mode === 'online' ? 'teal' : undefined}
-                variant={mode === 'online' ? 'solid' : 'outline'}
+                colorScheme="teal"
+                variant="solid"
                 onClick={onSelectOnline}
               >
                 Online lobby
               </Button>
             </Tooltip>
-            <Button
-              colorScheme={mode === 'local' ? 'teal' : undefined}
-              variant={mode === 'local' ? 'solid' : 'outline'}
-              onClick={onSelectLocal}
-            >
-              Local match
-            </Button>
+            <Tooltip label="Practice → Human vs Human replaces the old local mode" hasArrow>
+              <Button variant="ghost" colorScheme="teal" onClick={onOpenPractice}>
+                Open Practice
+              </Button>
+            </Tooltip>
           </ButtonGroup>
-        </Stack>
-      </CardBody>
-    </Card>
-  );
-}
-
-function LocalMatchPanel({ onExit }: { onExit: () => void }) {
-  const { cardBg, cardBorder, mutedText } = useSurfaceTokens();
-  return <LocalMatchContent onExit={onExit} cardBg={cardBg} cardBorder={cardBorder} mutedText={mutedText} />;
-}
-
-function LocalMatchContent({
-  onExit,
-  cardBg,
-  cardBorder,
-  mutedText,
-}: {
-  onExit: () => void;
-  cardBg: string;
-  cardBorder: string;
-  mutedText: string;
-}) {
-  const {
-    loading,
-    initialize,
-    board,
-    selectable,
-    cancelSelectable,
-    onCellClick,
-    onCellHover,
-    onCellLeave,
-    buttons,
-    undo,
-    redo,
-    nextPlayer,
-    controls,
-  } = useLocalSantorini();
-  const [initialized, setInitialized] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        await initialize();
-        if (!cancelled) {
-          await controls.setGameMode('Human');
-          setInitialized(true);
-        }
-      } catch (error) {
-        console.error('Failed to initialize local match engine', error);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [controls, initialize]);
-
-  const currentPlayer = nextPlayer === 0 ? 'Green (Player 1)' : 'Red (Player 2)';
-
-  return (
-    <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder} w="100%">
-      <CardHeader>
-        <Flex justify="space-between" align={{ base: 'flex-start', md: 'center' }} direction={{ base: 'column', md: 'row' }} gap={3}>
-          <Stack spacing={1}>
-            <Heading size="md">Local match</Heading>
-            <Text fontSize="sm" color={mutedText}>
-              Pass the device between players. {initialized ? `Current turn: ${currentPlayer}` : 'Preparing board...'}
-            </Text>
-          </Stack>
-          <Button variant="outline" size="sm" onClick={onExit}>
-            End local match
-          </Button>
-        </Flex>
-      </CardHeader>
-      <CardBody>
-        <Stack spacing={6}>
-          <Box display="flex" justifyContent="center">
-            {loading ? (
-              <Center py={8} w="100%">
-                <Spinner />
-              </Center>
-            ) : (
-              <GameBoard
-                board={board}
-                selectable={selectable}
-                cancelSelectable={cancelSelectable}
-                onCellClick={onCellClick}
-                onCellHover={onCellHover}
-                onCellLeave={onCellLeave}
-                buttons={buttons}
-                undo={undo}
-                redo={redo}
-              />
-            )}
-          </Box>
-          <HStack spacing={3} justify="center" wrap="wrap">
-            <Button colorScheme="teal" onClick={() => controls.reset()} isDisabled={loading}>
-              Reset board
-            </Button>
-            <Button variant="outline" onClick={undo} isDisabled={loading || !buttons.canUndo}>
-              Undo
-            </Button>
-            <Button variant="outline" onClick={redo} isDisabled={loading || !buttons.canRedo}>
-              Redo
-            </Button>
-            <Badge colorScheme={nextPlayer === 0 ? 'green' : 'red'}>{currentPlayer}</Badge>
-          </HStack>
         </Stack>
       </CardBody>
     </Card>
@@ -448,7 +336,6 @@ function ActiveMatchPanel({
   onLeave,
   onOfferRematch,
   onGameComplete,
-  onStopLocal,
   connectionStates,
   currentUserId,
   onlineEnabled,
@@ -463,14 +350,40 @@ function ActiveMatchPanel({
   onLeave: (matchId?: string | null) => Promise<void>;
   onOfferRematch: ReturnType<typeof useMatchLobby>['offerRematch'];
   onGameComplete: (status: MatchStatus, payload?: { winner_id?: string | null }) => Promise<void>;
-  onStopLocal: () => void;
   connectionStates: ReturnType<typeof useMatchLobby>['connectionStates'];
   currentUserId: string | null;
   onlineEnabled: boolean;
   enginePreference: EnginePreference;
 }) {
+  const { cardBg, cardBorder, mutedText } = useSurfaceTokens();
+
   if (sessionMode === 'local') {
-    return <LocalMatchPanel onExit={onStopLocal} />;
+    return (
+      <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder}>
+        <CardBody>
+          <Stack spacing={3}>
+            <Heading size="md">Local games moved</Heading>
+            <Text color={mutedText}>
+              Use the Practice tab and set the opponent to Human vs Human for same-device games. This Play tab now
+              focuses on online matches only.
+            </Text>
+            <Button
+              alignSelf="flex-start"
+              colorScheme="teal"
+              onClick={() => {
+                try {
+                  window.location.hash = '#practice';
+                } catch (_error) {
+                  // ignore
+                }
+              }}
+            >
+              Open Practice
+            </Button>
+          </Stack>
+        </CardBody>
+      </Card>
+    );
   }
 
   if (sessionMode === 'online') {
@@ -493,7 +406,6 @@ function ActiveMatchPanel({
     );
   }
 
-  const { cardBg, cardBorder, mutedText } = useSurfaceTokens();
   return (
     <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder} w="100%">
       <CardBody>
@@ -870,19 +782,19 @@ function ActiveMatchContent({
                         Offer rematch
                       </Button>
                     </Tooltip>
-                    <Tooltip label="Review this game from the Analyze tab" hasArrow>
+                    <Tooltip label="Review this game from the Analysis tab" hasArrow>
                       <Button
                         onClick={() => {
                           if (!lobbyMatch) return;
                           localStorage.setItem('santorini:lastAnalyzedMatch', lobbyMatch.id);
                           toast({
                             title: 'Ready for analysis',
-                            description: 'Open the Analyze tab to review this game.',
+                            description: 'Open the Analysis tab to review this game.',
                             status: 'success',
                           });
                         }}
                       >
-                        Analyze game
+                        Open in Analysis
                       </Button>
                     </Tooltip>
                   </ButtonGroup>
@@ -1054,6 +966,7 @@ function PlaySignInGate({ auth }: { auth: SupabaseAuthState }) {
 function PlayWorkspace({ auth }: { auth: SupabaseAuthState }) {
   const lobby = useMatchLobby(auth.profile);
   const [joiningCode, setJoiningCode] = useState('');
+  const [showLocalNotice, setShowLocalNotice] = useState(false);
   const { isOpen: isCreateOpen, onOpen: onCreateOpen, onClose: onCreateClose } = useDisclosure();
   const { isOpen: isJoinOpen, onOpen: onJoinOpen, onClose: onJoinClose } = useDisclosure();
   const toast = useToast();
@@ -1087,6 +1000,13 @@ function PlayWorkspace({ auth }: { auth: SupabaseAuthState }) {
       initializedOnlineRef.current = true;
     }
   }, [lobby.sessionMode, lobby.enableOnline]);
+
+  useEffect(() => {
+    if (lobby.sessionMode === 'local') {
+      setShowLocalNotice(true);
+      lobby.enableOnline();
+    }
+  }, [lobby.enableOnline, lobby.sessionMode]);
 
   const handleCreate = async (payload: CreateMatchPayload) => {
     await lobby.createMatch(payload);
@@ -1129,7 +1049,7 @@ function PlayWorkspace({ auth }: { auth: SupabaseAuthState }) {
           <CardBody>
             <Flex justify="space-between" align="center" flexWrap="wrap" gap={4}>
               {/* Mode Selector */}
-              <ButtonGroup size="md" isAttached variant="outline">
+              <HStack spacing={2}>
                 <Button
                   colorScheme={sessionMode === 'online' ? 'teal' : undefined}
                   variant={sessionMode === 'online' ? 'solid' : 'outline'}
@@ -1141,18 +1061,22 @@ function PlayWorkspace({ auth }: { auth: SupabaseAuthState }) {
                 >
                   Online lobby
                 </Button>
-                <Button
-                  colorScheme={sessionMode === 'local' ? 'teal' : undefined}
-                  variant={sessionMode === 'local' ? 'solid' : 'outline'}
-                  onClick={() => {
-                    if (sessionMode !== 'local') {
-                      lobby.startLocalMatch();
-                    }
-                  }}
-                >
-                  Local match
-                </Button>
-              </ButtonGroup>
+                <Tooltip label="Local mode now lives under Practice → Human vs Human" hasArrow>
+                  <Button
+                    variant="ghost"
+                    colorScheme="teal"
+                    onClick={() => {
+                      try {
+                        window.location.hash = '#practice';
+                      } catch (_error) {
+                        // ignore
+                      }
+                    }}
+                  >
+                    Open Practice
+                  </Button>
+                </Tooltip>
+              </HStack>
 
               {/* Action Buttons (only for online mode) */}
               {sessionMode === 'online' && (
@@ -1198,17 +1122,45 @@ function PlayWorkspace({ auth }: { auth: SupabaseAuthState }) {
         </Alert>
       )}
 
+      {showLocalNotice && (
+        <Alert status="info" variant="left-accent" borderRadius="md" alignItems="flex-start">
+          <AlertIcon />
+          <Stack spacing={2} fontSize="sm" w="100%">
+            <AlertTitle fontSize="sm">Local games moved</AlertTitle>
+            <AlertDescription>
+              Head to the Practice tab and choose Human vs Human for same-device matches. This Play tab now focuses on online games.
+            </AlertDescription>
+            <Button
+              size="sm"
+              colorScheme="teal"
+              alignSelf="flex-start"
+              onClick={() => {
+                setShowLocalNotice(false);
+                try {
+                  window.location.hash = '#practice';
+                } catch (_error) {
+                  // ignore hash errors
+                }
+              }}
+            >
+              Open Practice
+            </Button>
+          </Stack>
+        </Alert>
+      )}
+
       {!auth.profile && (
         <MatchModeSelector
-          mode={sessionMode}
-          onSelectLocal={() => {
-            if (sessionMode !== 'local') {
-              lobby.startLocalMatch();
-            }
-          }}
           onSelectOnline={() => {
             if (sessionMode !== 'online') {
               lobby.enableOnline();
+            }
+          }}
+          onOpenPractice={() => {
+            try {
+              window.location.hash = '#practice';
+            } catch (_error) {
+              // ignore hash errors
             }
           }}
           onlineAvailable={Boolean(auth.profile)}
@@ -1402,7 +1354,6 @@ function PlayWorkspace({ auth }: { auth: SupabaseAuthState }) {
         onLeave={lobby.leaveMatch}
         onOfferRematch={lobby.offerRematch}
         onGameComplete={lobby.updateMatchStatus}
-        onStopLocal={lobby.stopLocalMatch}
         connectionStates={lobby.connectionStates}
         currentUserId={auth.profile?.id ?? null}
         onlineEnabled={lobby.onlineEnabled}

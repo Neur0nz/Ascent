@@ -20,7 +20,7 @@ npm run dev
 
 ## 🔐 Online Play Setup (Optional)
 
-The **Practice** tab works offline without any configuration. The **Play** and **Analyze** workspaces require Supabase for:
+The **Practice** tab works offline without any configuration. The **Play** and **Analysis** workspaces require Supabase for:
 
 - Authentication (email magic links and Google OAuth)
 - Lobby management and matchmaking

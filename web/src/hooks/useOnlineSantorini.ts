@@ -63,6 +63,16 @@ function isSantoriniMoveAction(action: MatchAction | null | undefined): action i
   return Boolean(action && (action as SantoriniMoveAction).kind === 'santorini.move');
 }
 
+const getLastSantoriniMove = (records: MatchMoveRecord<MatchAction>[]): number | null => {
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    const action = records[index]?.action;
+    if (isSantoriniMoveAction(action) && typeof action.move === 'number') {
+      return action.move;
+    }
+  }
+  return null;
+};
+
 function engineToBoard(snapshot: SantoriniSnapshot): BoardCell[][] {
   const board: BoardCell[][] = [];
   for (let y = 0; y < 5; y++) {
