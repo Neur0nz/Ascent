@@ -292,6 +292,10 @@ async function getAuthUserId(
   }
   const { data, error } = await supabase.auth.getUser(token);
   if (error || !data?.user) {
+    console.error('submit-move: auth.getUser failed for token', {
+      error: error?.message ?? error,
+      hasUser: Boolean(data?.user),
+    });
     throw new HttpError(401, 'Unauthorized');
   }
   const expiresAt = computeTokenCacheExpiry(token, now);

@@ -130,19 +130,17 @@ export const syncPushSubscription = async ({ permission, profile }: SyncOptions)
     return;
   }
 
-  const { error } = await supabaseClient.from('web_push_subscriptions').upsert(
-    {
-      auth_user_id: profile.auth_user_id,
-      profile_id: profile.id,
+  const { error } = await supabaseClient.functions.invoke('sync-push-subscription', {
+    body: {
       endpoint,
-      auth: authKey,
-      p256dh: p256dhKey,
+      keys: {
+        auth: authKey,
+        p256dh: p256dhKey,
+      },
       encoding: json.keys?.encoding ?? 'aesgcm',
-      user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
-      last_used_at: new Date().toISOString(),
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
     },
-    { onConflict: 'endpoint' },
-  );
+  });
 
   if (error) {
     console.error('pushNotifications: failed to persist subscription', error);

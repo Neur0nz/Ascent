@@ -64,8 +64,10 @@ import { scheduleAutoOpenCreate } from '@/utils/lobbyStorage';
 import { useBrowserNotifications } from '@hooks/useBrowserNotifications';
 import { usePushSubscription } from '@hooks/usePushSubscription';
 import { useMatchVisibilityReporter } from '@hooks/useMatchVisibilityReporter';
+import { useMatchChat } from '@hooks/useMatchChat';
 import GameBoard from '@components/GameBoard';
 import ConnectionIndicator from '@components/play/ConnectionIndicator';
+import { MatchChatPanel } from '@components/play/MatchChatPanel';
 import type { SantoriniMoveAction, MatchStatus, PlayerProfile } from '@/types/match';
 import { useSurfaceTokens } from '@/theme/useSurfaceTokens';
 import { EMOJIS } from '@components/EmojiPicker';
@@ -352,6 +354,28 @@ function ActiveMatchContent({
       (!undoState || undoState.status === 'rejected' || undoState.status === 'applied')
   );
   const undoDisabledOverride = !canRequestUndo || requestingUndo || undoPending;
+
+  const chatAuthor = useMemo(() => {
+    if (!myProfile) {
+      return null;
+    }
+    return {
+      id: myProfile.id ?? profileId ?? null,
+      name: myProfile.display_name ?? 'You',
+      avatarUrl: myProfile.avatar_url ?? null,
+    };
+  }, [myProfile, profileId]);
+  const {
+    messages: chatMessages,
+    status: chatStatus,
+    sendMessage: sendChatMessage,
+    canSend: canSendChat,
+    clearHistory: clearChatHistory,
+  } = useMatchChat({
+    matchId: lobbyMatch?.id ?? null,
+    author: chatAuthor,
+  });
+  const chatViewerId = myProfile?.id ?? profileId ?? currentUserId ?? null;
 
   useEffect(() => {
     if (!notificationsSupported) {
@@ -945,20 +969,33 @@ function ActiveMatchContent({
 
         {undoBanner}
 
-        <Box w="100%" maxW="960px" mt={4} px={{ base: 0, md: 3 }} display="flex" justifyContent="flex-end">
-          <Tooltip label="Resign and lose the game (affects rating if rated)" hasArrow>
-            <Button
-              colorScheme="red"
-              variant="outline"
-              onClick={onResignOpen}
-              isLoading={leaveBusy}
-            >
-              Resign
-            </Button>
-          </Tooltip>
-        </Box>
-
       </Flex>
+
+      {lobbyMatch ? (
+        <Box w="100%" maxW="960px" mx="auto">
+          <MatchChatPanel
+            matchId={lobbyMatch.id}
+            messages={chatMessages}
+            status={chatStatus}
+            onSend={sendChatMessage}
+            canSend={canSendChat}
+            currentUserId={chatViewerId}
+            onClearHistory={chatMessages.length > 0 ? clearChatHistory : undefined}
+          />
+          <Box mt={3} px={{ base: 0, md: 3 }} display="flex" justifyContent={{ base: 'center', md: 'flex-end' }}>
+            <Tooltip label="Resign and lose the game (affects rating if rated)" hasArrow>
+              <Button
+                colorScheme="red"
+                variant="outline"
+                onClick={onResignOpen}
+                isLoading={leaveBusy}
+              >
+                Resign
+              </Button>
+            </Tooltip>
+          </Box>
+        </Box>
+      ) : null}
 
       <AlertDialog isOpen={isResignOpen} leastDestructiveRef={resignCancelRef} onClose={onResignClose}>
         <AlertDialogOverlay>

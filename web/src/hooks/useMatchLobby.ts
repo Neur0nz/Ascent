@@ -4,20 +4,72 @@ import type { FunctionInvokeOptions } from '@supabase/supabase-js';
 
 type SupabaseClientType = NonNullable<typeof supabase>;
 
+const isAuthError = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+  const message = typeof (error as { message?: string }).message === 'string'
+    ? (error as { message: string }).message.toLowerCase()
+    : '';
+  const status =
+    (error as { context?: { status?: number } }).context?.status
+    ?? (error as { response?: { status?: number } }).response?.status
+    ?? null;
+  if (status === 401) {
+    return true;
+  }
+  return message.includes('session_not_found') || message.includes('unauthorized');
+};
+
 async function invokeAuthorizedFunction<TResponse = any>(
   client: SupabaseClientType,
   functionName: string,
   options: FunctionInvokeOptions = {},
 ) {
-  const { data: sessionData } = await client.auth.getSession();
-  const token = sessionData.session?.access_token;
-  const headers = token
-    ? { ...(options.headers ?? {}), Authorization: `Bearer ${token}` }
-    : options.headers;
-  return client.functions.invoke<TResponse>(functionName, {
-    ...options,
-    headers,
+  const invokeOnce = async () => {
+    const { data: sessionData, error: sessionError } = await client.auth.getSession();
+    const token = sessionData.session?.access_token ?? null;
+    if (!token && sessionError) {
+      console.warn('invokeAuthorizedFunction: missing session token, falling back to anon key', {
+        functionName,
+        sessionError,
+      });
+    }
+    const headers = token
+      ? { ...(options.headers ?? {}), Authorization: `Bearer ${token}` }
+      : options.headers;
+    return client.functions.invoke<TResponse>(functionName, {
+      ...options,
+      headers,
+    });
+  };
+
+  let result = await invokeOnce();
+  if (!result.error || !isAuthError(result.error)) {
+    return result;
+  }
+
+  console.warn('invokeAuthorizedFunction: refreshing Supabase session after auth failure', {
+    functionName,
+    error: result.error?.message,
   });
+  const { data: refreshed, error: refreshError } = await client.auth.refreshSession();
+  if (refreshError || !refreshed.session?.access_token) {
+    console.warn('invokeAuthorizedFunction: refresh session failed, user must reauthenticate', {
+      functionName,
+      refreshError,
+    });
+    return result;
+  }
+
+  const retry = await invokeOnce();
+  if (retry.error && retry.error !== result.error) {
+    console.warn('invokeAuthorizedFunction: request still failing after refresh', {
+      functionName,
+      error: retry.error?.message,
+    });
+  }
+  return retry;
 }
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import type {
@@ -1981,19 +2033,18 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
       const validationStart = performance.now();
       console.log('🔒 Validating move on server (async)...');
       
-      client.functions
-        .invoke('submit-move', {
-          body: {
-            matchId: match.id,
-            moveIndex,
-            action: {
-              kind: movePayload.kind,
-              move: movePayload.move,
-              by: movePayload.by,
-              clocks: movePayload.clocks,
-            },
+      invokeAuthorizedFunction(client, 'submit-move', {
+        body: {
+          matchId: match.id,
+          moveIndex,
+          action: {
+            kind: movePayload.kind,
+            move: movePayload.move,
+            by: movePayload.by,
+            clocks: movePayload.clocks,
           },
-        })
+        },
+      })
         .then(({ error }) => {
           const validationElapsed = performance.now() - validationStart;
           
