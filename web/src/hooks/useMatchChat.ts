@@ -23,10 +23,17 @@ export interface MatchChatDraft {
   author: MatchChatAuthor;
 }
 
+export interface MatchTypingPayload {
+  author: MatchChatAuthor;
+  isTyping: boolean;
+}
+
 export interface MatchChatAdapter {
   loadHistory(matchId: string): Promise<MatchChatMessage[]>;
   persistMessage(matchId: string, draft: MatchChatDraft): Promise<MatchChatMessage>;
   subscribe?(matchId: string, callback: (messages: MatchChatMessage[]) => void): () => void;
+  subscribeTyping?(matchId: string, callback: (authors: MatchChatAuthor[]) => void): () => void;
+  broadcastTyping?(matchId: string, payload: MatchTypingPayload): Promise<void>;
   clear?(matchId: string): Promise<void>;
 }
 
@@ -42,12 +49,15 @@ export interface UseMatchChatReturn {
   sendMessage: (text: string) => Promise<void>;
   canSend: boolean;
   clearHistory: () => Promise<void>;
+  typingUsers: MatchChatAuthor[];
+  notifyTyping: (isTyping: boolean) => Promise<void>;
 }
 
 const STORAGE_KEY_PREFIX = 'santorini:matchChat:';
 const MAX_SAVED_MESSAGES = 200;
 const CHAT_CHANNEL_PREFIX = 'match-chat-';
 const CHAT_EVENT_NAME = 'chat-message';
+const CHAT_TYPING_EVENT_NAME = 'chat-typing';
 
 const sortMessages = (messages: MatchChatMessage[]): MatchChatMessage[] =>
   [...messages].sort((a, b) => {
@@ -182,6 +192,34 @@ const deserializeBroadcastMessage = (payload: unknown): MatchChatMessage | null 
   };
 };
 
+interface MatchTypingEventPayload {
+  author: MatchChatAuthor;
+  isTyping: boolean;
+}
+
+const deserializeTypingPayload = (payload: unknown): MatchTypingEventPayload | null => {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+  const raw = payload as Record<string, unknown>;
+  const isTyping = Boolean(raw.isTyping);
+  const authorRaw = (raw.author ?? {}) as Record<string, unknown>;
+  const author: MatchChatAuthor = {
+    id: typeof authorRaw.id === 'string' ? authorRaw.id : null,
+    name: typeof authorRaw.name === 'string' ? authorRaw.name : 'Player',
+    avatarUrl:
+      authorRaw.avatar_url == null || typeof authorRaw.avatar_url === 'string'
+        ? ((authorRaw.avatar_url as string | null | undefined) ?? null)
+        : null,
+  };
+  return {
+    author,
+    isTyping,
+  };
+};
+
+const getAuthorKey = (author: MatchChatAuthor): string => author.id ?? author.name ?? 'unknown';
+
 const localStorageAdapter: MatchChatAdapter = {
   async loadHistory(matchId) {
     return sortMessages(readFromStorage(matchId));
@@ -222,7 +260,9 @@ interface ChatChannelEntry {
   matchId: string;
   channel: RealtimeChannel;
   listeners: Set<(messages: MatchChatMessage[]) => void>;
+  typingListeners: Set<(authors: MatchChatAuthor[]) => void>;
   messages: MatchChatMessage[];
+  typingState: Map<string, MatchChatAuthor>;
 }
 
 const createRealtimeMatchChatAdapter = (client: SupabaseClient): MatchChatAdapter => {
@@ -243,7 +283,9 @@ const createRealtimeMatchChatAdapter = (client: SupabaseClient): MatchChatAdapte
       matchId,
       channel,
       listeners: new Set(),
+      typingListeners: new Set(),
       messages: sortMessages(readFromStorage(matchId)),
+      typingState: new Map(),
     };
     channel
       .on('broadcast', { event: CHAT_EVENT_NAME }, (payload: { payload: unknown } | null) => {
@@ -257,6 +299,23 @@ const createRealtimeMatchChatAdapter = (client: SupabaseClient): MatchChatAdapte
           listener(entry!.messages);
         });
       })
+      .on('broadcast', { event: CHAT_TYPING_EVENT_NAME }, (payload: { payload: unknown } | null) => {
+        if (!entry) {
+          return;
+        }
+        const typingPayload = deserializeTypingPayload(payload?.payload);
+        if (!typingPayload) {
+          return;
+        }
+        const key = getAuthorKey(typingPayload.author);
+        if (typingPayload.isTyping) {
+          entry.typingState.set(key, typingPayload.author);
+        } else {
+          entry.typingState.delete(key);
+        }
+        const typingAuthors = Array.from(entry.typingState.values());
+        entry.typingListeners.forEach((listener) => listener(typingAuthors));
+      })
       .subscribe((status) => {
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           console.warn('useMatchChat: chat channel issue', { matchId, status });
@@ -267,10 +326,10 @@ const createRealtimeMatchChatAdapter = (client: SupabaseClient): MatchChatAdapte
   };
 
   const cleanupChannel = (matchId: string) => {
-    const entry = channelEntries.get(matchId);
-    if (!entry || entry.listeners.size > 0) {
-      return;
-    }
+  const entry = channelEntries.get(matchId);
+  if (!entry || entry.listeners.size > 0 || entry.typingListeners.size > 0) {
+    return;
+  }
     try {
       void entry.channel.unsubscribe();
     } catch (error) {
@@ -319,12 +378,41 @@ const createRealtimeMatchChatAdapter = (client: SupabaseClient): MatchChatAdapte
         cleanupChannel(matchId);
       };
     },
+    subscribeTyping(matchId, callback) {
+      const entry = ensureChannel(matchId);
+      if (!entry) {
+        return () => {};
+      }
+      entry.typingListeners.add(callback);
+      callback(Array.from(entry.typingState.values()));
+      return () => {
+        entry.typingListeners.delete(callback);
+        cleanupChannel(matchId);
+      };
+    },
+    async broadcastTyping(matchId, payload) {
+      const entry = ensureChannel(matchId);
+      if (!entry) {
+        return;
+      }
+      try {
+        await entry.channel.send({
+          type: 'broadcast',
+          event: CHAT_TYPING_EVENT_NAME,
+          payload,
+        });
+      } catch (error) {
+        console.warn('useMatchChat: failed to broadcast typing status', error);
+      }
+    },
     async clear(matchId) {
       await localStorageAdapter.clear?.(matchId);
       const entry = channelEntries.get(matchId);
       if (entry) {
         entry.messages = [];
         entry.listeners.forEach((listener) => listener([]));
+        entry.typingState.clear();
+        entry.typingListeners.forEach((listener) => listener([]));
         cleanupChannel(matchId);
       }
     },
@@ -360,6 +448,7 @@ export const useMatchChat = ({ matchId, author, adapter }: UseMatchChatOptions):
   const activeAdapter = useSharedAdapter(adapter);
   const [messages, setMessages] = useState<MatchChatMessage[]>([]);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready'>('idle');
+  const [typingUsers, setTypingUsers] = useState<MatchChatAuthor[]>([]);
 
   useEffect(() => {
     if (!matchId || !activeAdapter) {
@@ -391,6 +480,19 @@ export const useMatchChat = ({ matchId, author, adapter }: UseMatchChatOptions):
     return () => {
       isMounted = false;
       unsubscribe?.();
+    };
+  }, [activeAdapter, matchId]);
+
+  useEffect(() => {
+    if (!matchId || !activeAdapter || !activeAdapter.subscribeTyping) {
+      setTypingUsers([]);
+      return;
+    }
+    const unsubscribe = activeAdapter.subscribeTyping(matchId, (authors) => {
+      setTypingUsers(authors);
+    });
+    return () => {
+      unsubscribe();
     };
   }, [activeAdapter, matchId]);
 
@@ -436,7 +538,22 @@ export const useMatchChat = ({ matchId, author, adapter }: UseMatchChatOptions):
     }
     await activeAdapter.clear(matchId);
     setMessages([]);
+    setTypingUsers([]);
   }, [activeAdapter, matchId]);
+
+  const notifyTyping = useCallback(
+    async (isTyping: boolean) => {
+      if (!matchId || !activeAdapter || !author || !activeAdapter.broadcastTyping) {
+        return;
+      }
+      try {
+        await activeAdapter.broadcastTyping(matchId, { author, isTyping });
+      } catch (error) {
+        console.warn('useMatchChat: failed to broadcast typing status', error);
+      }
+    },
+    [activeAdapter, author, matchId],
+  );
 
   return {
     messages,
@@ -444,5 +561,7 @@ export const useMatchChat = ({ matchId, author, adapter }: UseMatchChatOptions):
     sendMessage,
     clearHistory,
     canSend: Boolean(matchId && author && activeAdapter),
+    typingUsers,
+    notifyTyping,
   };
 };

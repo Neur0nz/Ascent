@@ -371,6 +371,8 @@ function ActiveMatchContent({
     sendMessage: sendChatMessage,
     canSend: canSendChat,
     clearHistory: clearChatHistory,
+    typingUsers: chatTypingUsers,
+    notifyTyping: notifyChatTyping,
   } = useMatchChat({
     matchId: lobbyMatch?.id ?? null,
     author: chatAuthor,
@@ -980,6 +982,8 @@ function ActiveMatchContent({
             onSend={sendChatMessage}
             canSend={canSendChat}
             currentUserId={chatViewerId}
+            typingUsers={chatTypingUsers}
+            onTypingStatusChange={notifyChatTyping}
             onClearHistory={chatMessages.length > 0 ? clearChatHistory : undefined}
           />
           <Box mt={3} px={{ base: 0, md: 3 }} display="flex" justifyContent={{ base: 'center', md: 'flex-end' }}>

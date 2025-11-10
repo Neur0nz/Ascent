@@ -14,8 +14,8 @@ import {
   Tooltip,
   useColorModeValue,
 } from '@chakra-ui/react';
-import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
-import type { MatchChatMessage } from '@hooks/useMatchChat';
+import { ChangeEvent, FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import type { MatchChatAuthor, MatchChatMessage } from '@hooks/useMatchChat';
 
 interface MatchChatPanelProps {
   matchId: string | null;
@@ -26,6 +26,8 @@ interface MatchChatPanelProps {
   currentUserId: string | null;
   isReadOnly?: boolean;
   onClearHistory?: () => Promise<void> | void;
+  typingUsers?: MatchChatAuthor[];
+  onTypingStatusChange?: (isTyping: boolean) => Promise<void> | void;
 }
 
 const formatTimestamp = (value: number): string => {
@@ -45,11 +47,14 @@ export function MatchChatPanel({
   currentUserId,
   isReadOnly = false,
   onClearHistory,
+  typingUsers = [],
+  onTypingStatusChange,
 }: MatchChatPanelProps) {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bgSelf = useColorModeValue('teal.50', 'teal.900');
   const bgOther = useColorModeValue('gray.50', 'blackAlpha.300');
   const badgeBg = useColorModeValue('orange.50', 'orange.900');
@@ -72,12 +77,64 @@ export function MatchChatPanel({
     return 'Be kind! Coordinate rematches or say hello.';
   }, [canSend, isReadOnly, matchId]);
 
+  const emitTypingStatus = useCallback(
+    (isTyping: boolean) => {
+      if (!onTypingStatusChange) {
+        return;
+      }
+      void onTypingStatusChange(isTyping);
+    },
+    [onTypingStatusChange],
+  );
+
+  const scheduleTypingNotification = useCallback(() => {
+    if (disableInput) {
+      return;
+    }
+    emitTypingStatus(true);
+    if (typingTimerRef.current) {
+      clearTimeout(typingTimerRef.current);
+    }
+    typingTimerRef.current = setTimeout(() => {
+      typingTimerRef.current = null;
+      emitTypingStatus(false);
+    }, 1200);
+  }, [disableInput, emitTypingStatus]);
+
+  const stopTypingNotification = useCallback(() => {
+    if (typingTimerRef.current) {
+      clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = null;
+    }
+    emitTypingStatus(false);
+  }, [emitTypingStatus]);
+
   useEffect(() => {
     if (!listRef.current) {
       return;
     }
     listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [messages]);
+
+  useEffect(() => {
+    return () => {
+      stopTypingNotification();
+    };
+  }, [stopTypingNotification]);
+
+  const otherTypers = typingUsers.filter((user) => {
+    if (currentUserId && user.id) {
+      return user.id !== currentUserId;
+    }
+    return true;
+  });
+
+  const typingLabel =
+    otherTypers.length === 0
+      ? null
+      : otherTypers.length === 1
+      ? `${otherTypers[0].name} is typing…`
+      : `${otherTypers.length} players are typing…`;
 
   const trySendDraft = async () => {
     if (disableInput || !draft.trim()) {
@@ -88,6 +145,7 @@ export function MatchChatPanel({
     try {
       await onSend(draft);
       setDraft('');
+      stopTypingNotification();
     } catch (err) {
       console.error('MatchChatPanel: failed to send', err);
       setError('Unable to send message. Please try again.');
@@ -108,6 +166,11 @@ export function MatchChatPanel({
     }
   };
 
+  const handleDraftChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    setDraft(event.target.value);
+    scheduleTypingNotification();
+  };
+
   const handleClear = async () => {
     if (!onClearHistory || !matchId) {
       return;
@@ -117,24 +180,8 @@ export function MatchChatPanel({
 
   return (
     <Card w="100%">
-      <CardBody px={3} py={3}>
-        <Stack spacing={3}>
-          <Flex justify="space-between" align="center">
-            <Text fontWeight="semibold" fontSize="sm">
-              Chat
-            </Text>
-            {onClearHistory ? (
-              <Tooltip label="Clear your copy of the chat history for this match">
-                <IconButton
-                  size="sm"
-                  aria-label="Clear chat history"
-                  icon={<SmallCloseIcon />}
-                  variant="ghost"
-                  onClick={handleClear}
-                />
-              </Tooltip>
-            ) : null}
-          </Flex>
+      <CardBody px={3} py={2}>
+        <Stack spacing={2}>
           <Box
             ref={listRef}
             borderWidth="1px"
@@ -195,32 +242,55 @@ export function MatchChatPanel({
               </Stack>
             )}
           </Box>
-
+          {typingLabel ? (
+            <Text fontSize="xs" color={helperColor} fontStyle="italic">
+              {typingLabel}
+            </Text>
+          ) : null}
           <form onSubmit={handleSubmit}>
             <Stack spacing={2}>
               <Textarea
                 value={draft}
-                onChange={(event) => setDraft(event.target.value)}
+                onChange={handleDraftChange}
                 onKeyDown={handleTextareaKeyDown}
+                onBlur={stopTypingNotification}
                 placeholder={placeholder}
                 isDisabled={disableInput || sending}
                 resize="none"
                 rows={2}
               />
-              <Flex justify="space-between" align="center" gap={3} wrap="wrap">
+              <Flex
+                justify="space-between"
+                align={{ base: 'stretch', sm: 'center' }}
+                gap={3}
+                wrap="wrap"
+              >
                 <Text fontSize="xs" color={error ? 'red.400' : helperColor} flex="1 1 auto">
                   {error ?? 'Enter to send · Shift+Enter for a newline.'}
                 </Text>
-                <Button
-                  type="submit"
-                  colorScheme="teal"
-                  rightIcon={<ArrowUpIcon />}
-                  isDisabled={disableInput || sending || !draft.trim()}
-                  isLoading={sending}
-                  size="sm"
-                >
-                  Send
-                </Button>
+                <HStack spacing={2}>
+                  {onClearHistory ? (
+                    <Tooltip label="Clear your copy of the chat history for this match">
+                      <IconButton
+                        size="sm"
+                        aria-label="Clear chat history"
+                        icon={<SmallCloseIcon />}
+                        variant="ghost"
+                        onClick={handleClear}
+                      />
+                    </Tooltip>
+                  ) : null}
+                  <Button
+                    type="submit"
+                    colorScheme="teal"
+                    rightIcon={<ArrowUpIcon />}
+                    isDisabled={disableInput || sending || !draft.trim()}
+                    isLoading={sending}
+                    size="sm"
+                  >
+                    Send
+                  </Button>
+                </HStack>
               </Flex>
             </Stack>
           </form>
