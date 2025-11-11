@@ -128,16 +128,24 @@ export class SantoriniEngine {
   private levels: number[][];
   private round: number;
   private currentPlayer: number;
+  private initialStartingPlayer: 0 | 1;
   private gameEnded: [number, number];
   private validMoves: boolean[];
   private history: HistoryEntry[];
   private future: HistoryEntry[]; // For redo support
 
-  private constructor(board: InternalBoardState, player: number, validMoves: boolean[], gameEnded: [number, number]) {
+  private constructor(
+    board: InternalBoardState,
+    player: number,
+    validMoves: boolean[],
+    gameEnded: [number, number],
+    initialStartingPlayer: 0 | 1,
+  ) {
     this.workers = cloneGrid(board.workers);
     this.levels = cloneGrid(board.levels);
     this.round = board.round;
     this.currentPlayer = player;
+    this.initialStartingPlayer = initialStartingPlayer;
     this.gameEnded = [Number(gameEnded[0]) || 0, Number(gameEnded[1]) || 0];
     this.validMoves = validMoves.slice();
     this.history = [];
@@ -150,7 +158,13 @@ export class SantoriniEngine {
     const round = 0;
     const baseState: InternalBoardState = { workers, levels, round };
     const player = startingPlayer === 1 ? 1 : 0;
-    const engine = new SantoriniEngine(baseState, player, Array(ACTION_SIZE).fill(false), [0, 0]);
+    const engine = new SantoriniEngine(
+      baseState,
+      player,
+      Array(ACTION_SIZE).fill(false),
+      [0, 0],
+      player,
+    );
     // BUG FIX: Compute valid moves for the ACTUAL starting player, not always player 0
     const placementPlayer = engine.getNextPlacement()?.player ?? 0;
     engine.validMoves = engine.computeValidMoves(placementPlayer);
@@ -172,7 +186,7 @@ export class SantoriniEngine {
       Array.isArray(snapshot.gameEnded) ? Number(snapshot.gameEnded[0]) || 0 : 0,
       Array.isArray(snapshot.gameEnded) ? Number(snapshot.gameEnded[1]) || 0 : 0,
     ];
-    const engine = new SantoriniEngine(board, player, validMoves, gameEnded);
+    const engine = new SantoriniEngine(board, player, validMoves, gameEnded, player);
     // BUG FIX: During placement, compute valid moves for the player who should place, not currentPlayer
     const placementPlayer = engine.getNextPlacement()?.player ?? player;
     engine.validMoves = engine.computeValidMoves(placementPlayer);
@@ -348,6 +362,10 @@ export class SantoriniEngine {
       this.currentPlayer = placement.player;
     } else {
       this.currentPlayer = (1 - placement.player) as 0 | 1;
+    }
+
+    if (!this.getNextPlacement()) {
+      this.currentPlayer = this.initialStartingPlayer;
     }
 
     this.validMoves = this.computeValidMoves(this.currentPlayer);
@@ -564,4 +582,3 @@ export const SANTORINI_CONSTANTS = {
   NO_MOVE,
   NO_BUILD,
 } as const;
-

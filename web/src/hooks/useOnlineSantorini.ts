@@ -307,14 +307,25 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
     });
 
     // OPTIMIZATION: If we only have 1 new optimistic move, use fast path
-    const isOptimisticOnly = moves.length === lastSynced.appliedMoveCount + 1 && 
-                              moves[moves.length - 1]?.id.startsWith('optimistic-');
-    
+    const lastMove = moves[moves.length - 1];
+    const isOptimisticOnly =
+      moves.length === lastSynced.appliedMoveCount + 1 && lastMove?.id.startsWith('optimistic-');
+    const pendingLocal = pendingLocalMoveRef.current;
+    const isPendingLocalMove =
+      Boolean(pendingLocal) &&
+      lastMove?.move_index === pendingLocal.expectedMoveIndex &&
+      lastMove?.id.startsWith('optimistic-');
+
     if (isOptimisticOnly && moves.length > 0) {
       const lastMove = moves[moves.length - 1];
       const action = lastMove.action;
       
       if (isSantoriniMoveAction(action) && typeof action.move === 'number') {
+        if (action.by === role) {
+          console.log('⚡ FAST PATH skipped for local move');
+          syncInProgressRef.current = false;
+          return;
+        }
         try {
           console.log('⚡ FAST PATH: Applying single optimistic move', action.move);
           
