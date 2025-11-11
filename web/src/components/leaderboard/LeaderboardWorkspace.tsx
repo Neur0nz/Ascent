@@ -76,6 +76,9 @@ function LeaderboardWorkspace({
   const mutedText = useColorModeValue('gray.600', 'whiteAlpha.700');
   const statBg = useColorModeValue('white', 'whiteAlpha.100');
   const statBorder = useColorModeValue('gray.200', 'whiteAlpha.200');
+  const updatedBadgeText = useColorModeValue('gray.700', 'whiteAlpha.900');
+  const updatedBadgeBg = useColorModeValue('whiteAlpha.900', 'whiteAlpha.200');
+  const updatedBadgeBorder = useColorModeValue('gray.200', 'whiteAlpha.200');
 
   const stats = useMemo(() => {
     if (!entries.length) {
@@ -136,7 +139,7 @@ function LeaderboardWorkspace({
               >
                 Refresh leaderboard
               </Button>
-              <Badge colorScheme="blackAlpha">
+              <Badge color={updatedBadgeText} bg={updatedBadgeBg} borderColor={updatedBadgeBorder} borderWidth="1px">
                 Updated {formatRelativeTime(lastUpdated)}
               </Badge>
             </HStack>

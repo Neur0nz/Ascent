@@ -144,6 +144,9 @@ function LobbyHero({
   const frameBorder = useColorModeValue('teal.200', 'teal.500');
   const bodyColor = useColorModeValue('gray.900', 'whiteAlpha.900');
   const helperText = useColorModeValue('teal.900', 'teal.50');
+  const secondaryTagColor = useColorModeValue('teal.800', 'teal.100');
+  const secondaryTagBg = useColorModeValue('whiteAlpha.900', 'whiteAlpha.150');
+  const secondaryTagBorder = useColorModeValue('gray.200', 'whiteAlpha.300');
   const secondaryActions = [
     onNavigateToPractice && {
       label: 'Practice vs AI',
@@ -253,7 +256,6 @@ function LobbyHero({
                   key={action.label}
                   size="lg"
                   variant="subtle"
-                  colorScheme="whiteAlpha"
                   px={3}
                   py={2}
                   borderRadius="full"
@@ -264,10 +266,14 @@ function LobbyHero({
                   alignItems="center"
                   gap={2}
                   cursor="pointer"
+                  bg={secondaryTagBg}
+                  color={secondaryTagColor}
+                  borderColor={secondaryTagBorder}
+                  borderWidth="1px"
                   _hover={{ transform: 'translateY(-1px)', boxShadow: 'md' }}
                   _active={{ transform: 'translateY(0)' }}
                 >
-                  <Icon as={action.icon} boxSize={4} />
+                  <Icon as={action.icon} boxSize={4} color={secondaryTagColor} />
                   <Text fontSize="sm" fontWeight="semibold">
                     {action.label}
                   </Text>

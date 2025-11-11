@@ -396,11 +396,7 @@ function App() {
       case 'practice':
         return null;
       case 'analysis':
-        return (
-          <Tooltip label="Search saved games (coming soon)" hasArrow>
-            <IconButton aria-label="Search games" icon={<SearchIcon />} size="sm" variant="outline" isDisabled />
-          </Tooltip>
-        );
+        return null;
       case 'profile':
         return null;
       default:
