@@ -186,7 +186,8 @@ export class SantoriniEngine {
       Array.isArray(snapshot.gameEnded) ? Number(snapshot.gameEnded[0]) || 0 : 0,
       Array.isArray(snapshot.gameEnded) ? Number(snapshot.gameEnded[1]) || 0 : 0,
     ];
-    const engine = new SantoriniEngine(board, player, validMoves, gameEnded, player);
+    const sanitizedPlayer = player === 1 ? 1 : 0;
+    const engine = new SantoriniEngine(board, player, validMoves, gameEnded, sanitizedPlayer);
     // BUG FIX: During placement, compute valid moves for the player who should place, not currentPlayer
     const placementPlayer = engine.getNextPlacement()?.player ?? player;
     engine.validMoves = engine.computeValidMoves(placementPlayer);

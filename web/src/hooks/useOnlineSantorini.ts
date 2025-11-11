@@ -312,7 +312,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       moves.length === lastSynced.appliedMoveCount + 1 && lastMove?.id.startsWith('optimistic-');
     const pendingLocal = pendingLocalMoveRef.current;
     const isPendingLocalMove =
-      Boolean(pendingLocal) &&
+      pendingLocal != null &&
       lastMove?.move_index === pendingLocal.expectedMoveIndex &&
       lastMove?.id.startsWith('optimistic-');
 
