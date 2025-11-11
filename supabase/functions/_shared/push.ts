@@ -131,3 +131,25 @@ export const sendPushNotification = async (
     return { delivered: false, reason: 'error', error };
   }
 };
+
+const delay = (ms: number): Promise<void> => new Promise((resolve) => {
+  setTimeout(resolve, ms);
+});
+
+export const sendPushNotificationWithRetry = async (
+  subscription: StoredPushSubscription,
+  payload: PushPayload,
+  maxRetries = 3,
+): Promise<PushSendResult> => {
+  for (let attempt = 0; attempt < maxRetries; attempt += 1) {
+    const result = await sendPushNotification(subscription, payload);
+    if (result.delivered || result.reason === 'gone' || result.reason === 'unauthorized') {
+      return result;
+    }
+    if (attempt < maxRetries - 1) {
+      const delayMs = 1000 * 2 ** attempt;
+      await delay(delayMs);
+    }
+  }
+  return { delivered: false, reason: 'error', error: 'Max retries exceeded' };
+};

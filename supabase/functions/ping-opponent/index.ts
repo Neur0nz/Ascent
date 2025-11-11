@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.76.1';
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.76.1';
-import { sendPushNotification, type StoredPushSubscription } from '../_shared/push.ts';
+import { sendPushNotificationWithRetry, type StoredPushSubscription } from '../_shared/push.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -208,7 +208,7 @@ serve(async (req) => {
     const results = await Promise.allSettled(
       subscriptions.map(async (subscription) => {
         const storedSubscription = subscription as StoredPushSubscription;
-        const result = await sendPushNotification(storedSubscription, payload);
+        const result = await sendPushNotificationWithRetry(storedSubscription, payload);
         if (!result.delivered && (result.reason === 'gone' || result.reason === 'unauthorized')) {
           await supabase.from('web_push_subscriptions').delete().eq('id', storedSubscription.id);
         }

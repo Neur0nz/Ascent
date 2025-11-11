@@ -25,6 +25,7 @@ self.addEventListener('message', (event) => {
 
   const matchId = normalizeMatchId(data.matchId);
   const visible = Boolean(data.visible);
+  const focused = Boolean(data.focused);
   const timestamp =
     typeof data.timestamp === 'number' && Number.isFinite(data.timestamp) ? data.timestamp : Date.now();
 
@@ -33,7 +34,7 @@ self.addEventListener('message', (event) => {
     return;
   }
 
-  clientMatchState.set(source.id, { matchId, visible, timestamp });
+  clientMatchState.set(source.id, { matchId, visible, focused, timestamp });
 });
 
 const shouldSuppressNotification = async (matchId) => {
@@ -53,28 +54,16 @@ const shouldSuppressNotification = async (matchId) => {
 
   for (const client of allClients) {
     const state = clientMatchState.get(client.id);
-    if (!state) {
-      continue;
-    }
-    if (state.matchId !== matchId) {
+    if (!state || state.matchId !== matchId) {
       continue;
     }
     const visibilityState = typeof client.visibilityState === 'string' ? client.visibilityState : undefined;
-    const clientFocused = typeof client.focused === 'boolean' ? client.focused : undefined;
-    const messageVisible = state.visible === true;
-
     const isClientVisible = visibilityState === 'visible' || visibilityState === undefined;
-    const isFocusedOrUnknown = clientFocused !== false;
-
-    if (messageVisible && isFocusedOrUnknown) {
-      return true;
-    }
-
-    if (visibilityState === 'hidden') {
+    if (!isClientVisible) {
       continue;
     }
-
-    if (isClientVisible && isFocusedOrUnknown) {
+    const clientFocused = typeof client.focused === 'boolean' ? client.focused : true;
+    if (state.visible && state.focused && clientFocused) {
       return true;
     }
   }

@@ -2,7 +2,7 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.76.1';
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.76.1';
 import { SantoriniEngine, SantoriniStateSnapshot } from '../_shared/santorini.ts';
-import { sendPushNotification, type StoredPushSubscription } from '../_shared/push.ts';
+import { sendPushNotificationWithRetry, type StoredPushSubscription } from '../_shared/push.ts';
 
 interface SantoriniMoveAction {
   kind: 'santorini.move';
@@ -596,7 +596,7 @@ async function notifyOpponentOfTurn(options: {
   const results = await Promise.allSettled(
     subscriptions.map(async (subscription) => {
       const storedSubscription = subscription as StoredPushSubscription;
-      const result = await sendPushNotification(storedSubscription, payload);
+      const result = await sendPushNotificationWithRetry(storedSubscription, payload);
       if (!result.delivered && (result.reason === 'gone' || result.reason === 'unauthorized')) {
         await supabase.from('web_push_subscriptions').delete().eq('id', storedSubscription.id);
       }

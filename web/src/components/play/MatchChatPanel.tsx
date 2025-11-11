@@ -13,8 +13,18 @@ import {
   Textarea,
   Tooltip,
   useColorModeValue,
+  useToast,
 } from '@chakra-ui/react';
-import { ChangeEvent, FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import {
+  ChangeEvent,
+  FormEvent,
+  KeyboardEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { MatchChatAuthor, MatchChatMessage } from '@hooks/useMatchChat';
 
 interface MatchChatPanelProps {
@@ -55,6 +65,11 @@ export function MatchChatPanel({
   const [error, setError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const [isVisible, setIsVisible] = useState(true);
+  const lastMessageIdRef = useRef<string | null>(null);
+  const toast = useToast();
+  const toastIdRef = useRef<string | number | undefined>();
   const bgSelf = useColorModeValue('teal.50', 'teal.900');
   const bgOther = useColorModeValue('gray.50', 'blackAlpha.300');
   const badgeBg = useColorModeValue('orange.50', 'orange.900');
@@ -122,6 +137,54 @@ export function MatchChatPanel({
     };
   }, [stopTypingNotification]);
 
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined' || !cardRef.current) {
+      return undefined;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsVisible(Boolean(entry.isIntersecting && entry.intersectionRatio > 0));
+      },
+      { threshold: 0.1 },
+    );
+    observer.observe(cardRef.current);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    const latest = messages[messages.length - 1];
+    if (!latest) {
+      lastMessageIdRef.current = null;
+      return;
+    }
+    if (lastMessageIdRef.current === latest.id) {
+      return;
+    }
+    lastMessageIdRef.current = latest.id;
+
+    if (isVisible) {
+      return;
+    }
+    if (currentUserId && latest.author.id && currentUserId === latest.author.id) {
+      return;
+    }
+
+    if (toastIdRef.current) {
+      toast.close(toastIdRef.current);
+    }
+
+    toastIdRef.current = toast({
+      title: latest.author.name ?? 'New message',
+      description: latest.text,
+      status: 'info',
+      duration: 2000,
+      isClosable: false,
+      position: 'top-right',
+    });
+  }, [currentUserId, isVisible, messages, toast]);
+
   const otherTypers = typingUsers.filter((user) => {
     if (currentUserId && user.id) {
       return user.id !== currentUserId;
@@ -179,7 +242,7 @@ export function MatchChatPanel({
   };
 
   return (
-    <Card w="100%">
+    <Card ref={cardRef} w="100%">
       <CardBody px={3} py={2}>
         <Stack spacing={2}>
           <Box
@@ -259,15 +322,14 @@ export function MatchChatPanel({
                 resize="none"
                 rows={2}
               />
-              <Flex
-                justify="space-between"
-                align={{ base: 'stretch', sm: 'center' }}
-                gap={3}
-                wrap="wrap"
-              >
-                <Text fontSize="xs" color={error ? 'red.400' : helperColor} flex="1 1 auto">
-                  {error ?? 'Enter to send · Shift+Enter for a newline.'}
-                </Text>
+              <Flex justify="space-between" align={{ base: 'stretch', sm: 'center' }} gap={3} wrap="wrap">
+                <Box flex="1 1 auto">
+                  {error ? (
+                    <Text fontSize="xs" color="red.400">
+                      {error}
+                    </Text>
+                  ) : null}
+                </Box>
                 <HStack spacing={2}>
                   {onClearHistory ? (
                     <Tooltip label="Clear your copy of the chat history for this match">
