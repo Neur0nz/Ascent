@@ -122,7 +122,8 @@ export class TypeScriptMoveSelector {
       // Allow switching to a different worker even at the build stage
       const occupant = board[y]?.[x]?.[0] ?? 0;
       const expectedSign = currentPlayer === 0 ? 1 : -1;
-      if (occupant !== 0 && Math.sign(occupant) === expectedSign) {
+      const isStartingSquare = y === this.workerY && x === this.workerX;
+      if (occupant !== 0 && Math.sign(occupant) === expectedSign && !isStartingSquare) {
         this.workerIndex = Math.abs(occupant) - 1;
         this.workerY = y;
         this.workerX = x;
@@ -249,7 +250,12 @@ export class TypeScriptMoveSelector {
       for (let y = 0; y < 5; y++) {
         for (let x = 0; x < 5; x++) {
           const worker = board[y][x][0];
-          if (worker !== 0 && Math.sign(worker) === expectedSign && this.workerHasValidMoves(Math.abs(worker) - 1, validMoves)) {
+          if (
+            worker !== 0 &&
+            Math.sign(worker) === expectedSign &&
+            !(y === this.workerY && x === this.workerX) &&
+            this.workerHasValidMoves(Math.abs(worker) - 1, validMoves)
+          ) {
             selectable[y][x] = true;
           }
         }
