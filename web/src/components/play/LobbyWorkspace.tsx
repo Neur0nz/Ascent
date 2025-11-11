@@ -1039,41 +1039,40 @@ function LobbyWorkspace({
           duration: 7000,
           position: 'top',
           render: ({ onClose }) => (
-            <Box
-              bg={joinToastBg}
-              borderRadius="lg"
-              borderWidth="1px"
-              borderColor={joinToastBorder}
-              boxShadow="lg"
-              px={4}
-              py={3}
-            >
-              <Stack spacing={2}>
-                <Heading size="sm">Opponent joined!</Heading>
-                <Text fontSize="sm">
-                  {opponentName} joined your game. Jump in to start playing.
-                </Text>
-                <ButtonGroup size="sm" alignSelf="flex-end">
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      onClose();
-                    }}
-                  >
-                    Later
-                  </Button>
-                  <Button
-                    colorScheme="teal"
-                    onClick={() => {
-                      onNavigateToPlay();
-                      onClose();
-                    }}
-                  >
-                    Open game
-                  </Button>
-                </ButtonGroup>
-              </Stack>
-            </Box>
+        <Box
+          bg={joinToastBg}
+          borderRadius="lg"
+          borderWidth="1px"
+          borderColor={joinToastBorder}
+          boxShadow="lg"
+          px={4}
+          py={3}
+          w="min(100vw - 32px, 420px)"
+          maxW="420px"
+          mx="auto"
+          overflow="hidden"
+        >
+          <Stack spacing={2}>
+            <Heading size="sm">Opponent joined!</Heading>
+            <Text fontSize="sm">
+              {opponentName} joined your game. Jump in to start playing.
+            </Text>
+            <Stack direction={{ base: 'column', sm: 'row' }} spacing={2} alignSelf="flex-end">
+              <Button variant="ghost" onClick={() => onClose()}>
+                Later
+              </Button>
+              <Button
+                colorScheme="teal"
+                onClick={() => {
+                  onNavigateToPlay();
+                  onClose();
+                }}
+              >
+                Open game
+              </Button>
+            </Stack>
+          </Stack>
+        </Box>
           ),
         });
       }
