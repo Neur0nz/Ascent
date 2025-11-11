@@ -215,17 +215,7 @@ export class TypeScriptMoveSelector {
         }
       }
 
-      // Highlight all friendly workers so the user knows they can reselect
-      const expectedSign = currentPlayer === 0 ? 1 : -1;
-      for (let y = 0; y < 5; y++) {
-        for (let x = 0; x < 5; x++) {
-          const worker = board[y][x][0];
-          if (worker !== 0 && Math.sign(worker) === expectedSign && this.workerHasValidMoves(Math.abs(worker) - 1, validMoves)) {
-            selectable[y][x] = true;
-          }
-        }
-      }
-      // Always include the currently selected worker
+      // Only keep the currently selected worker highlighted so users clearly see the active piece.
       selectable[this.workerY][this.workerX] = true;
       
     } else if (this.stage === 2) {
@@ -245,23 +235,7 @@ export class TypeScriptMoveSelector {
         }
       }
 
-      // Highlight friendly workers (including the newly moved piece) for reselection
-      const expectedSign = currentPlayer === 0 ? 1 : -1;
-      for (let y = 0; y < 5; y++) {
-        for (let x = 0; x < 5; x++) {
-          const worker = board[y][x][0];
-          if (
-            worker !== 0 &&
-            Math.sign(worker) === expectedSign &&
-            !(y === this.workerY && x === this.workerX) &&
-            this.workerHasValidMoves(Math.abs(worker) - 1, validMoves)
-          ) {
-            selectable[y][x] = true;
-          }
-        }
-      }
-
-      // Also allow clicking the moved-to position to cancel back to start
+      // Allow clicking the moved-to position to cancel back to start
       selectable[this.newY][this.newX] = true;
     }
     
