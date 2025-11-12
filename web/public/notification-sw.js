@@ -80,16 +80,16 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   const notification = event.notification;
-  const focusUrl = notification?.data?.focusUrl;
+  const notificationData = notification?.data ?? {};
   notification.close();
 
-  if (!focusUrl) {
-    return;
-  }
+  const scopeBase = self.registration?.scope ?? self.location.origin;
+  const focusUrl =
+    typeof notificationData.focusUrl === 'string' ? notificationData.focusUrl : null;
+  const url = focusUrl ? new URL(focusUrl, scopeBase).href : scopeBase;
 
   event.waitUntil(
     (async () => {
-      const url = new URL(focusUrl, self.location.origin).href;
       const allClients = await self.clients.matchAll({
         type: 'window',
         includeUncontrolled: true,
