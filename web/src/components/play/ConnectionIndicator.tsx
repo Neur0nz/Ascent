@@ -1,111 +1,146 @@
-import { Box, Icon, Spinner, Tooltip, useColorModeValue } from '@chakra-ui/react';
+import { Box, HStack, Spinner, Text, Tooltip, useColorModeValue } from '@chakra-ui/react';
 import { useMemo } from 'react';
-import type { ConnectionQuality } from '@hooks/useMatchLobby';
+import type { ConnectionQuality, PresenceActivity } from '@hooks/useMatchLobby';
 
-const STATUS_LABELS: Record<ConnectionQuality, string> = {
-  connecting: 'Connecting',
-  offline: 'Offline',
-  weak: 'Weak',
-  moderate: 'Moderate',
-  strong: 'Strong',
-};
-
-const BAR_COUNT: Record<ConnectionQuality, 0 | 1 | 2 | 3 | null> = {
-  connecting: null,
-  offline: 0,
-  weak: 1,
-  moderate: 2,
-  strong: 3,
-};
-
-const SIZE_TO_BOX: Record<'xs' | 'sm', string> = {
-  xs: '0.9rem',
-  sm: '1.1rem',
-};
-
-interface WifiBarsIconProps {
-  bars: 0 | 1 | 2 | 3;
-  activeColor: string;
-  inactiveColor: string;
-  boxSize: string;
-}
-
-function WifiBarsIcon({ bars, activeColor, inactiveColor, boxSize }: WifiBarsIconProps) {
-  return (
-    <Icon viewBox="0 0 16 12" boxSize={boxSize} color={activeColor} aria-hidden>
-      <rect x="1" y="8" width="3" height="4" rx="1" fill="currentColor" opacity={bars >= 1 ? 1 : 0.3} />
-      <rect x="6.5" y="5" width="3" height="7" rx="1" fill="currentColor" opacity={bars >= 2 ? 1 : 0.3} />
-      <rect x="12" y="1" width="3" height="11" rx="1" fill="currentColor" opacity={bars >= 3 ? 1 : 0.3} />
-    </Icon>
-  );
-}
-
-interface OfflineIconProps {
+interface StatusDescriptor {
+  label: string;
+  detail: string;
   color: string;
-  boxSize: string;
 }
 
-function OfflineIcon({ color, boxSize }: OfflineIconProps) {
-  return (
-    <Icon viewBox="0 0 16 12" boxSize={boxSize} color={color} aria-hidden>
-      <rect x="1" y="8" width="3" height="4" rx="1" fill="currentColor" opacity="0.3" />
-      <rect x="6.5" y="5" width="3" height="7" rx="1" fill="currentColor" opacity="0.3" />
-      <rect x="12" y="1" width="3" height="11" rx="1" fill="currentColor" opacity="0.3" />
-      <path d="M2 2 L14 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </Icon>
-  );
+interface SizeStyles {
+  fontSize: string;
+  px: string;
+  py: string;
+  dot: string;
+  spinnerSize: 'xs' | 'sm';
 }
+
+const SIZE_STYLES: Record<'xs' | 'sm', SizeStyles> = {
+  xs: {
+    fontSize: '0.65rem',
+    px: '0.35rem',
+    py: '0.15rem',
+    dot: '0.35rem',
+    spinnerSize: 'xs',
+  },
+  sm: {
+    fontSize: '0.75rem',
+    px: '0.45rem',
+    py: '0.2rem',
+    dot: '0.4rem',
+    spinnerSize: 'sm',
+  },
+};
+
+const formatFreshness = (lastSeen: number | null): string => {
+  if (!lastSeen) {
+    return 'waiting for heartbeat';
+  }
+  const deltaSeconds = Math.max(0, Math.round((Date.now() - lastSeen) / 1000));
+  if (deltaSeconds <= 1) return 'updated just now';
+  if (deltaSeconds < 60) return `updated ${deltaSeconds}s ago`;
+  const minutes = Math.round(deltaSeconds / 60);
+  return `updated ${minutes}m ago`;
+};
+
+const buildStatusDescriptor = (
+  status: ConnectionQuality,
+  activity: PresenceActivity,
+  isSelf: boolean,
+): StatusDescriptor => {
+  if (activity === 'offline' || status === 'offline') {
+    return {
+      label: 'Offline',
+      color: 'red.400',
+      detail: isSelf ? 'You are disconnected from realtime' : 'Player is disconnected from realtime',
+    };
+  }
+  if (activity === 'away' && status !== 'connecting') {
+    return {
+      label: 'Away',
+      color: 'yellow.400',
+      detail: 'App is in the background',
+    };
+  }
+  switch (status) {
+    case 'connecting':
+      return {
+        label: 'Connecting',
+        color: 'blue.400',
+        detail: 'Waiting for realtime subscription',
+      };
+    case 'weak':
+      return {
+        label: 'Laggy',
+        color: 'orange.400',
+        detail: 'Heartbeats are delayed',
+      };
+    case 'moderate':
+      return {
+        label: 'Unstable',
+        color: 'yellow.400',
+        detail: 'Heartbeat is slowing down',
+      };
+    case 'strong':
+    default:
+      return {
+        label: 'Active',
+        color: 'green.400',
+        detail: 'Receiving live updates',
+      };
+  }
+};
 
 export interface ConnectionIndicatorProps {
   status: ConnectionQuality;
   lastSeen: number | null;
   isSelf?: boolean;
   size?: 'xs' | 'sm';
+  activity?: PresenceActivity;
 }
 
-export function ConnectionIndicator({ status, lastSeen, isSelf = false, size = 'sm' }: ConnectionIndicatorProps) {
-  const boxSize = SIZE_TO_BOX[size];
-  const bars = BAR_COUNT[status];
+export function ConnectionIndicator({
+  status,
+  lastSeen,
+  isSelf = false,
+  size = 'sm',
+  activity = 'active',
+}: ConnectionIndicatorProps) {
+  const descriptor = useMemo(() => buildStatusDescriptor(status, activity, isSelf), [activity, isSelf, status]);
+  const freshness = useMemo(() => formatFreshness(lastSeen), [lastSeen]);
+  const owner = isSelf ? 'Your connection' : 'Player connection';
+  const tooltipLabel = `${owner}: ${descriptor.label} — ${descriptor.detail} · ${freshness}`;
 
-  // Use Chakra UI color tokens directly - they'll be resolved by the Icon component's color prop
-  const colorScheme = useMemo(() => {
-    switch (status) {
-      case 'weak':
-        return 'orange.400';
-      case 'moderate':
-        return 'yellow.400';
-      case 'strong':
-        return 'green.400';
-      case 'offline':
-        return 'red.500';
-      default:
-        return 'blue.400';
-    }
-  }, [status]);
-
-  const tooltipLabel = useMemo(() => {
-    const baseLabel = STATUS_LABELS[status];
-    const owner = isSelf ? 'Your connection' : 'Connection';
-    if (!lastSeen || status === 'connecting') {
-      return `${owner}: ${baseLabel}`;
-    }
-    const deltaMs = Date.now() - lastSeen;
-    const deltaSeconds = Math.max(0, Math.round(deltaMs / 1000));
-    const freshness = deltaSeconds <= 3 ? 'just now' : `${deltaSeconds}s ago`;
-    return `${owner}: ${baseLabel} · updated ${freshness}`;
-  }, [isSelf, lastSeen, status]);
+  const pillBg = useColorModeValue('gray.100', 'gray.700');
+  const pillBorder = useColorModeValue('gray.200', 'gray.600');
+  const textColor = useColorModeValue('gray.800', 'gray.100');
+  const sizeStyle = SIZE_STYLES[size];
 
   return (
-    <Tooltip label={tooltipLabel} openDelay={150} closeDelay={100} gutter={6}>
-      <Box as="span" display="inline-flex" alignItems="center" justifyContent="center" aria-label={tooltipLabel}>
+    <Tooltip label={tooltipLabel} openDelay={120} closeDelay={80} gutter={6}>
+      <HStack
+        as="span"
+        spacing={1.5}
+        px={sizeStyle.px}
+        py={sizeStyle.py}
+        borderRadius="full"
+        borderWidth="1px"
+        borderColor={pillBorder}
+        bg={pillBg}
+        color={textColor}
+        fontSize={sizeStyle.fontSize}
+        fontWeight="medium"
+        lineHeight="1"
+        aria-label={tooltipLabel}
+      >
         {status === 'connecting' ? (
-          <Spinner size={size} color={colorScheme} thickness="2.5px" speed="0.9s" />
-        ) : status === 'offline' ? (
-          <OfflineIcon color={colorScheme} boxSize={boxSize} />
-        ) : bars !== null ? (
-          <WifiBarsIcon bars={bars} activeColor={colorScheme} inactiveColor="gray.400" boxSize={boxSize} />
-        ) : null}
-      </Box>
+          <Spinner size={sizeStyle.spinnerSize} color={descriptor.color} thickness="2px" speed="0.8s" />
+        ) : (
+          <Box boxSize={sizeStyle.dot} borderRadius="full" bg={descriptor.color} />
+        )}
+        <Text as="span">{descriptor.label}</Text>
+      </HStack>
     </Tooltip>
   );
 }

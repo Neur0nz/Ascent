@@ -61,6 +61,7 @@ import ConnectionIndicator from '@components/play/ConnectionIndicator';
 import type { SantoriniMoveAction, MatchStatus, EnginePreference } from '@/types/match';
 import MyMatchesPanel from './MyMatchesPanel';
 import { useSurfaceTokens } from '@/theme/useSurfaceTokens';
+import { deriveStartingRole } from '@/utils/matchStartingRole';
 
 function formatDate(value: string) {
   return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -74,7 +75,7 @@ function MatchCreationModal({
 }: {
   isOpen: boolean;
   onClose: () => void;
-  onCreate: (payload: CreateMatchPayload) => Promise<void>;
+  onCreate: (payload: CreateMatchPayload) => Promise<LobbyMatch>;
   loading: boolean;
 }) {
   const [visibility, setVisibility] = useState<'public' | 'private'>('public');
@@ -91,7 +92,7 @@ function MatchCreationModal({
     if (submitting) return;
     setSubmitting(true);
     try {
-      await onCreate({
+      const createdMatch = await onCreate({
         visibility,
         rated,
         hasClock,
@@ -99,7 +100,25 @@ function MatchCreationModal({
         clockIncrementSeconds: increment,
         startingPlayer,
       });
-      toast({ title: 'Match created successfully!', status: 'success' });
+      const startingRole = deriveStartingRole(createdMatch?.initial_state);
+      const usedRandom = startingPlayer === 'random';
+      let description: string | undefined;
+      if (startingRole === 'creator') {
+        description = usedRandom
+          ? 'Random coin flip picked you to move first as the green player.'
+          : 'You will move first as the green player.';
+      } else if (startingRole === 'opponent') {
+        const opponentName = createdMatch?.opponent?.display_name ?? 'Your opponent';
+        const suffix = createdMatch?.opponent ? '' : ' once they join';
+        description = usedRandom
+          ? `Random coin flip picked ${opponentName}${suffix} to move first as the red player.`
+          : `${opponentName}${suffix} will move first as the red player.`;
+      }
+      toast({
+        title: 'Match created successfully!',
+        status: 'success',
+        description,
+      });
       onClose();
     } catch (error) {
       toast({
@@ -450,12 +469,34 @@ function ActiveMatchContent({
     onSubmitMove: onSubmitMove,
     onGameComplete: handleGameComplete,
   });
-  const creatorName = lobbyMatch?.creator?.display_name ?? 'Player 1 (Green)';
-  const opponentName = lobbyMatch?.opponent?.display_name ?? 'Player 2 (Red)';
+  const creatorName = lobbyMatch?.creator?.display_name ?? 'Green player';
+  const opponentName = lobbyMatch?.opponent?.display_name ?? 'Red player';
   const creatorClock = santorini.formatClock(santorini.creatorClockMs);
   const opponentClock = santorini.formatClock(santorini.opponentClockMs);
   const creatorTurnActive = santorini.currentTurn === 'creator';
   const opponentTurnActive = santorini.currentTurn === 'opponent';
+  const startingRole = useMemo(
+    () => deriveStartingRole(lobbyMatch?.initial_state),
+    [lobbyMatch?.initial_state],
+  );
+  const startingPlayerLabel = useMemo(() => {
+    if (!startingRole) return null;
+    if (startingRole === 'creator') return creatorName;
+    if (!lobbyMatch?.opponent) return 'Opponent';
+    return opponentName;
+  }, [creatorName, lobbyMatch?.opponent, opponentName, startingRole]);
+  const viewerStarts = Boolean(startingRole && role && startingRole === role);
+  const startingSummary =
+    startingRole === 'creator'
+      ? `Green – ${creatorName}`
+      : startingRole === 'opponent'
+        ? `Red – ${opponentName}`
+        : null;
+  const startingBadgeLabel = startingRole
+    ? viewerStarts
+      ? 'You move first'
+      : `${startingPlayerLabel ?? (startingRole === 'creator' ? 'Creator' : 'Opponent')} moves first`
+    : null;
 
   const handleLeave = async () => {
     setLeaveBusy.on();
@@ -509,6 +550,7 @@ function ActiveMatchContent({
         status,
         lastSeen: null,
         isSelf,
+        activity: status === 'offline' ? 'offline' : 'active',
       };
     },
     [connectionStates, currentUserId, lobbyMatch, onlineEnabled],
@@ -543,6 +585,7 @@ function ActiveMatchContent({
                       status={creatorConnection.status}
                       lastSeen={creatorConnection.lastSeen}
                       isSelf={creatorConnection.isSelf}
+                      activity={creatorConnection.activity}
                       size="xs"
                     />
                   )}
@@ -555,6 +598,7 @@ function ActiveMatchContent({
                       status={opponentConnection.status}
                       lastSeen={opponentConnection.lastSeen}
                       isSelf={opponentConnection.isSelf}
+                      activity={opponentConnection.activity}
                       size="xs"
                     />
                   )}
@@ -563,6 +607,11 @@ function ActiveMatchContent({
             )}
           </Stack>
           <HStack spacing={3}>
+            {startingRole && startingBadgeLabel && (
+              <Badge colorScheme={startingRole === 'creator' ? 'green' : 'red'}>
+                {startingBadgeLabel}
+              </Badge>
+            )}
             {showJoinCode && (
               <Badge colorScheme="orange" fontSize="0.8rem">
                 Code: {joinCode}
@@ -622,7 +671,7 @@ function ActiveMatchContent({
                 >
                   <VStack spacing={1} align={{ base: 'center', sm: 'flex-start' }} w="100%">
                     <Text fontSize="sm" color={mutedText}>
-                      {role === 'creator' ? 'Your clock' : 'Player 1 (Green)'}
+                      {role === 'creator' ? 'Your clock (green pieces)' : 'Green player'}
                     </Text>
                     <Heading size="lg" color={creatorTurnActive ? accentHeading : strongText}>
                       {creatorClock}
@@ -636,6 +685,7 @@ function ActiveMatchContent({
                           status={creatorConnection.status}
                           lastSeen={creatorConnection.lastSeen}
                           isSelf={creatorConnection.isSelf}
+                          activity={creatorConnection.activity}
                           size="xs"
                         />
                       )}
@@ -643,7 +693,7 @@ function ActiveMatchContent({
                   </VStack>
                   <VStack spacing={1} align={{ base: 'center', sm: 'flex-end' }} w="100%">
                     <Text fontSize="sm" color={mutedText} textAlign={{ base: 'center', sm: 'right' }}>
-                      {role === 'opponent' ? 'Your clock' : 'Player 2 (Red)'}
+                      {role === 'opponent' ? 'Your clock (red pieces)' : 'Red player'}
                     </Text>
                     <Heading size="lg" color={opponentTurnActive ? accentHeading : strongText}>
                       {opponentClock}
@@ -657,6 +707,7 @@ function ActiveMatchContent({
                           status={opponentConnection.status}
                           lastSeen={opponentConnection.lastSeen}
                           isSelf={opponentConnection.isSelf}
+                          activity={opponentConnection.activity}
                           size="xs"
                         />
                       )}
@@ -673,16 +724,19 @@ function ActiveMatchContent({
                   </Heading>
                   <Text fontSize="sm" color={strongText}>
                     {role === 'creator'
-                      ? 'You are playing as Player 1 (Green)'
+                      ? 'You control the green workers'
                       : role === 'opponent'
-                      ? 'You are playing as Player 2 (Red)'
-                      : 'Spectating this match'}
+                        ? 'You control the red workers'
+                        : 'Spectating this match'}
                   </Text>
                   <Text fontSize="sm" color={helperText}>
-                    {typedMoves.length} moves played · Turn:{' '}
+                    {typedMoves.length} moves played
+                    {startingSummary ? ` · First move: ${startingSummary}` : ' · First move: syncing...'}
+                    {' · '}
+                    Turn:{' '}
                     {santorini.currentTurn === 'creator'
-                      ? `Player 1 (Green) – ${creatorName}`
-                      : `Player 2 (Red) – ${opponentName}`}
+                      ? `Green – ${creatorName}`
+                      : `Red – ${opponentName}`}
                   </Text>
                 </Box>
                 <Box>
@@ -953,7 +1007,7 @@ function PlayWorkspace({ auth }: { auth: SupabaseAuthState }) {
   }, [lobby.enableOnline, lobby.sessionMode]);
 
   const handleCreate = async (payload: CreateMatchPayload) => {
-    await lobby.createMatch(payload);
+    return lobby.createMatch(payload);
   };
 
   const handleJoinByCode = async () => {

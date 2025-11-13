@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { pushSupported } from '@/lib/pushNotifications';
 
 type NotificationPermissionState = NotificationPermission | 'unsupported';
 
@@ -13,12 +14,8 @@ export interface UseBrowserNotificationsResult {
   showNotification: (title: string, options?: BrowserNotificationOptions) => void;
 }
 
-const hasNotificationSupport = (): boolean => {
-  return typeof window !== 'undefined' && 'Notification' in window;
-};
-
 export function useBrowserNotifications(): UseBrowserNotificationsResult {
-  const isSupported = useMemo(() => hasNotificationSupport(), []);
+  const isSupported = useMemo(() => pushSupported(), []);
   const [permission, setPermission] = useState<NotificationPermissionState>(() => {
     if (!isSupported) {
       return 'unsupported';

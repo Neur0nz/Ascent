@@ -209,7 +209,15 @@ serve(async (req) => {
       subscriptions.map(async (subscription) => {
         const storedSubscription = subscription as StoredPushSubscription;
         const result = await sendPushNotificationWithRetry(storedSubscription, payload);
-        if (!result.delivered && (result.reason === 'gone' || result.reason === 'unauthorized')) {
+        if (result.delivered) {
+          const { error: updateError } = await supabase
+            .from('web_push_subscriptions')
+            .update({ last_used_at: new Date().toISOString() })
+            .eq('id', storedSubscription.id);
+          if (updateError) {
+            console.warn('ping-opponent: failed to update subscription usage timestamp', updateError);
+          }
+        } else if (result.reason === 'gone' || result.reason === 'unauthorized') {
           await supabase.from('web_push_subscriptions').delete().eq('id', storedSubscription.id);
         }
         if (result.delivered) {

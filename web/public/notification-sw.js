@@ -1,5 +1,6 @@
 /* eslint-disable no-restricted-globals */
 const FOCUSABLE_CLIENT_TYPES = ['window'];
+const PUSH_SUBSCRIPTION_CHANGED_EVENT = 'santorini:push-subscription-changed';
 const clientMatchState = new Map();
 
 const normalizeMatchId = (value) => {
@@ -152,6 +153,34 @@ self.addEventListener('push', (event) => {
       const suppress = await shouldSuppressNotification(matchId);
       if (!suppress) {
         await self.registration.showNotification(title, options);
+      }
+    })(),
+  );
+});
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil(
+    (async () => {
+      const applicationServerKey = event.oldSubscription?.options?.applicationServerKey ?? null;
+      if (!event.newSubscription && applicationServerKey) {
+        try {
+          await self.registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey,
+          });
+        } catch (error) {
+          console.warn('notification-sw: failed to resubscribe after push change', error);
+        }
+      }
+      const clients = await self.clients.matchAll({
+        type: 'window',
+        includeUncontrolled: true,
+      });
+      for (const client of clients) {
+        try {
+          client.postMessage({ type: PUSH_SUBSCRIPTION_CHANGED_EVENT });
+        } catch (error) {
+          console.warn('notification-sw: failed to notify client about push subscription change', error);
+        }
       }
     })(),
   );

@@ -17,7 +17,18 @@ if (import.meta.env.VITE_APP_TITLE) {
 
 ReactDOM.createRoot(container).render(
   <React.StrictMode>
-    <ChakraProvider theme={theme}>
+    <ChakraProvider
+      theme={theme}
+      toastOptions={{
+        defaultOptions: {
+          containerStyle: {
+            minWidth: 'min(360px, calc(100vw - 32px))',
+            maxWidth: 'min(420px, calc(100vw - 32px))',
+            wordBreak: 'break-word',
+          },
+        },
+      }}
+    >
       <ColorModeScript initialColorMode={theme.config.initialColorMode} />
       <EvaluationJobsProvider>
         <App />

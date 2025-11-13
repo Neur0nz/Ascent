@@ -135,6 +135,7 @@ export interface PingOpponentResult {
 }
 
 export type ConnectionQuality = 'connecting' | 'offline' | 'weak' | 'moderate' | 'strong';
+export type PresenceActivity = 'active' | 'away' | 'offline';
 
 export interface PlayerConnectionState {
   playerId: string;
@@ -142,6 +143,7 @@ export interface PlayerConnectionState {
   status: ConnectionQuality;
   lastSeen: number | null;
   isSelf: boolean;
+  activity: PresenceActivity;
 }
 
 export interface UseMatchLobbyState {
@@ -187,12 +189,15 @@ interface MatchPresenceMeta {
   user_id?: string;
   role?: 'creator' | 'opponent' | 'spectator';
   last_seen?: number;
+  activity?: PresenceActivity;
+  visibility?: DocumentVisibilityState;
+  connection?: 'online' | 'offline';
 }
 
 const CONNECTION_THRESHOLDS = {
-  strong: 6000,
-  moderate: 12000,
-  weak: 20000,
+  strong: 4000,
+  moderate: 9000,
+  weak: 15000,
 } as const;
 
 export const MATCH_PING_COOLDOWN_MS = 60_000;
@@ -209,6 +214,19 @@ function determineConnectionQuality(lastSeen: number | null, now: number): Conne
   if (delta <= CONNECTION_THRESHOLDS.moderate) return 'moderate';
   if (delta <= CONNECTION_THRESHOLDS.weak) return 'weak';
   return 'offline';
+}
+
+function inferPresenceActivity(meta?: MatchPresenceMeta | null): PresenceActivity {
+  if (!meta) {
+    return 'active';
+  }
+  if (meta.activity === 'offline' || meta.connection === 'offline') {
+    return 'offline';
+  }
+  if (meta.activity === 'away' || meta.visibility === 'hidden') {
+    return 'away';
+  }
+  return 'active';
 }
 
 function areConnectionStatesEqual(
@@ -230,7 +248,8 @@ function areConnectionStatesEqual(
       prevState.status !== nextState.status ||
       prevState.lastSeen !== nextState.lastSeen ||
       prevState.role !== nextState.role ||
-      prevState.isSelf !== nextState.isSelf
+      prevState.isSelf !== nextState.isSelf ||
+      prevState.activity !== nextState.activity
     ) {
       return false;
     }
@@ -530,7 +549,10 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
     }
 
     const now = Date.now();
-    const aggregated = new Map<string, { lastSeen: number; role: 'creator' | 'opponent' | 'spectator' | null }>();
+    const aggregated = new Map<
+      string,
+      { lastSeen: number; role: 'creator' | 'opponent' | 'spectator' | null; activity: PresenceActivity }
+    >();
     const presenceState = channel.presenceState<MatchPresenceMeta>();
     Object.values(presenceState).forEach((entries) => {
       entries.forEach((entry) => {
@@ -538,9 +560,10 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         if (!userId) return;
         const lastSeen = typeof entry.last_seen === 'number' ? entry.last_seen : now;
         const role = entry.role ?? null;
+        const activity = inferPresenceActivity(entry);
         const current = aggregated.get(userId);
         if (!current || lastSeen > current.lastSeen) {
-          aggregated.set(userId, { lastSeen, role });
+          aggregated.set(userId, { lastSeen, role, activity });
         }
       });
     });
@@ -553,7 +576,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
     const next: Record<string, PlayerConnectionState> = {};
 
     aggregated.forEach((value, playerId) => {
-      const status = determineConnectionQuality(value.lastSeen, now);
+      const status = value.activity === 'offline' ? 'offline' : determineConnectionQuality(value.lastSeen, now);
       const resolvedRole =
         value.role ??
         (activeMatch.creator_id === playerId
@@ -567,6 +590,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         status,
         lastSeen: value.lastSeen,
         isSelf: playerId === userId,
+        activity: value.activity,
       };
       expectedPlayers.delete(playerId);
     });
@@ -581,12 +605,14 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
             : null;
       const status: ConnectionQuality =
         isSelf && channelStatusRef.current !== 'SUBSCRIBED' ? 'connecting' : 'offline';
+      const fallbackActivity: PresenceActivity = status === 'offline' ? 'offline' : 'active';
       next[playerId] = {
         playerId,
         role: resolvedRole,
         status,
         lastSeen: null,
         isSelf,
+        activity: fallbackActivity,
       };
     });
 
@@ -1568,6 +1594,30 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
 
     updateConnectionStatesFromPresence();
 
+    const getBrowserVisibility = (): DocumentVisibilityState | undefined => {
+      if (typeof document === 'undefined') {
+        return undefined;
+      }
+      return document.visibilityState;
+    };
+
+    const getBrowserConnectivity = (): 'online' | 'offline' => {
+      if (typeof navigator === 'undefined') {
+        return 'online';
+      }
+      return navigator.onLine ? 'online' : 'offline';
+    };
+
+    const resolveActivityFromBrowser = (): PresenceActivity => {
+      const connectivity = getBrowserConnectivity();
+      if (connectivity === 'offline') {
+        return 'offline';
+      }
+      return getBrowserVisibility() === 'hidden' ? 'away' : 'active';
+    };
+
+    const presenceListenerCleanups: Array<() => void> = [];
+
     const sendPresenceUpdate = async (reason: string) => {
       if (!profile) {
         return;
@@ -1584,6 +1634,9 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
           user_id: profile.id,
           role,
           last_seen: Date.now(),
+          activity: resolveActivityFromBrowser(),
+          visibility: getBrowserVisibility(),
+          connection: getBrowserConnectivity(),
         });
       } catch (error) {
         console.warn('useMatchLobby: Failed to track presence', { matchId, reason, error });
@@ -1591,6 +1644,50 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         updateConnectionStatesFromPresence();
       }
     };
+
+    if (typeof document !== 'undefined') {
+      const handleVisibility = () => {
+        void sendPresenceUpdate(`visibility:${document.visibilityState}`);
+      };
+      document.addEventListener('visibilitychange', handleVisibility);
+      presenceListenerCleanups.push(() => {
+        document.removeEventListener('visibilitychange', handleVisibility);
+      });
+    }
+
+    if (typeof window !== 'undefined') {
+      const handleFocus = () => {
+        void sendPresenceUpdate('window-focus');
+      };
+      const handleBlur = () => {
+        void sendPresenceUpdate('window-blur');
+      };
+      const handlePageHide = () => {
+        void sendPresenceUpdate('pagehide');
+      };
+      const handleOnline = () => {
+        void sendPresenceUpdate('navigator-online');
+      };
+      const handleOffline = () => {
+        void sendPresenceUpdate('navigator-offline');
+      };
+
+      window.addEventListener('focus', handleFocus);
+      window.addEventListener('blur', handleBlur);
+      window.addEventListener('pagehide', handlePageHide);
+      window.addEventListener('beforeunload', handlePageHide);
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+
+      presenceListenerCleanups.push(() => {
+        window.removeEventListener('focus', handleFocus);
+        window.removeEventListener('blur', handleBlur);
+        window.removeEventListener('pagehide', handlePageHide);
+        window.removeEventListener('beforeunload', handlePageHide);
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+      });
+    }
 
     channel.subscribe((status) => {
         console.log('useMatchLobby: Real-time subscription status', { 
@@ -1634,6 +1731,13 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
     channelRef.current = channel;
 
     return () => {
+      presenceListenerCleanups.forEach((cleanup) => {
+        try {
+          cleanup();
+        } catch (error) {
+          console.warn('useMatchLobby: Presence listener cleanup failed', error);
+        }
+      });
       clearPresenceTimers();
       try {
         void channel.untrack();

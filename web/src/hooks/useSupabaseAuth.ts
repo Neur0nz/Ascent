@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase, type SupabaseClient } from '@/lib/supabaseClient';
+import { removePushSubscription } from '@/lib/pushNotifications';
 import type { AuthChangeEvent, PostgrestError, Session, User } from '@supabase/supabase-js';
 import type { EnginePreference, PlayerProfile } from '@/types/match';
 import { generateDisplayName, validateDisplayName } from '@/utils/generateDisplayName';
@@ -257,6 +258,7 @@ const getCachedAuthState = (): { session: Session; profile: PlayerProfile } | nu
 export function useSupabaseAuth() {
   const cachedInitialState = getCachedAuthState();
   const cachedStateRef = useRef(cachedInitialState);
+  const profileRef = useRef<PlayerProfile | null>(cachedInitialState?.profile ?? null);
   const [state, setState] = useState<AuthState>(() => {
     if (cachedInitialState) {
       console.log('Restoring auth state from cache');
@@ -635,6 +637,10 @@ export function useSupabaseAuth() {
     };
   }, []); // Remove loadSessionProfile from dependencies to prevent re-initialization
 
+  useEffect(() => {
+    profileRef.current = state.profile;
+  }, [state.profile]);
+
   const refreshProfile = useCallback(async () => {
     const client = supabase;
     if (!client) {
@@ -685,7 +691,14 @@ export function useSupabaseAuth() {
   const signOut = useCallback(async () => {
     const client = supabase;
     if (!client) return;
-    
+
+    const profileSnapshot = profileRef.current;
+    try {
+      await removePushSubscription(profileSnapshot ?? null);
+    } catch (error) {
+      console.warn('useSupabaseAuth: failed to remove push subscription before sign out', error);
+    }
+
     try {
       const { error } = await client.auth.signOut();
       if (error) {

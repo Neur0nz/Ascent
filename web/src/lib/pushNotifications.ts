@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabaseClient';
 import type { PlayerProfile } from '@/types/match';
 
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined;
+const SUBSCRIPTION_REFRESH_THRESHOLD_MS = 1000 * 60 * 60 * 24 * 7; // renew a week before expiry
 
 const base64UrlToUint8Array = (base64Url: string): Uint8Array => {
   const padding = '='.repeat((4 - (base64Url.length % 4)) % 4);
@@ -29,7 +30,7 @@ const getServiceWorkerRegistration = async (): Promise<ServiceWorkerRegistration
   }
 };
 
-const pushSupported = (): boolean => {
+export const pushSupported = (): boolean => {
   return (
     typeof window !== 'undefined'
     && 'Notification' in window
@@ -44,6 +45,42 @@ interface SyncOptions {
   profile: PlayerProfile | null;
 }
 
+const deleteStoredSubscription = async (endpoint: string, authUserId?: string | null) => {
+  if (!authUserId) {
+    return;
+  }
+  const supabaseClient = supabase;
+  if (!supabaseClient) {
+    console.warn('pushNotifications: Supabase client unavailable; skipping subscription cleanup');
+    return;
+  }
+  const { error } = await supabaseClient
+    .from('web_push_subscriptions')
+    .delete()
+    .eq('auth_user_id', authUserId)
+    .eq('endpoint', endpoint);
+  if (error) {
+    console.warn('pushNotifications: failed to remove subscription from database', error);
+  }
+};
+
+export const removePushSubscription = async (profile: PlayerProfile | null): Promise<void> => {
+  if (!pushSupported()) {
+    return;
+  }
+  const registration = await getServiceWorkerRegistration();
+  const existing = await registration?.pushManager.getSubscription();
+  if (!existing) {
+    return;
+  }
+  try {
+    await existing.unsubscribe();
+  } catch (error) {
+    console.warn('pushNotifications: failed to unsubscribe push manager', error);
+  }
+  await deleteStoredSubscription(existing.endpoint, profile?.auth_user_id ?? null);
+};
+
 export const syncPushSubscription = async ({ permission, profile }: SyncOptions): Promise<void> => {
   const supabaseClient = supabase;
 
@@ -57,25 +94,7 @@ export const syncPushSubscription = async ({ permission, profile }: SyncOptions)
     const registration = await getServiceWorkerRegistration();
     const existing = await registration?.pushManager.getSubscription();
     if (existing) {
-      try {
-        await existing.unsubscribe();
-      } catch (error) {
-        console.warn('pushNotifications: failed to unsubscribe push manager', error);
-      }
-      if (profile?.auth_user_id) {
-        if (!supabaseClient) {
-          console.warn('pushNotifications: Supabase client unavailable; skipping subscription cleanup');
-        } else {
-          const { error: deleteError } = await supabaseClient
-            .from('web_push_subscriptions')
-            .delete()
-            .eq('auth_user_id', profile.auth_user_id)
-            .eq('endpoint', existing.endpoint);
-          if (deleteError) {
-            console.warn('pushNotifications: failed to remove subscription from database', deleteError);
-          }
-        }
-      }
+      await removePushSubscription(profile ?? null);
     }
     return;
   }
@@ -101,6 +120,20 @@ export const syncPushSubscription = async ({ permission, profile }: SyncOptions)
   }
 
   let subscription = await registration.pushManager.getSubscription();
+  const expiresSoon = (() => {
+    if (!subscription?.expirationTime) {
+      return false;
+    }
+    return subscription.expirationTime - Date.now() < SUBSCRIPTION_REFRESH_THRESHOLD_MS;
+  })();
+  if (subscription && expiresSoon) {
+    try {
+      await subscription.unsubscribe();
+    } catch (error) {
+      console.warn('pushNotifications: failed to renew expiring subscription', error);
+    }
+    subscription = null;
+  }
   if (!subscription) {
     try {
       const vapidKey = base64UrlToUint8Array(VAPID_PUBLIC_KEY);

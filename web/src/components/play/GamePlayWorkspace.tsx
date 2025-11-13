@@ -71,6 +71,7 @@ import { MatchChatPanel } from '@components/play/MatchChatPanel';
 import type { SantoriniMoveAction, MatchStatus, PlayerProfile } from '@/types/match';
 import { useSurfaceTokens } from '@/theme/useSurfaceTokens';
 import { EMOJIS } from '@components/EmojiPicker';
+import { deriveStartingRole } from '@/utils/matchStartingRole';
 
 const K_FACTOR = 32;
 const NOTIFICATION_PROMPT_STORAGE_KEY = 'santorini:notificationsPrompted';
@@ -1318,6 +1319,7 @@ function PlayerClockCard({
           status={connectionState.status}
           lastSeen={connectionState.lastSeen}
           isSelf={connectionState.isSelf}
+          activity={connectionState.activity}
           size="xs"
         />
       )}
@@ -1637,12 +1639,27 @@ function GamePlayWorkspace({
       match.clock_initial_seconds > 0
         ? `${Math.round(match.clock_initial_seconds / 60)}+${match.clock_increment_seconds}`
         : null;
+    const startingRole = deriveStartingRole(match.initial_state);
+    const startingLabel =
+      startingRole === 'creator'
+        ? `${match.creator?.display_name ?? 'Green player'} moves first`
+        : startingRole === 'opponent'
+          ? match.opponent
+            ? `${match.opponent.display_name} moves first`
+            : 'Opponent moves first'
+          : null;
     return {
       vsLabel: `${creatorLabel} vs ${opponentLabel}`,
       ratedLabel: match.rated ? 'Rated' : 'Casual',
       moveCount,
       clockLabel,
       joinCode: match.visibility === 'private' && match.private_join_code ? match.private_join_code : null,
+      startingBadge: startingLabel
+        ? {
+            label: startingLabel,
+            colorScheme: startingRole === 'creator' ? 'green' : 'red',
+          }
+        : null,
     };
   }, [lobby.activeMatch, lobby.moves, lobby.sessionMode]);
   const creatorReactions = useMemo(() => {
@@ -1995,6 +2012,13 @@ function GamePlayWorkspace({
                 <WrapItem>
                   <Badge colorScheme="green" fontSize="xs">
                     {activeMatchSummary.clockLabel}
+                  </Badge>
+                </WrapItem>
+              )}
+              {activeMatchSummary.startingBadge && (
+                <WrapItem>
+                  <Badge colorScheme={activeMatchSummary.startingBadge.colorScheme} fontSize="xs">
+                    {activeMatchSummary.startingBadge.label}
                   </Badge>
                 </WrapItem>
               )}
