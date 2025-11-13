@@ -27,6 +27,11 @@ export interface BoardCell {
   highlight: boolean;
 }
 
+interface PendingLocalMove {
+  expectedMoveIndex: number;
+  moveAction: number;
+}
+
 /**
  * TypeScript-based online Santorini hook
  * 
@@ -34,7 +39,7 @@ export interface BoardCell {
  * Uses the lightweight SantoriniEngine for all game logic.
  */
 
-const TICK_INTERVAL = 1000;
+const TICK_INTERVAL = 250;
 
 const resolveActiveRole = (engine: SantoriniEngine): 'creator' | 'opponent' => {
   const placement = engine.getPlacementContext();
@@ -71,6 +76,16 @@ const getLastSantoriniMove = (records: MatchMoveRecord<MatchAction>[]): number |
     }
   }
   return null;
+};
+
+const getNextMoveIndexFromRecords = (records: MatchMoveRecord<MatchAction>[]): number => {
+  let maxMoveIndex = -1;
+  for (const record of records) {
+    if (typeof record.move_index === 'number') {
+      maxMoveIndex = Math.max(maxMoveIndex, record.move_index);
+    }
+  }
+  return maxMoveIndex + 1;
 };
 
 function engineToBoard(snapshot: SantoriniSnapshot): BoardCell[][] {
@@ -157,6 +172,10 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
   const [clock, setClock] = useState<ClockState>(() => deriveInitialClocks(match));
   const [clockEnabled, setClockEnabled] = useState(match?.clock_initial_seconds ? match.clock_initial_seconds > 0 : false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastTickRef = useRef<number | null>(null);
+  const [placementComplete, setPlacementComplete] = useState<boolean>(
+    () => engineRef.current.getPlacementContext() === null,
+  );
   
   // Sync tracking and locks
   const lastSyncedStateRef = useRef<{ matchId: string | null; snapshotMoveIndex: number; appliedMoveCount: number }>({ 
@@ -164,11 +183,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
     snapshotMoveIndex: -1,
     appliedMoveCount: 0
   });
-  const pendingLocalMoveRef = useRef<{ 
-    expectedHistoryLength: number; 
-    expectedMoveIndex: number; 
-    moveAction?: number;
-  } | null>(null);
+  const pendingLocalMovesRef = useRef<PendingLocalMove[]>([]);
   const nextLocalMoveIndexRef = useRef<number>(0);
   const [pendingMoveVersion, setPendingMoveVersion] = useState(0); // Trigger submission effect
   const gameCompletedRef = useRef<string | null>(null);
@@ -209,6 +224,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
     setBoard(newBoard);
     setSelectable(newSelectable);
     setCancelSelectable(newCancelSelectable);
+    setPlacementComplete(newEngine.getPlacementContext() === null);
     setEngineVersion(v => v + 1);
   }, []);
   
@@ -228,7 +244,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
         snapshotMoveIndex: -1,
         appliedMoveCount: 0
       };
-      pendingLocalMoveRef.current = null;
+      pendingLocalMovesRef.current = [];
       setClock(deriveInitialClocks(match));
       nextLocalMoveIndexRef.current = moves.length;
     } catch (error) {
@@ -250,8 +266,9 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       setClock(deriveInitialClocks(null));
       setClockEnabled(false);
       lastSyncedStateRef.current = { matchId: null, snapshotMoveIndex: -1, appliedMoveCount: 0 };
-      pendingLocalMoveRef.current = null;
+      pendingLocalMovesRef.current = [];
       previousMatchRef.current = { id: null, status: null, clockSeconds: null };
+      setPlacementComplete(false);
       return;
     }
 
@@ -269,7 +286,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
     if (shouldResetClock) {
       setClock(deriveInitialClocks(match));
       lastSyncedStateRef.current = { matchId: match.id, snapshotMoveIndex: -1, appliedMoveCount: 0 };
-      pendingLocalMoveRef.current = null;
+      pendingLocalMovesRef.current = [];
       resetMatch();
     }
 
@@ -310,12 +327,6 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
     const lastMove = moves[moves.length - 1];
     const isOptimisticOnly =
       moves.length === lastSynced.appliedMoveCount + 1 && lastMove?.id.startsWith('optimistic-');
-    const pendingLocal = pendingLocalMoveRef.current;
-    const isPendingLocalMove =
-      pendingLocal != null &&
-      lastMove?.move_index === pendingLocal.expectedMoveIndex &&
-      lastMove?.id.startsWith('optimistic-');
-
     if (isOptimisticOnly && moves.length > 0) {
       const lastMove = moves[moves.length - 1];
       const action = lastMove.action;
@@ -513,19 +524,34 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+    lastTickRef.current = null;
 
-    if (!clockEnabled || !match || match.status !== 'in_progress') {
+    if (!clockEnabled || !match || match.status !== 'in_progress' || !placementComplete) {
       return;
     }
 
     const side = currentTurn;
+    if (!side) {
+      return;
+    }
+
+    lastTickRef.current = performance.now();
     timerRef.current = setInterval(() => {
       setClock((prev) => {
+        const now = performance.now();
+        const last = lastTickRef.current ?? now;
+        lastTickRef.current = now;
+        const delta = Math.max(0, Math.round(now - last));
+
+        if (delta === 0) {
+          return prev;
+        }
+
         const next = { ...prev };
         if (side === 'creator') {
-          next.creatorMs = Math.max(0, next.creatorMs - TICK_INTERVAL);
-        } else {
-          next.opponentMs = Math.max(0, next.opponentMs - TICK_INTERVAL);
+          next.creatorMs = Math.max(0, next.creatorMs - delta);
+        } else if (side === 'opponent') {
+          next.opponentMs = Math.max(0, next.opponentMs - delta);
         }
         return next;
       });
@@ -536,8 +562,9 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
+      lastTickRef.current = null;
     };
-  }, [clockEnabled, currentTurn, match?.status, match]);
+  }, [clockEnabled, currentTurn, match?.status, match, placementComplete]);
 
   useEffect(() => {
     return () => {
@@ -550,8 +577,12 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
 
   // Move submission effect
   useEffect(() => {
-    const pending = pendingLocalMoveRef.current;
-    if (!pending || !match || !role) {
+    if (!match || !role) {
+      return;
+    }
+
+    const pendingQueue = pendingLocalMovesRef.current;
+    if (pendingQueue.length === 0) {
       return;
     }
     
@@ -560,10 +591,9 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       return;
     }
 
-    // Check if we actually have a new move
+    const pending = pendingQueue[0];
     const expectedMoveIndex = pending.expectedMoveIndex;
     
-    // Check if the server already has this move
     const serverHasThisMove = moves.some(
       (move) =>
         move.move_index === expectedMoveIndex &&
@@ -573,16 +603,20 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
     
     if (serverHasThisMove) {
       console.log('useOnlineSantorini: Move already received from server, skipping submission');
-      pendingLocalMoveRef.current = null;
-      nextLocalMoveIndexRef.current = Math.max(nextLocalMoveIndexRef.current - 1, moves.length);
+      pendingQueue.shift();
+      if (pendingQueue.length > 0) {
+        setPendingMoveVersion((v) => v + 1);
+      }
       return;
     }
 
-    // Get the move from pending ref
     const moveAction = pending.moveAction;
     if (moveAction === undefined || moveAction === null) {
       console.warn('useOnlineSantorini: Pending move has no moveAction', pending);
-      pendingLocalMoveRef.current = null;
+      pendingQueue.shift();
+      if (pendingQueue.length > 0) {
+        setPendingMoveVersion((v) => v + 1);
+      }
       return;
     }
 
@@ -611,7 +645,10 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
     onSubmitMove(match, expectedMoveIndex, movePayload)
       .then(() => {
         console.log('useOnlineSantorini: Move submitted successfully');
-        pendingLocalMoveRef.current = null;
+        pendingLocalMovesRef.current.shift();
+        if (pendingLocalMovesRef.current.length > 0) {
+          setPendingMoveVersion((v) => v + 1);
+        }
       })
       .catch((error) => {
         console.error('useOnlineSantorini: Failed to submit move', error);
@@ -620,8 +657,15 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
           status: 'error',
           description: error instanceof Error ? error.message : 'Unknown error',
         });
-        pendingLocalMoveRef.current = null;
-        nextLocalMoveIndexRef.current = Math.max(nextLocalMoveIndexRef.current - 1, moves.length);
+        const clearedCount = pendingLocalMovesRef.current.length;
+        pendingLocalMovesRef.current = [];
+        if (clearedCount > 0) {
+          const nextFromRecords = getNextMoveIndexFromRecords(moves);
+          nextLocalMoveIndexRef.current = Math.max(
+            nextLocalMoveIndexRef.current - clearedCount,
+            nextFromRecords,
+          );
+        }
       })
       .finally(() => {
         submissionLockRef.current = false;
@@ -664,10 +708,6 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
         return;
       }
       
-      if (pendingLocalMoveRef.current) {
-        toast({ title: 'Please wait - syncing previous move', status: 'info' });
-        return;
-      }
       if (currentTurn !== role) {
         toast({ title: "It's not your turn", status: 'warning' });
         return;
@@ -691,6 +731,13 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       const placement = engine.getPlacementContext();
       const placementRole = placement ? (placement.player === 0 ? 'creator' : 'opponent') : null;
       const isPlacementPhase = Boolean(placement);
+
+      const hasPendingMoves = pendingLocalMovesRef.current.length > 0;
+      const canQueueDuringPlacement = hasPendingMoves && isPlacementPhase && placementRole === role;
+      if (hasPendingMoves && !canQueueDuringPlacement) {
+        toast({ title: 'Please wait - syncing previous move', status: 'info' });
+        return;
+      }
       
       console.log('🎯 onCellClick Debug:', {
         y, x,
@@ -735,11 +782,10 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
           nextLocalMoveIndexRef.current += 1;
 
           // Store pending move (server will compute state)
-          pendingLocalMoveRef.current = { 
-            expectedHistoryLength: 0, // Not used in TS version
+          pendingLocalMovesRef.current.push({
             expectedMoveIndex: nextMoveIndex,
             moveAction: placementAction,
-          };
+          });
           
           console.log('✅ Placement move queued for submission', { placementAction, nextMoveIndex });
           setPendingMoveVersion(v => v + 1); // Trigger submission effect
@@ -819,11 +865,10 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
             const nextMoveIndex = nextLocalMoveIndexRef.current;
             nextLocalMoveIndexRef.current += 1;
 
-            pendingLocalMoveRef.current = {
-              expectedHistoryLength: 0,
+            pendingLocalMovesRef.current.push({
               expectedMoveIndex: nextMoveIndex,
               moveAction: action,
-            };
+            });
             
             console.log('✅ Game move queued for submission', { action, nextMoveIndex });
             setPendingMoveVersion(v => v + 1); // Trigger submission effect

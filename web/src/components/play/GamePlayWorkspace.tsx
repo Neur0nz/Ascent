@@ -934,72 +934,80 @@ function ActiveMatchContent({
         </Alert>
       )}
 
-      {/* Game Board - Centered and LARGE */}
-      <Flex direction="column" align="center" w="100%">
-        <Box
-          bg={{ base: 'transparent', md: panelBg }}
-          borderRadius={{ base: 'none', md: 'xl' }}
-          borderWidth={{ base: 0, md: '1px' }}
-          borderColor={{ base: 'transparent', md: cardBorder }}
-          p={{ base: 0, md: 3 }}
-          display="flex"
-          justifyContent="center"
-          w="100%"
-          maxW="960px"
-          mx={{ base: -3, md: 0 }}
-          boxShadow={{ base: 'none', md: 'md' }}
-          overflow="hidden"
-        >
-          <GameBoard
-            board={santorini.board}
-            selectable={santorini.selectable}
-            cancelSelectable={santorini.cancelSelectable}
-            onCellClick={santorini.onCellClick}
-            onCellHover={santorini.onCellHover}
-            onCellLeave={santorini.onCellLeave}
-            buttons={santorini.buttons}
-            undo={handleRequestUndo}
-            redo={santorini.redo}
-            undoLabel="Request undo"
-            hideRedoButton
-            undoDisabledOverride={undoDisabledOverride}
-            undoIsLoading={requestingUndo}
-            isTurnActive={isMyTurn}
-            turnHighlightColor={turnGlowColor}
-          />
-        </Box>
-
-        {undoBanner}
-
-      </Flex>
-
-      {lobbyMatch ? (
-        <Box w="100%" maxW="960px" mx="auto">
-          <MatchChatPanel
-            matchId={lobbyMatch.id}
-            messages={chatMessages}
-            status={chatStatus}
-            onSend={sendChatMessage}
-            canSend={canSendChat}
-            currentUserId={chatViewerId}
-            typingUsers={chatTypingUsers}
-            onTypingStatusChange={notifyChatTyping}
-            onClearHistory={chatMessages.length > 0 ? clearChatHistory : undefined}
-          />
-          <Box mt={3} px={{ base: 0, md: 3 }} display="flex" justifyContent={{ base: 'center', md: 'flex-end' }}>
-            <Tooltip label="Resign and lose the game (affects rating if rated)" hasArrow>
-              <Button
-                colorScheme="red"
-                variant="outline"
-                onClick={onResignOpen}
-                isLoading={leaveBusy}
-              >
-                Resign
-              </Button>
-            </Tooltip>
+      {/* Game Board + Chat */}
+      <Flex
+        direction={{ base: 'column', lg: 'row' }}
+        align={{ base: 'center', lg: 'flex-start' }}
+        w="100%"
+        maxW={{ base: '960px', lg: '1200px' }}
+        mx="auto"
+        gap={{ base: 6, lg: 4 }}
+      >
+        <Flex direction="column" align="center" flex="1" w="100%">
+          <Box
+            bg={{ base: 'transparent', md: panelBg }}
+            borderRadius={{ base: 'none', md: 'xl' }}
+            borderWidth={{ base: 0, md: '1px' }}
+            borderColor={{ base: 'transparent', md: cardBorder }}
+            p={{ base: 0, md: 3 }}
+            display="flex"
+            justifyContent="center"
+            w="100%"
+            maxW="960px"
+            mx={{ base: -3, md: 0 }}
+            boxShadow={{ base: 'none', md: 'md' }}
+            overflow="hidden"
+          >
+            <GameBoard
+              board={santorini.board}
+              selectable={santorini.selectable}
+              cancelSelectable={santorini.cancelSelectable}
+              onCellClick={santorini.onCellClick}
+              onCellHover={santorini.onCellHover}
+              onCellLeave={santorini.onCellLeave}
+              buttons={santorini.buttons}
+              undo={handleRequestUndo}
+              redo={santorini.redo}
+              undoLabel="Request undo"
+              hideRedoButton
+              undoDisabledOverride={undoDisabledOverride}
+              undoIsLoading={requestingUndo}
+              isTurnActive={isMyTurn}
+              turnHighlightColor={turnGlowColor}
+            />
           </Box>
-        </Box>
-      ) : null}
+
+          {undoBanner}
+        </Flex>
+
+        {lobbyMatch ? (
+          <Stack
+            spacing={3}
+            w={{ base: '100%', lg: '360px' }}
+            flexShrink={0}
+            alignSelf={{ base: 'stretch', lg: 'flex-start' }}
+          >
+            <MatchChatPanel
+              matchId={lobbyMatch.id}
+              messages={chatMessages}
+              status={chatStatus}
+              onSend={sendChatMessage}
+              canSend={canSendChat}
+              currentUserId={chatViewerId}
+              typingUsers={chatTypingUsers}
+              onTypingStatusChange={notifyChatTyping}
+              onClearHistory={chatMessages.length > 0 ? clearChatHistory : undefined}
+            />
+            <Box display="flex" justifyContent={{ base: 'center', md: 'flex-end' }}>
+              <Tooltip label="Resign and lose the game (affects rating if rated)" hasArrow>
+                <Button colorScheme="red" variant="outline" onClick={onResignOpen} isLoading={leaveBusy}>
+                  Resign
+                </Button>
+              </Tooltip>
+            </Box>
+          </Stack>
+        ) : null}
+      </Flex>
 
       <AlertDialog isOpen={isResignOpen} leastDestructiveRef={resignCancelRef} onClose={onResignClose}>
         <AlertDialogOverlay>
