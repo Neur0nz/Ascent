@@ -292,29 +292,6 @@ function LeaderboardWorkspace({
         </CardBody>
       </Card>
 
-      <Card bg={statBg} borderWidth="1px" borderColor={statBorder}>
-        <CardBody>
-          <Stack spacing={3}>
-            <Heading size="sm">How to earn rating</Heading>
-            <Text fontSize="sm" color={mutedText}>
-              Winning rated games increases your Santorini ELO. Matches pair players by rating, and performance is tracked over time. Practice games are still useful for training, but only rated play moves you up the ladder.
-            </Text>
-            <HStack spacing={3}>
-              <Button
-                size="sm"
-                colorScheme="teal"
-                leftIcon={<ArrowUpIcon />}
-                onClick={onNavigateToPlay}
-              >
-                Jump into play
-              </Button>
-              <Text fontSize="xs" color={mutedText}>
-                Tip: Invite friends with private codes or join public lobbies to find similarly rated opponents.
-              </Text>
-            </HStack>
-          </Stack>
-        </CardBody>
-      </Card>
     </Stack>
   );
 }
