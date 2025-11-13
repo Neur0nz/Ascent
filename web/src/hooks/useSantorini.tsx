@@ -243,6 +243,10 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
   const [optionsDepthOverride, setOptionsDepthOverride] = useState<number | null>(null);
   const evaluationRequestIdRef = useRef(0);
   const wasmStateVersionRef = useRef(0);
+  const bumpWasmStateVersion = useCallback(() => {
+    wasmStateVersionRef.current += 1;
+    return wasmStateVersionRef.current;
+  }, []);
 
   const toast = useToast();
   
@@ -482,6 +486,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
 
     try {
       engineRef.current = SantoriniEngine.fromSnapshot(snapshot as SantoriniSnapshot);
+      bumpWasmStateVersion();
       moveSelectorRef.current.reset();
       await syncPythonFromTypeScript();
       return true;
@@ -490,7 +495,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       clearPracticeSnapshot(storageNamespace);
       return false;
     }
-  }, [persistState, storageNamespace, syncPythonFromTypeScript]);
+  }, [bumpWasmStateVersion, persistState, storageNamespace, syncPythonFromTypeScript]);
 
   const updateButtons = useCallback(async (loadingState = false) => {
     const engine = engineRef.current;
@@ -750,6 +755,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
 
     const { engine } = SantoriniEngine.createInitial();
     engineRef.current = engine;
+    bumpWasmStateVersion();
     moveSelectorRef.current.reset();
     setEditModeState(0);
 
@@ -766,7 +772,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     setHistory([]);
     await syncUi();
     await syncPythonFromTypeScript();
-  }, [syncPythonFromTypeScript, syncUi, updateButtonsState]);
+  }, [bumpWasmStateVersion, syncPythonFromTypeScript, syncUi, updateButtonsState]);
 
   const initializeStartedRef = useRef(false);
   const initializePromiseRef = useRef<Promise<void> | null>(null);
@@ -867,6 +873,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
 
       const result = engineRef.current.applyMove(bestAction);
       engineRef.current = SantoriniEngine.fromSnapshot(result.snapshot);
+      bumpWasmStateVersion();
       moveSelectorRef.current.reset();
       updateSelectable();
 
@@ -881,6 +888,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
 
     await updateButtons(false);
   }, [
+    bumpWasmStateVersion,
     ensureWorkerClient,
     evaluationEnabled,
     practiceMode,
@@ -918,8 +926,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       try {
         const result = engineRef.current.applyMove(move);
         engineRef.current = SantoriniEngine.fromSnapshot(result.snapshot);
-        wasmStateVersionRef.current += 1;
-        wasmStateVersionRef.current += 1;
+        bumpWasmStateVersion();
         moveSelectorRef.current.reset();
         
         console.log('👤 Move applied to TS. New player:', engineRef.current.player);
@@ -941,7 +948,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         toast({ title: 'Invalid move', status: 'error' });
       }
     },
-    [aiPlayIfNeeded, ensureAiIdle, refreshEvaluation, syncPythonFromTypeScript, syncUi, toast],
+    [aiPlayIfNeeded, bumpWasmStateVersion, ensureAiIdle, refreshEvaluation, syncPythonFromTypeScript, syncUi, toast],
   );
 
   const onCellClick = useCallback(
@@ -966,6 +973,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
           const snapshot = await client.editCell(y, x, editMode);
           if (snapshot) {
             engineRef.current = SantoriniEngine.fromSnapshot(snapshot as SantoriniSnapshot);
+            bumpWasmStateVersion();
           }
           syncEngineToUi();
           await updateButtons(false);
@@ -1053,6 +1061,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     },
     [
       applyMove,
+      bumpWasmStateVersion,
       editMode,
       ensureWorkerClient,
       finalizeGuidedSetup,
@@ -1083,6 +1092,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     }
     
     engineRef.current = SantoriniEngine.fromSnapshot(result.snapshot);
+    bumpWasmStateVersion();
     moveSelectorRef.current.reset();
     
     // Sync UI and Python engine
@@ -1091,7 +1101,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     refreshEvaluation().catch((error) => {
       console.error('Failed to refresh evaluation after undo:', error);
     });
-  }, [ensureAiIdle, refreshEvaluation, syncPythonFromTypeScript, syncUi, toast]);
+  }, [bumpWasmStateVersion, ensureAiIdle, refreshEvaluation, syncPythonFromTypeScript, syncUi, toast]);
 
   const redo = useCallback(async () => {
     await ensureAiIdle();
@@ -1104,6 +1114,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     }
     
     engineRef.current = SantoriniEngine.fromSnapshot(result.snapshot);
+    bumpWasmStateVersion();
     moveSelectorRef.current.reset();
     
     // Sync UI and Python engine
@@ -1112,7 +1123,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     refreshEvaluation().catch((error) => {
       console.error('Failed to refresh evaluation after redo:', error);
     });
-  }, [ensureAiIdle, refreshEvaluation, syncPythonFromTypeScript, syncUi, toast]);
+  }, [bumpWasmStateVersion, ensureAiIdle, refreshEvaluation, syncPythonFromTypeScript, syncUi, toast]);
 
   const reset = useCallback(async () => {
     await ensureAiIdle();
@@ -1120,10 +1131,11 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     // Reset TypeScript engine (source of truth)
     const { engine } = SantoriniEngine.createInitial();
     engineRef.current = engine;
+    bumpWasmStateVersion();
     moveSelectorRef.current.reset();
     
     await startGuidedSetup();
-  }, [ensureAiIdle, startGuidedSetup]);
+  }, [bumpWasmStateVersion, ensureAiIdle, startGuidedSetup]);
 
   const setGameMode = useCallback(
     async (mode: PracticeGameMode) => {
@@ -1183,6 +1195,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       const jumpResult = await client.jumpToMoveIndex(reverseIndex);
       if (jumpResult?.snapshot) {
         engineRef.current = SantoriniEngine.fromSnapshot(jumpResult.snapshot as SantoriniSnapshot);
+        bumpWasmStateVersion();
       }
       moveSelectorRef.current.reset();
       await syncUi();
@@ -1190,7 +1203,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         console.error('Failed to refresh evaluation after jumping to move:', error);
       });
     },
-    [ensureWorkerClient, refreshEvaluation, syncUi],
+    [bumpWasmStateVersion, ensureWorkerClient, refreshEvaluation, syncUi],
   );
 
   const importState = useCallback(
@@ -1207,6 +1220,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
 
       try {
         engineRef.current = SantoriniEngine.fromSnapshot(snapshot as SantoriniSnapshot);
+        bumpWasmStateVersion();
         moveSelectorRef.current.reset();
       } catch (error) {
         console.error('Failed to update TypeScript engine from snapshot:', error);
@@ -1224,7 +1238,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         });
       }
     },
-    [ensureAiIdle, refreshEvaluation, syncPythonFromTypeScript, syncUi],
+    [bumpWasmStateVersion, ensureAiIdle, refreshEvaluation, syncPythonFromTypeScript, syncUi],
   );
 
   const updateEvaluationDepth = useCallback(
