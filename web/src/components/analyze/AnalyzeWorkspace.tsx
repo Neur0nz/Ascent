@@ -212,26 +212,51 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
 
       setReplaying(true);
       try {
-        const initialState = analysis.match.initial_state as SantoriniSnapshot;
-        const playbackEngine = SantoriniEngine.fromSnapshot(initialState);
+        let snapshotToImport: SantoriniStateSnapshot | null = null;
 
-        if (index >= 0) {
-          for (let i = 0; i <= index; i++) {
-            const action = analysis.moves[i]?.action;
-            if (action && action.kind === 'santorini.move' && typeof action.move === 'number') {
-              try {
-                playbackEngine.applyMove(action.move);
-              } catch (moveError) {
-                console.warn('Skipping invalid move during replay', { index: i, move: action.move }, moveError);
-                break;
+        // Try to use stored snapshot first (most efficient)
+        if (index < 0) {
+          // Initial state - should always be available
+          snapshotToImport = analysis.match.initial_state as SantoriniStateSnapshot;
+        } else if (index < analysis.moves.length) {
+          // Check if this move has a stored snapshot
+          snapshotToImport = analysis.moves[index]?.state_snapshot as SantoriniStateSnapshot | null;
+        }
+
+        // Fallback: replay moves if snapshot is missing
+        if (!snapshotToImport) {
+          const initialState = analysis.match.initial_state as SantoriniSnapshot | null;
+          if (!initialState) {
+            throw new Error('Missing initial match snapshot');
+          }
+          
+          const playbackEngine = SantoriniEngine.fromSnapshot(initialState);
+          
+          // Only replay if we have moves to replay
+          if (index >= 0 && analysis.moves.length > 0) {
+            const lastIndex = Math.min(index, analysis.moves.length - 1);
+            for (let i = 0; i <= lastIndex; i++) {
+              const action = analysis.moves[i]?.action;
+              if (action && action.kind === 'santorini.move' && typeof action.move === 'number') {
+                try {
+                  playbackEngine.applyMove(action.move);
+                } catch (moveError) {
+                  console.warn('Skipping invalid move during replay', { index: i, move: action.move }, moveError);
+                  // Don't break - continue with partial replay
+                  // The snapshot will still be valid up to the last successful move
+                }
               }
             }
           }
+          
+          snapshotToImport = playbackEngine.snapshot as SantoriniStateSnapshot;
         }
 
-        await santorini.importState(playbackEngine.snapshot as SantoriniStateSnapshot, {
-          waitForEvaluation: false,
-        });
+        if (!snapshotToImport) {
+          throw new Error('Unable to resolve board state for this move');
+        }
+
+        await santorini.importState(snapshotToImport, { waitForEvaluation: false });
         setCurrentIndex(index);
         setIsExploring(false);
       } catch (error) {
