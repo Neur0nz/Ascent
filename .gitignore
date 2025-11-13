@@ -38,3 +38,5 @@ rust-wasm/target/
 /rust-wasm/pkg
 /rust-wasm/pkg
 rust-wasm/pkg/santorini_wasm_bg.wasm
+/rust-wasm/pkg
+rust-wasm/pkg/santorini_wasm_bg.wasm

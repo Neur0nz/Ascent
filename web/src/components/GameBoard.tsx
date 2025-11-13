@@ -17,7 +17,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ButtonsState } from '@hooks/useSantorini';
 import type { BoardCell } from '@game/boardView';
 
-interface GameBoardProps {
+export interface GameBoardProps {
   board: BoardCell[][];
   selectable: boolean[][];
   cancelSelectable?: boolean[][];
@@ -70,7 +70,14 @@ function GameBoard({
     if (typeof window === 'undefined') {
       return 600;
     }
-    const stored = window.localStorage.getItem('santorini:boardSize');
+    let stored: string | null = null;
+    try {
+      stored = window.localStorage.getItem('santorini:boardSize');
+    } catch (error) {
+      if (import.meta.env?.DEV) {
+        console.warn('GameBoard: Failed to read stored board size', error);
+      }
+    }
     const parsed = Number(stored);
     if (Number.isFinite(parsed) && parsed >= 320 && parsed <= 960) {
       return parsed;
@@ -88,7 +95,13 @@ function GameBoard({
       return;
     }
     const timeoutId = window.setTimeout(() => {
-      window.localStorage.setItem('santorini:boardSize', String(boardPixels));
+      try {
+        window.localStorage.setItem('santorini:boardSize', String(boardPixels));
+      } catch (error) {
+        if (import.meta.env?.DEV) {
+          console.warn('GameBoard: Failed to persist board size', error);
+        }
+      }
     }, 250);
     return () => window.clearTimeout(timeoutId);
   }, [boardPixels]);

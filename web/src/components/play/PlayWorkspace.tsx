@@ -52,13 +52,14 @@ import {
   type StartingPlayer,
   type PlayerConnectionState,
   type ConnectionQuality,
+  type UndoRequestState,
 } from '@hooks/useMatchLobby';
 import { useOnlineSantorini } from '@hooks/useOnlineSantorini';
 import { SantoriniProvider, useSantorini } from '@hooks/useSantorini';
-import GameBoard from '@components/GameBoard';
+import OnlineBoardSection from '@components/play/OnlineBoardSection';
 import GoogleIcon from '@components/auth/GoogleIcon';
 import ConnectionIndicator from '@components/play/ConnectionIndicator';
-import type { SantoriniMoveAction, MatchStatus, EnginePreference } from '@/types/match';
+import type { SantoriniMoveAction, MatchStatus, EnginePreference, MatchAction } from '@/types/match';
 import MyMatchesPanel from './MyMatchesPanel';
 import { useSurfaceTokens } from '@/theme/useSurfaceTokens';
 import { deriveStartingRole } from '@/utils/matchStartingRole';
@@ -66,6 +67,10 @@ import { deriveStartingRole } from '@/utils/matchStartingRole';
 function formatDate(value: string) {
   return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
+
+const isSantoriniMoveAction = (action: MatchAction | null | undefined): action is SantoriniMoveAction => {
+  return Boolean(action && (action as SantoriniMoveAction).kind === 'santorini.move');
+};
 
 function MatchCreationModal({
   isOpen,
@@ -316,6 +321,9 @@ function ActiveMatchPanel({
   currentUserId,
   onlineEnabled,
   enginePreference,
+  undoRequests,
+  onRequestUndo,
+  onClearUndo,
 }: {
   sessionMode: ReturnType<typeof useMatchLobby>['sessionMode'];
   match: LobbyMatch | null;
@@ -330,6 +338,9 @@ function ActiveMatchPanel({
   currentUserId: string | null;
   onlineEnabled: boolean;
   enginePreference: EnginePreference;
+  undoRequests: ReturnType<typeof useMatchLobby>['undoRequests'];
+  onRequestUndo: ReturnType<typeof useMatchLobby>['requestUndo'];
+  onClearUndo: ReturnType<typeof useMatchLobby>['clearUndoRequest'];
 }) {
   const { cardBg, cardBorder, mutedText } = useSurfaceTokens();
 
@@ -364,6 +375,13 @@ function ActiveMatchPanel({
           connectionStates={connectionStates}
           currentUserId={currentUserId}
           onlineEnabled={onlineEnabled}
+          undoState={match?.id ? undoRequests[match.id] : undefined}
+          onRequestUndo={onRequestUndo}
+          onClearUndo={() => {
+            if (match?.id) {
+              onClearUndo(match.id);
+            }
+          }}
         />
       </SantoriniProvider>
     );
@@ -395,6 +413,9 @@ function ActiveMatchContent({
   connectionStates,
   currentUserId,
   onlineEnabled,
+  undoState,
+  onRequestUndo,
+  onClearUndo,
 }: {
   match: LobbyMatch | null;
   role: 'creator' | 'opponent' | null;
@@ -407,10 +428,14 @@ function ActiveMatchContent({
   connectionStates: ReturnType<typeof useMatchLobby>['connectionStates'];
   currentUserId: string | null;
   onlineEnabled: boolean;
+  undoState?: UndoRequestState;
+  onRequestUndo: () => Promise<void>;
+  onClearUndo: () => void;
 }) {
   const toast = useToast();
   const [offerBusy, setOfferBusy] = useBoolean();
   const [leaveBusy, setLeaveBusy] = useBoolean();
+  const [requestingUndo, setRequestingUndo] = useBoolean(false);
   const lobbyMatch = match ?? null;
   const { cardBg, cardBorder, mutedText, helperText, strongText, accentHeading, panelBg } = useSurfaceTokens();
   const googleHoverBg = useColorModeValue('gray.100', 'whiteAlpha.300');
@@ -425,6 +450,16 @@ function ActiveMatchContent({
         })),
     [moves],
   );
+  const hasMoveToUndo = useMemo(() => {
+    if (!role) return false;
+    return typedMoves.some((move) => move.action.by === role);
+  }, [role, typedMoves]);
+  const canRequestUndo = useMemo(() => {
+    if (!role || !lobbyMatch) return false;
+    if (lobbyMatch.status !== 'in_progress') return false;
+    if (undoState && undoState.status === 'pending') return false;
+    return hasMoveToUndo;
+  }, [hasMoveToUndo, lobbyMatch, role, undoState]);
   const handleGameComplete = useCallback(async (winnerId: string | null) => {
     if (!lobbyMatch) return;
     
@@ -461,6 +496,72 @@ function ActiveMatchContent({
     }
   }, [lobbyMatch, onGameComplete, toast]);
 
+  const handleRequestUndo = useCallback(async () => {
+    if (!canRequestUndo) {
+      toast({
+        title: 'Undo unavailable',
+        description: 'You need to make a move before requesting an undo.',
+        status: 'info',
+        duration: 4000,
+      });
+      return;
+    }
+    setRequestingUndo.on();
+    try {
+      await onRequestUndo();
+      toast({ title: 'Undo request sent', status: 'info' });
+    } catch (error) {
+      toast({
+        title: 'Unable to request undo',
+        status: 'error',
+        description: error instanceof Error ? error.message : 'Please try again.',
+      });
+    } finally {
+      setRequestingUndo.off();
+    }
+  }, [canRequestUndo, onRequestUndo, setRequestingUndo, toast]);
+
+  const undoBanner = useMemo(() => {
+    if (!undoState) {
+      return null;
+    }
+    const moveNumber = undoState.moveIndex + 1;
+    if (undoState.status === 'pending') {
+      const requestedByMe = undoState.requestedBy === role;
+      return (
+        <Alert status="info" variant="left-accent" borderRadius="md">
+          <AlertIcon />
+          <Stack spacing={1} flex="1">
+            <AlertTitle fontSize="sm">Undo request pending</AlertTitle>
+            <AlertDescription fontSize="sm">
+              {requestedByMe
+                ? 'Waiting for your opponent to respond.'
+                : `Opponent requested to undo move #${moveNumber}.`}
+            </AlertDescription>
+          </Stack>
+        </Alert>
+      );
+    }
+    const status = undoState.status === 'applied' ? 'success' : 'warning';
+    const title = undoState.status === 'applied' ? 'Move undone' : 'Undo declined';
+    const description =
+      undoState.status === 'applied'
+        ? `Move #${moveNumber} has been reverted.`
+        : 'Your opponent declined the undo request.';
+    return (
+      <Alert status={status} variant="left-accent" borderRadius="md">
+        <AlertIcon />
+        <Flex flex="1" align="center" justify="space-between" gap={3} direction={{ base: 'column', md: 'row' }}>
+          <Stack spacing={1} flex="1">
+            <AlertTitle fontSize="sm">{title}</AlertTitle>
+            <AlertDescription fontSize="sm">{description}</AlertDescription>
+          </Stack>
+          <CloseButton size="sm" alignSelf={{ base: 'flex-end', md: 'center' }} onClick={onClearUndo} />
+        </Flex>
+      </Alert>
+    );
+  }, [onClearUndo, role, undoState]);
+
   // Use the shared Santorini instance from provider
   const santorini = useOnlineSantorini({
     match: lobbyMatch,
@@ -475,6 +576,9 @@ function ActiveMatchContent({
   const opponentClock = santorini.formatClock(santorini.opponentClockMs);
   const creatorTurnActive = santorini.currentTurn === 'creator';
   const opponentTurnActive = santorini.currentTurn === 'opponent';
+  const isMyTurn = role === 'creator' ? creatorTurnActive : role === 'opponent' ? opponentTurnActive : false;
+  const turnGlowColor = role === 'creator' ? 'green.400' : role === 'opponent' ? 'red.400' : undefined;
+  const undoDisabledOverride = !canRequestUndo;
   const startingRole = useMemo(
     () => deriveStartingRole(lobbyMatch?.initial_state),
     [lobbyMatch?.initial_state],
@@ -637,31 +741,24 @@ function ActiveMatchContent({
           <Grid templateColumns={{ base: '1fr', xl: '1.2fr 0.8fr' }} gap={8} alignItems="flex-start">
             <GridItem>
               <VStack spacing={4} align="stretch">
-                <Box
-                  bg={panelBg}
-                  borderRadius="xl"
-                  borderWidth="1px"
-                  borderColor={cardBorder}
-                  p={{ base: 2, md: 3 }}
-                  display="flex"
-                  justifyContent="center"
-                >
-                  {/* TODO: Implement online undo request flow */}
-                  <GameBoard
-                    board={santorini.board}
-                    selectable={santorini.selectable}
-                    cancelSelectable={santorini.cancelSelectable}
-                    onCellClick={santorini.onCellClick}
-                    onCellHover={santorini.onCellHover}
-                    onCellLeave={santorini.onCellLeave}
-                    buttons={santorini.buttons}
-                    undo={santorini.undo}
-                    redo={santorini.redo}
-                    undoLabel="Request undo"
-                    hideRedoButton
-                    undoDisabledOverride
-                  />
-                </Box>
+                <OnlineBoardSection
+                  board={santorini.board}
+                  selectable={santorini.selectable}
+                  cancelSelectable={santorini.cancelSelectable}
+                  onCellClick={santorini.onCellClick}
+                  onCellHover={santorini.onCellHover}
+                  onCellLeave={santorini.onCellLeave}
+                  buttons={santorini.buttons}
+                  undo={handleRequestUndo}
+                  redo={santorini.redo}
+                  undoLabel="Request undo"
+                  hideRedoButton
+                  undoDisabledOverride={undoDisabledOverride}
+                  undoIsLoading={requestingUndo}
+                  isTurnActive={isMyTurn}
+                  turnHighlightColor={turnGlowColor}
+                />
+                {undoBanner}
                 <Stack
                   direction={{ base: 'column', sm: 'row' }}
                   spacing={{ base: 3, sm: 4 }}
@@ -1298,6 +1395,9 @@ function PlayWorkspace({ auth }: { auth: SupabaseAuthState }) {
         currentUserId={auth.profile?.id ?? null}
         onlineEnabled={lobby.onlineEnabled}
         enginePreference={auth.profile?.engine_preference ?? 'python'}
+        undoRequests={lobby.undoRequests}
+        onRequestUndo={lobby.requestUndo}
+        onClearUndo={lobby.clearUndoRequest}
       />
     </Stack>
   );

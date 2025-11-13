@@ -65,7 +65,7 @@ import { useBrowserNotifications } from '@hooks/useBrowserNotifications';
 import { usePushSubscription } from '@hooks/usePushSubscription';
 import { useMatchVisibilityReporter } from '@hooks/useMatchVisibilityReporter';
 import { useMatchChat } from '@hooks/useMatchChat';
-import GameBoard from '@components/GameBoard';
+import OnlineBoardSection from '@components/play/OnlineBoardSection';
 import ConnectionIndicator from '@components/play/ConnectionIndicator';
 import { MatchChatPanel } from '@components/play/MatchChatPanel';
 import type { SantoriniMoveAction, MatchStatus, PlayerProfile } from '@/types/match';
@@ -945,38 +945,30 @@ function ActiveMatchContent({
         gap={{ base: 6, lg: 4 }}
       >
         <Flex direction="column" align="center" flex="1" w="100%">
-          <Box
-            bg={{ base: 'transparent', md: panelBg }}
-            borderRadius={{ base: 'none', md: 'xl' }}
-            borderWidth={{ base: 0, md: '1px' }}
-            borderColor={{ base: 'transparent', md: cardBorder }}
-            p={{ base: 0, md: 3 }}
-            display="flex"
-            justifyContent="center"
-            w="100%"
-            maxW="960px"
-            mx={{ base: -3, md: 0 }}
-            boxShadow={{ base: 'none', md: 'md' }}
-            overflow="hidden"
-          >
-            <GameBoard
-              board={santorini.board}
-              selectable={santorini.selectable}
-              cancelSelectable={santorini.cancelSelectable}
-              onCellClick={santorini.onCellClick}
-              onCellHover={santorini.onCellHover}
-              onCellLeave={santorini.onCellLeave}
-              buttons={santorini.buttons}
-              undo={handleRequestUndo}
-              redo={santorini.redo}
-              undoLabel="Request undo"
-              hideRedoButton
-              undoDisabledOverride={undoDisabledOverride}
-              undoIsLoading={requestingUndo}
-              isTurnActive={isMyTurn}
-              turnHighlightColor={turnGlowColor}
-            />
-          </Box>
+          <OnlineBoardSection
+            variant="responsive"
+            containerProps={{
+              w: '100%',
+              maxW: '960px',
+              mx: { base: -3, md: 0 },
+              overflow: 'hidden',
+            }}
+            board={santorini.board}
+            selectable={santorini.selectable}
+            cancelSelectable={santorini.cancelSelectable}
+            onCellClick={santorini.onCellClick}
+            onCellHover={santorini.onCellHover}
+            onCellLeave={santorini.onCellLeave}
+            buttons={santorini.buttons}
+            undo={handleRequestUndo}
+            redo={santorini.redo}
+            undoLabel="Request undo"
+            hideRedoButton
+            undoDisabledOverride={undoDisabledOverride}
+            undoIsLoading={requestingUndo}
+            isTurnActive={isMyTurn}
+            turnHighlightColor={turnGlowColor}
+          />
 
           {undoBanner}
         </Flex>

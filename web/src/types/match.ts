@@ -38,6 +38,8 @@ export interface MatchRecord {
   winner_id: string | null;
   rematch_parent_id: string | null;
   created_at: string;
+  updated_at?: string;
+  clock_updated_at?: string | null;
   initial_state: SantoriniStateSnapshot;
 }
 
