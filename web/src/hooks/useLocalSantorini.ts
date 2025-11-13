@@ -1,16 +1,8 @@
 import { useCallback, useMemo, useState, useRef, useEffect } from 'react';
 import { SantoriniEngine, type SantoriniSnapshot, type PlacementContext } from '@/lib/santoriniEngine';
 import { TypeScriptMoveSelector } from '@/lib/moveSelectorTS';
-import { renderCellSvg } from '@game/svg';
 import { useToast } from '@chakra-ui/react';
-
-export interface BoardCell {
-  worker: number;
-  level: number;
-  levels: number;
-  svg: string;
-  highlight: boolean;
-}
+import { createBoardViewFromSnapshot, createEmptyMask, type BoardCell } from '@game/boardView';
 
 /**
  * TypeScript-based LOCAL Santorini hook (human vs human, no AI)
@@ -18,27 +10,6 @@ export interface BoardCell {
  * NO PYTHON/PYODIDE! Pure TypeScript for instant loading.
  * For AI features, use useSantorini.tsx instead.
  */
-
-function engineToBoard(snapshot: SantoriniSnapshot): BoardCell[][] {
-  const board: BoardCell[][] = [];
-  for (let y = 0; y < 5; y++) {
-    const row: BoardCell[] = [];
-    for (let x = 0; x < 5; x++) {
-      const cell = snapshot.board[y][x];
-      const worker = cell[0] || 0;
-      const level = cell[1] || 0;
-      row.push({
-        worker,
-        level,
-        levels: level,
-        svg: renderCellSvg({ levels: level, worker }),
-        highlight: false,
-      });
-    }
-    board.push(row);
-  }
-  return board;
-}
 
 function computeSelectable(
   validMoves: boolean[],
@@ -76,7 +47,7 @@ export function useLocalSantorini() {
   // NOTE: engineRef is the SINGLE SOURCE OF TRUTH for game state
   const engineRef = useRef<SantoriniEngine>(SantoriniEngine.createInitial().engine);
   const [engineVersion, setEngineVersion] = useState(0);
-  const [board, setBoard] = useState<BoardCell[][]>(() => engineToBoard(engineRef.current.snapshot));
+  const [board, setBoard] = useState<BoardCell[][]>(() => createBoardViewFromSnapshot(engineRef.current.snapshot));
   const moveSelectorRef = useRef<TypeScriptMoveSelector>(new TypeScriptMoveSelector());
   const [selectable, setSelectable] = useState<boolean[][]>(() =>
     computeSelectable(
@@ -86,9 +57,7 @@ export function useLocalSantorini() {
       engineRef.current.getPlacementContext(),
     ),
   );
-  const [cancelSelectable, setCancelSelectable] = useState<boolean[][]>(
-    Array.from({ length: 5 }, () => Array(5).fill(false)),
-  );
+  const [cancelSelectable, setCancelSelectable] = useState<boolean[][]>(() => createEmptyMask());
   const [history, setHistory] = useState<Array<{ action: number; description: string }>>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const processingMoveRef = useRef<boolean>(false);
@@ -96,22 +65,27 @@ export function useLocalSantorini() {
   // Helper function to atomically update engine and derived state
   const updateEngineState = useCallback((newEngine: SantoriniEngine) => {
     engineRef.current = newEngine;
-    const newBoard = engineToBoard(newEngine.snapshot);
+    const newBoard = createBoardViewFromSnapshot(newEngine.snapshot);
     const newSelectable = computeSelectable(
       newEngine.getValidMoves(),
       newEngine.snapshot,
       moveSelectorRef.current,
       newEngine.getPlacementContext()
     );
-    const cancelMask = Array.from({ length: 5 }, () => Array(5).fill(false));
-    const sel = moveSelectorRef.current as any;
-    if (sel.stage === 1) {
-      if (sel.workerY >= 0 && sel.workerY < 5 && sel.workerX >= 0 && sel.workerX < 5) {
-        cancelMask[sel.workerY][sel.workerX] = true;
+    const cancelMask = createEmptyMask();
+    const selector = moveSelectorRef.current;
+    const stage = selector.getStage();
+    const workerSelection = selector.getSelectedWorker();
+    const moveSelection = selector.getMoveDestination();
+    if (stage === 1 && workerSelection) {
+      const { y, x } = workerSelection;
+      if (y >= 0 && y < 5 && x >= 0 && x < 5) {
+        cancelMask[y][x] = true;
       }
-    } else if (sel.stage === 2) {
-      if (sel.newY >= 0 && sel.newY < 5 && sel.newX >= 0 && sel.newX < 5) {
-        cancelMask[sel.newY][sel.newX] = true;
+    } else if (stage === 2 && moveSelection) {
+      const { y, x } = moveSelection;
+      if (y >= 0 && y < 5 && x >= 0 && x < 5) {
+        cancelMask[y][x] = true;
       }
     }
     
@@ -209,11 +183,14 @@ export function useLocalSantorini() {
       setSelectable(
         computeSelectable(validMoves, engine.snapshot, moveSelector, engine.getPlacementContext()),
       );
-      const cancelMask = Array.from({ length: 5 }, () => Array(5).fill(false));
-      if (moveSelector.stage === 1) {
-        cancelMask[(moveSelector as any).workerY][(moveSelector as any).workerX] = true;
-      } else if (moveSelector.stage === 2) {
-        cancelMask[(moveSelector as any).newY][(moveSelector as any).newX] = true;
+      const cancelMask = createEmptyMask();
+      const stage = moveSelector.getStage();
+      const workerSelection = moveSelector.getSelectedWorker();
+      const moveSelection = moveSelector.getMoveDestination();
+      if (stage === 1 && workerSelection) {
+        cancelMask[workerSelection.y][workerSelection.x] = true;
+      } else if (stage === 2 && moveSelection) {
+        cancelMask[moveSelection.y][moveSelection.x] = true;
       }
       setCancelSelectable(cancelMask);
       
@@ -339,4 +316,3 @@ export function useLocalSantorini() {
     controls,
   };
 }
-

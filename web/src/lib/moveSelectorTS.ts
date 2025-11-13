@@ -165,6 +165,24 @@ export class TypeScriptMoveSelector {
     }
     return -1;
   }
+
+  getStage(): number {
+    return this.stage;
+  }
+
+  getSelectedWorker(): WorkerPosition | null {
+    if (this.stage >= 1) {
+      return { y: this.workerY, x: this.workerX };
+    }
+    return null;
+  }
+
+  getMoveDestination(): WorkerPosition | null {
+    if (this.stage >= 2) {
+      return { y: this.newY, x: this.newX };
+    }
+    return null;
+  }
   
   /**
    * Compute which cells should be highlighted based on current stage

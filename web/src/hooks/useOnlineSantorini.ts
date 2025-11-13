@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SantoriniEngine, type SantoriniSnapshot, type PlacementContext } from '@/lib/santoriniEngine';
 import { TypeScriptMoveSelector } from '@/lib/moveSelectorTS';
-import { renderCellSvg } from '@game/svg';
+import { createBoardViewFromSnapshot, createEmptyMask, type BoardCell } from '@game/boardView';
 import type { LobbyMatch } from './useMatchLobby';
 import type { MatchAction, MatchMoveRecord, SantoriniMoveAction } from '@/types/match';
 import { useToast } from '@chakra-ui/react';
@@ -17,14 +17,6 @@ export interface UseOnlineSantoriniOptions {
 interface ClockState {
   creatorMs: number;
   opponentMs: number;
-}
-
-export interface BoardCell {
-  worker: number;
-  level: number;
-  levels: number;
-  svg: string;
-  highlight: boolean;
 }
 
 interface PendingLocalMove {
@@ -88,27 +80,6 @@ const getNextMoveIndexFromRecords = (records: MatchMoveRecord<MatchAction>[]): n
   return maxMoveIndex + 1;
 };
 
-function engineToBoard(snapshot: SantoriniSnapshot): BoardCell[][] {
-  const board: BoardCell[][] = [];
-  for (let y = 0; y < 5; y++) {
-    const row: BoardCell[] = [];
-    for (let x = 0; x < 5; x++) {
-      const cell = snapshot.board[y][x];
-      const worker = cell[0] || 0;
-      const level = cell[1] || 0;
-      row.push({
-        worker,
-        level,
-        levels: level,
-        svg: renderCellSvg({ levels: level, worker }),
-        highlight: false,
-      });
-    }
-    board.push(row);
-  }
-  return board;
-}
-
 function computeSelectable(
   validMoves: boolean[],
   snapshot: SantoriniSnapshot,
@@ -153,7 +124,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
   // The state variables are only for triggering React re-renders
   const engineRef = useRef<SantoriniEngine>(SantoriniEngine.createInitial().engine);
   const [engineVersion, setEngineVersion] = useState(0); // Trigger re-renders when engine changes
-  const [board, setBoard] = useState<BoardCell[][]>(() => engineToBoard(engineRef.current.snapshot));
+  const [board, setBoard] = useState<BoardCell[][]>(() => createBoardViewFromSnapshot(engineRef.current.snapshot));
   const moveSelectorRef = useRef<TypeScriptMoveSelector>(new TypeScriptMoveSelector());
   const [selectable, setSelectable] = useState<boolean[][]>(() =>
     computeSelectable(
@@ -164,9 +135,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       engineRef.current.getPlacementContext(),
     ),
   );
-  const [cancelSelectable, setCancelSelectable] = useState<boolean[][]>(
-    Array.from({ length: 5 }, () => Array(5).fill(false)),
-  );
+  const [cancelSelectable, setCancelSelectable] = useState<boolean[][]>(() => createEmptyMask());
   
   // Clock state
   const [clock, setClock] = useState<ClockState>(() => deriveInitialClocks(match));
@@ -194,28 +163,27 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
   // Helper function to atomically update engine and derived state
   const updateEngineState = useCallback((newEngine: SantoriniEngine, myTurn: boolean) => {
     engineRef.current = newEngine;
-    const newBoard = engineToBoard(newEngine.snapshot);
-    const newSelectable = myTurn 
+    const newBoard = createBoardViewFromSnapshot(newEngine.snapshot);
+    const newSelectable = myTurn
       ? computeSelectable(
           newEngine.getValidMoves(),
           newEngine.snapshot,
           moveSelectorRef.current,
           true,
-          newEngine.getPlacementContext()
+          newEngine.getPlacementContext(),
         )
-      : Array.from({ length: 5 }, () => Array(5).fill(false));
+      : createEmptyMask();
     const newCancelSelectable = (() => {
-      if (!myTurn) return Array.from({ length: 5 }, () => Array(5).fill(false));
-      const mask = Array.from({ length: 5 }, () => Array(5).fill(false));
-      const sel = moveSelectorRef.current as any;
-      if (sel.stage === 1) {
-        if (sel.workerY >= 0 && sel.workerY < 5 && sel.workerX >= 0 && sel.workerX < 5) {
-          mask[sel.workerY][sel.workerX] = true;
-        }
-      } else if (sel.stage === 2) {
-        if (sel.newY >= 0 && sel.newY < 5 && sel.newX >= 0 && sel.newX < 5) {
-          mask[sel.newY][sel.newX] = true;
-        }
+      if (!myTurn) return createEmptyMask();
+      const mask = createEmptyMask();
+      const selector = moveSelectorRef.current;
+      const stage = selector.getStage();
+      const workerSelection = selector.getSelectedWorker();
+      const moveSelection = selector.getMoveDestination();
+      if (stage === 1 && workerSelection) {
+        mask[workerSelection.y][workerSelection.x] = true;
+      } else if (stage === 2 && moveSelection) {
+        mask[moveSelection.y][moveSelection.x] = true;
       }
       return mask;
     })();
@@ -486,7 +454,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       return;
     }
     const selector = moveSelectorRef.current;
-    if (selector.stage !== 0) {
+    if (selector.getStage() !== 0) {
       return;
     }
     const hasSelectable = selectable.some((row) => row.some(Boolean));
@@ -503,7 +471,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       engine.getPlacementContext(),
     );
     setSelectable(refreshedSelectable);
-    setCancelSelectable(Array.from({ length: 5 }, () => Array(5).fill(false)));
+    setCancelSelectable(createEmptyMask());
   }, [isMyTurn, match, role, selectable]);
 
   useEffect(() => {
@@ -513,8 +481,8 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
     const hasSelectable = selectable.some((row) => row.some(Boolean));
     const hasCancelSelectable = cancelSelectable.some((row) => row.some(Boolean));
     if (hasSelectable || hasCancelSelectable) {
-      setSelectable(Array.from({ length: 5 }, () => Array(5).fill(false)));
-      setCancelSelectable(Array.from({ length: 5 }, () => Array(5).fill(false)));
+      setSelectable(createEmptyMask());
+      setCancelSelectable(createEmptyMask());
     }
     moveSelectorRef.current.reset();
   }, [cancelSelectable, isMyTurn, selectable]);
@@ -746,10 +714,10 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
         currentTurn,
         isPlacementPhase,
         moveSelector: {
-          stage: moveSelectorRef.current.stage,
+          stage: moveSelectorRef.current.getStage(),
           workerIndex: moveSelectorRef.current.workerIndex,
-          workerY: moveSelectorRef.current.workerY,
-          workerX: moveSelectorRef.current.workerX,
+          workerY: moveSelectorRef.current.getSelectedWorker()?.y ?? null,
+          workerX: moveSelectorRef.current.getSelectedWorker()?.x ?? null,
         },
         cellWorker: engine.snapshot.board[y][x][0],
         cellLevel: engine.snapshot.board[y][x][1],
@@ -803,12 +771,12 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       try {
         const moveSelector = moveSelectorRef.current;
         console.log('🎮 Game phase click:', {
-          stage: moveSelector.stage,
+          stage: moveSelector.getStage(),
           player: engine.player,
           board_at_click: engine.snapshot.board[y][x],
         });
 
-        if (moveSelector.stage === 0) {
+        if (moveSelector.getStage() === 0) {
           const hasSelectable = selectable.some((row) => row.some(Boolean));
           if (!hasSelectable) {
             const refreshedSelectable = computeSelectable(
@@ -819,15 +787,16 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
               engine.getPlacementContext(),
             );
             setSelectable(refreshedSelectable);
-            setCancelSelectable(Array.from({ length: 5 }, () => Array(5).fill(false)));
+            setCancelSelectable(createEmptyMask());
           }
         }
 
         const clicked = moveSelector.click(y, x, engine.snapshot.board, validMoves, engine.player);
-        console.log('🎮 Click result:', clicked, 'New stage:', moveSelector.stage);
+        const updatedStage = moveSelector.getStage();
+        console.log('🎮 Click result:', clicked, 'New stage:', updatedStage);
         
         if (!clicked) {
-          console.warn('❌ Invalid selection at', {y, x}, 'stage:', moveSelector.stage);
+          console.warn('❌ Invalid selection at', { y, x }, 'stage:', updatedStage);
           toast({ title: 'Invalid selection', status: 'warning' });
           return;
         }
@@ -841,11 +810,13 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
           engine.getPlacementContext(),
         );
         setSelectable(nextSelectable);
-        const cancelMask = Array.from({ length: 5 }, () => Array(5).fill(false));
-        if (moveSelector.stage === 1) {
-          cancelMask[(moveSelector as any).workerY][(moveSelector as any).workerX] = true;
-        } else if (moveSelector.stage === 2) {
-          cancelMask[(moveSelector as any).newY][(moveSelector as any).newX] = true;
+        const cancelMask = createEmptyMask();
+        const workerSelection = moveSelector.getSelectedWorker();
+        const moveSelection = moveSelector.getMoveDestination();
+        if (updatedStage === 1 && workerSelection) {
+          cancelMask[workerSelection.y][workerSelection.x] = true;
+        } else if (updatedStage === 2 && moveSelection) {
+          cancelMask[moveSelection.y][moveSelection.x] = true;
         }
         setCancelSelectable(cancelMask);
         
@@ -885,7 +856,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
               engine.getPlacementContext(),
             );
             setSelectable(nextSel);
-            setCancelSelectable(Array.from({ length: 5 }, () => Array(5).fill(false)));
+            setCancelSelectable(createEmptyMask());
           }
         }
       } finally {

@@ -1,6 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { renderCellSvg, type CellState } from '@game/svg';
+import {
+  createBoardViewFromSnapshot,
+  createEmptyBoardView,
+  createEmptyMask,
+  type BoardCell,
+} from '@game/boardView';
 import { GAME_CONSTANTS } from '@game/constants';
 import type { SantoriniStateSnapshot, EnginePreference } from '@/types/match';
 import {
@@ -45,11 +50,6 @@ export interface UseSantoriniOptions {
 }
 
 
-export type BoardCell = CellState & {
-  svg: string;
-  highlight: boolean;
-};
-
 export type ButtonsState = {
   loading: boolean;
   canUndo: boolean;
@@ -93,13 +93,9 @@ export type Controls = {
   jumpToMove: (index: number) => Promise<void>;
 };
 
-const INITIAL_BOARD: BoardCell[][] = Array.from({ length: GAME_CONSTANTS.BOARD_SIZE }, () =>
-  Array.from({ length: GAME_CONSTANTS.BOARD_SIZE }, () => ({ levels: 0, worker: 0, svg: '', highlight: false })),
-);
+export type { BoardCell };
 
-const INITIAL_SELECTABLE = Array.from({ length: GAME_CONSTANTS.BOARD_SIZE }, () =>
-  Array.from({ length: GAME_CONSTANTS.BOARD_SIZE }, () => false),
-);
+const createEmptySelectable = () => createEmptyMask();
 
 type PyLike = {
   toJs?: (options?: { create_proxies?: boolean }) => unknown;
@@ -187,9 +183,9 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     storageNamespace = 'practice',
   } = options;
   const [loading, setLoading] = useState(false); // Start with UI enabled
-  const [board, setBoard] = useState<BoardCell[][]>(INITIAL_BOARD);
-  const [selectable, setSelectable] = useState<boolean[][]>(INITIAL_SELECTABLE);
-  const [cancelSelectable, setCancelSelectable] = useState<boolean[][]>(INITIAL_SELECTABLE);
+  const [board, setBoard] = useState<BoardCell[][]>(() => createEmptyBoardView());
+  const [selectable, setSelectable] = useState<boolean[][]>(() => createEmptySelectable());
+  const [cancelSelectable, setCancelSelectable] = useState<boolean[][]>(() => createEmptySelectable());
   const [buttons, setButtons] = useState<ButtonsState>({
     loading: false,
     canRedo: false,
@@ -367,20 +363,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
   // Helper to sync TypeScript engine state to UI and Python engine
   const syncEngineToUi = useCallback(() => {
     const snapshot = engineRef.current.snapshot;
-    const newBoard = Array.from({ length: 5 }, (_, y) =>
-      Array.from({ length: 5 }, (_, x) => {
-        const cell = snapshot.board[y][x];
-        const worker = cell[0] || 0;
-        const level = cell[1] || 0;
-        return {
-          worker,
-          level,
-          levels: level,
-          svg: renderCellSvg({ levels: level, worker }),
-          highlight: false,
-        };
-      })
-    );
+    const newBoard = createBoardViewFromSnapshot(snapshot);
     setBoard(newBoard);
     setNextPlayer(snapshot.player);
     
@@ -394,7 +377,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         Array.from({ length: 5 }, (_, x) => snapshot.board[y][x][0] === 0)
       );
       setSelectable(cells);
-      setCancelSelectable(INITIAL_SELECTABLE.map((row) => row.slice()));
+      setCancelSelectable(createEmptySelectable());
     } else {
       // During game phase, check if it's human's turn
       let isHumanTurn = true;
@@ -419,22 +402,23 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         setSelectable(newSelectable);
 
         // Compute cancel-selectable mask based on selector stage
-        const cancelMask = INITIAL_SELECTABLE.map((row) => row.slice());
-        const selector = moveSelectorRef.current as any;
-        if (selector.stage === 1) {
-          cancelMask[selector.workerY]?.[selector.workerX] && (cancelMask[selector.workerY][selector.workerX] = true);
-          if (!cancelMask[selector.workerY]) cancelMask[selector.workerY] = Array(5).fill(false);
-          cancelMask[selector.workerY][selector.workerX] = true;
-        } else if (selector.stage === 2) {
-          if (!cancelMask[selector.newY]) cancelMask[selector.newY] = Array(5).fill(false);
-          cancelMask[selector.newY][selector.newX] = true;
+        const cancelMask = createEmptySelectable();
+        const selector = moveSelectorRef.current;
+        const stage = selector.getStage();
+        const workerSelection = selector.getSelectedWorker();
+        const moveSelection = selector.getMoveDestination();
+        if (stage === 1 && workerSelection) {
+          const { y, x } = workerSelection;
+          cancelMask[y][x] = true;
+        } else if (stage === 2 && moveSelection) {
+          const { y, x } = moveSelection;
+          cancelMask[y][x] = true;
         }
         setCancelSelectable(cancelMask);
       } else {
         // AI's turn: clear selectable
-        const emptySelectable = Array.from({ length: 5 }, () => Array(5).fill(false));
-        setSelectable(emptySelectable);
-        setCancelSelectable(emptySelectable.map((row) => row.slice()));
+        setSelectable(createEmptySelectable());
+        setCancelSelectable(createEmptySelectable());
       }
     }
     
@@ -516,7 +500,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     const canUndo = engine.canUndo();
     const canRedo = engine.canRedo();
     
-    const stage = moveSelectorRef.current.stage;
+    const stage = moveSelectorRef.current.getStage();
     const placement = getPlacementContext();
 
     updateButtonsState((prev) => {
@@ -1047,11 +1031,14 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         setSelectable(newSelectable);
 
         // Update cancel-selectable highlighting
-        const cancelMask = INITIAL_SELECTABLE.map((row) => row.slice());
-        if (moveSelector.stage === 1) {
-          cancelMask[(moveSelector as any).workerY][(moveSelector as any).workerX] = true;
-        } else if (moveSelector.stage === 2) {
-          cancelMask[(moveSelector as any).newY][(moveSelector as any).newX] = true;
+        const cancelMask = createEmptySelectable();
+        const stage = moveSelector.getStage();
+        const workerSelection = moveSelector.getSelectedWorker();
+        const moveSelection = moveSelector.getMoveDestination();
+        if (stage === 1 && workerSelection) {
+          cancelMask[workerSelection.y][workerSelection.x] = true;
+        } else if (stage === 2 && moveSelection) {
+          cancelMask[moveSelection.y][moveSelection.x] = true;
         }
         setCancelSelectable(cancelMask);
         

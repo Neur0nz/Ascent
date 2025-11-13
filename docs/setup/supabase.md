@@ -78,49 +78,76 @@ Run each snippet in the SQL editor.
 ```sql
 alter table public.players enable row level security;
 
-create policy "Players can view their profile"
+create policy "Players - select access"
   on public.players for select
-  using (auth.uid() = auth_user_id);
+  using (true);
 
-create policy "Players can insert their profile"
+create policy "Players - insert self"
   on public.players for insert
-  with check (auth.uid() = auth_user_id);
+  with check (auth_user_id = (select auth.uid()));
 
-create policy "Players can update their profile"
+create policy "Players - update self"
   on public.players for update
-  using (auth.uid() = auth_user_id)
-  with check (auth.uid() = auth_user_id);
+  using (auth_user_id = (select auth.uid()))
+  with check (auth_user_id = (select auth.uid()));
 ```
 
 ### matches policies
 ```sql
 alter table public.matches enable row level security;
 
-create policy "Public matches are visible to everyone"
+create policy "Matches - select access"
   on public.matches for select
   using (
     visibility = 'public' or
-    creator_id in (select id from public.players where auth_user_id = auth.uid()) or
-    opponent_id in (select id from public.players where auth_user_id = auth.uid())
+    (visibility = 'private' and private_join_code is not null) or
+    exists (
+      select 1
+      from public.players p
+      where p.auth_user_id = (select auth.uid())
+        and (p.id = public.matches.creator_id or p.id = public.matches.opponent_id)
+    )
   );
 
-create policy "Creators can manage their matches"
+create policy "Matches - creator insert"
   on public.matches for insert
   with check (
-    creator_id in (select id from public.players where auth_user_id = auth.uid())
+    exists (
+      select 1
+      from public.players p
+      where p.id = public.matches.creator_id
+        and p.auth_user_id = (select auth.uid())
+    )
   );
 
-create policy "Participants can update their match"
+create policy "Matches - participant update"
   on public.matches for update
   using (
-    creator_id in (select id from public.players where auth_user_id = auth.uid()) or
-    opponent_id in (select id from public.players where auth_user_id = auth.uid())
+    exists (
+      select 1
+      from public.players p
+      where p.auth_user_id = (select auth.uid())
+        and (p.id = public.matches.creator_id or p.id = public.matches.opponent_id)
+    )
+    or (
+      public.matches.status = 'waiting_for_opponent'
+      and public.matches.opponent_id is null
+    )
   )
   with check (
-    creator_id in (select id from public.players where auth_user_id = auth.uid()) or
-    opponent_id in (select id from public.players where auth_user_id = auth.uid())
+    exists (
+      select 1
+      from public.players p
+      where p.auth_user_id = (select auth.uid())
+        and (p.id = public.matches.creator_id or p.id = public.matches.opponent_id)
+    )
   );
 ```
+
+Wrapping calls to `auth.uid()` (or any `auth.*` helper) in a scalar subquery
+– for example `(select auth.uid())` – matches the [Supabase RLS performance
+guidance](https://supabase.com/docs/guides/database/postgres/row-level-security#call-functions-with-select)
+and prevents Postgres from re-evaluating the function for every row scanned.
 
 ### match_moves policies
 ```sql
@@ -132,8 +159,8 @@ create policy "Participants can read moves"
     match_id in (
       select id from public.matches
       where
-        creator_id in (select id from public.players where auth_user_id = auth.uid()) or
-        opponent_id in (select id from public.players where auth_user_id = auth.uid()) or
+        creator_id in (select id from public.players where auth_user_id = (select auth.uid())) or
+        opponent_id in (select id from public.players where auth_user_id = (select auth.uid())) or
         visibility = 'public'
     )
   );

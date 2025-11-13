@@ -14,7 +14,8 @@ import {
   useBreakpointValue,
 } from '@chakra-ui/react';
 import { useEffect, useMemo, useState } from 'react';
-import type { BoardCell, ButtonsState } from '@hooks/useSantorini';
+import type { ButtonsState } from '@hooks/useSantorini';
+import type { BoardCell } from '@game/boardView';
 
 interface GameBoardProps {
   board: BoardCell[][];
@@ -63,7 +64,6 @@ function GameBoard({
   const subtleLabelColor = useColorModeValue('gray.500', 'whiteAlpha.600');
   const boardFrameBg = useColorModeValue('gray.100', 'blackAlpha.500');
   const defaultBorderColor = useColorModeValue('gray.300', 'whiteAlpha.300');
-  const highlightBorderColor = useColorModeValue('yellow.400', 'yellow.300');
   const buildingColor = useColorModeValue('gray.900', 'whiteAlpha.900');
   const boardSizeControlVisible = useBreakpointValue({ base: false, md: true });
   const [boardPixels, setBoardPixels] = useState<number>(() => {
@@ -87,7 +87,10 @@ function GameBoard({
     if (typeof window === 'undefined') {
       return;
     }
-    window.localStorage.setItem('santorini:boardSize', String(boardPixels));
+    const timeoutId = window.setTimeout(() => {
+      window.localStorage.setItem('santorini:boardSize', String(boardPixels));
+    }, 250);
+    return () => window.clearTimeout(timeoutId);
   }, [boardPixels]);
 
   const boardColumns = Math.max(1, board[0]?.length ?? board.length);
@@ -163,7 +166,6 @@ function GameBoard({
                   const isSelectable = selectable[y]?.[x];
                       const isCancelSelectable = cancelSelectable?.[y]?.[x];
                   const isSetupSelectable = buttons.setupMode && cell.worker === 0; // Empty cells during setup
-                  const highlight = cell.highlight;
                       const canClick = isSelectable || isCancelSelectable || isSetupSelectable;
                   return (
                     <GridItem key={`${y}-${x}`}>
@@ -183,8 +185,8 @@ function GameBoard({
                           onMouseLeave={() => onCellLeave(y, x)}
                           cursor={canClick ? 'pointer' : 'default'}
                           borderRadius="lg"
-                          borderWidth={highlight ? '3px' : '1px'}
-                          borderColor={highlight ? highlightBorderColor : defaultBorderColor}
+                          borderWidth="1px"
+                          borderColor={defaultBorderColor}
                           bg={
                             isSetupSelectable
                               ? setupSelectableBg
