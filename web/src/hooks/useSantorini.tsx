@@ -828,34 +828,35 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     await initPromise;
   }, [ensureWorkerClient, refreshEvaluation, restorePracticeSettings, restorePracticeState, startGuidedSetup, syncUi, updateButtonsState]);
 
-  const aiPlayIfNeeded = useCallback(async () => {
-    if (!evaluationEnabled) {
-      return;
-    }
+  const isAiTurnForPlayer = useCallback(
+    (player: number) => {
+      if (practiceMode === 'AI') {
+        return true;
+      }
+      if (practiceMode === 'P0') {
+        return player === 1;
+      }
+      if (practiceMode === 'P1') {
+        return player === 0;
+      }
+      return false;
+    },
+    [practiceMode],
+  );
 
+  const executeAiTurn = useCallback(async (): Promise<boolean> => {
     const engine = engineRef.current;
     const currentPlayer = engine.player;
-    let isAiTurn = false;
-    if (practiceMode === 'P0') {
-      isAiTurn = currentPlayer === 1;
-    } else if (practiceMode === 'P1') {
-      isAiTurn = currentPlayer === 0;
-    } else if (practiceMode === 'AI') {
-      isAiTurn = true;
+    if (!isAiTurnForPlayer(currentPlayer)) {
+      return false;
     }
-
-    if (!isAiTurn) {
-      return;
-    }
-
-    await updateButtons(true);
 
     const gameEnded = engine.getGameEnded();
     if (gameEnded[0] !== 0 || gameEnded[1] !== 0) {
-      await updateButtons(false);
-      return;
+      return false;
     }
 
+    await updateButtons(true);
     try {
       const client = workerClientRef.current ?? (await ensureWorkerClient());
       if (!client) {
@@ -865,7 +866,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       const bestAction = await client.guessBestAction();
       if (requestVersion !== wasmStateVersionRef.current) {
         console.warn('AI result ignored; state changed during request');
-        return;
+        return false;
       }
       if (bestAction == null) {
         throw new Error('AI did not return a move');
@@ -882,22 +883,39 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       refreshEvaluation().catch((error) => {
         console.error('Failed to refresh evaluation after importing state:', error);
       });
+      return true;
     } catch (error) {
       console.error('🤖 AI move failed:', error);
+      return false;
+    } finally {
+      await updateButtons(false);
     }
-
-    await updateButtons(false);
   }, [
     bumpWasmStateVersion,
     ensureWorkerClient,
-    evaluationEnabled,
-    practiceMode,
+    isAiTurnForPlayer,
     refreshEvaluation,
     syncPythonFromTypeScript,
     syncUi,
     updateButtons,
     updateSelectable,
   ]);
+
+  const aiPlayIfNeeded = useCallback(async () => {
+    if (!evaluationEnabled) {
+      return;
+    }
+    const chainTurns = practiceMode === 'AI';
+    while (true) {
+      const moved = await executeAiTurn();
+      if (!moved) {
+        break;
+      }
+      if (!chainTurns) {
+        break;
+      }
+    }
+  }, [evaluationEnabled, executeAiTurn, practiceMode]);
 
   const ensureAiIdle = useCallback(() => aiPromiseRef.current, []);
 
@@ -985,20 +1003,9 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       }
       
       // Check turn enforcement for game phase (not placement)
-      if (!placement && practiceMode !== 'Human') {
-        const currentPlayer = engine.player;
-        let isHumanTurn = true;
-        if (practiceMode === 'P0') {
-          isHumanTurn = currentPlayer === 0;
-        } else if (practiceMode === 'P1') {
-          isHumanTurn = currentPlayer === 1;
-        } else if (practiceMode === 'AI') {
-          isHumanTurn = false;
-        }
-        if (!isHumanTurn) {
-          toast({ title: "It's the AI's turn", status: 'info' });
-          return;
-        }
+      if (!placement && isAiTurnForPlayer(engine.player)) {
+        toast({ title: "It's the AI's turn", status: 'info' });
+        return;
       }
       
       // Placement phase (like local mode)
@@ -1065,7 +1072,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       editMode,
       ensureWorkerClient,
       finalizeGuidedSetup,
-      practiceMode,
+      isAiTurnForPlayer,
       persistPracticeState,
       syncEngineToUi,
       toast,
