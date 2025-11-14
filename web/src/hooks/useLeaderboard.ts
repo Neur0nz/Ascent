@@ -27,6 +27,7 @@ const FALLBACK_PROFILES: PlayerProfile[] = [
     created_at: '2024-01-04T10:00:00.000Z',
     updated_at: '2024-04-15T08:00:00.000Z',
     engine_preference: 'python',
+    show_coordinate_labels: true,
   },
   {
     id: 'sample-minos',
@@ -38,6 +39,7 @@ const FALLBACK_PROFILES: PlayerProfile[] = [
     created_at: '2024-02-11T13:00:00.000Z',
     updated_at: '2024-04-12T17:45:00.000Z',
     engine_preference: 'python',
+    show_coordinate_labels: true,
   },
   {
     id: 'sample-icarus',
@@ -49,6 +51,7 @@ const FALLBACK_PROFILES: PlayerProfile[] = [
     created_at: '2024-01-18T09:15:00.000Z',
     updated_at: '2024-04-14T22:30:00.000Z',
     engine_preference: 'python',
+    show_coordinate_labels: true,
   },
   {
     id: 'sample-nike',
@@ -60,6 +63,7 @@ const FALLBACK_PROFILES: PlayerProfile[] = [
     created_at: '2023-12-28T19:20:00.000Z',
     updated_at: '2024-04-10T14:40:00.000Z',
     engine_preference: 'python',
+    show_coordinate_labels: true,
   },
   {
     id: 'sample-dionysus',
@@ -71,6 +75,7 @@ const FALLBACK_PROFILES: PlayerProfile[] = [
     created_at: '2024-03-01T11:05:00.000Z',
     updated_at: '2024-04-16T09:12:00.000Z',
     engine_preference: 'python',
+    show_coordinate_labels: true,
   },
   {
     id: 'sample-hera',
@@ -82,6 +87,7 @@ const FALLBACK_PROFILES: PlayerProfile[] = [
     created_at: '2024-02-03T21:30:00.000Z',
     updated_at: '2024-04-18T07:50:00.000Z',
     engine_preference: 'python',
+    show_coordinate_labels: true,
   },
   {
     id: 'sample-orion',
@@ -93,6 +99,7 @@ const FALLBACK_PROFILES: PlayerProfile[] = [
     created_at: '2024-01-22T06:45:00.000Z',
     updated_at: '2024-04-17T12:25:00.000Z',
     engine_preference: 'python',
+    show_coordinate_labels: true,
   },
   {
     id: 'sample-hera2',
@@ -104,6 +111,7 @@ const FALLBACK_PROFILES: PlayerProfile[] = [
     created_at: '2024-03-07T16:05:00.000Z',
     updated_at: '2024-04-17T18:05:00.000Z',
     engine_preference: 'python',
+    show_coordinate_labels: true,
   },
   {
     id: 'sample-colossus',
@@ -115,6 +123,7 @@ const FALLBACK_PROFILES: PlayerProfile[] = [
     created_at: '2024-01-30T14:12:00.000Z',
     updated_at: '2024-04-13T20:35:00.000Z',
     engine_preference: 'python',
+    show_coordinate_labels: true,
   },
   {
     id: 'sample-hestia',
@@ -126,6 +135,7 @@ const FALLBACK_PROFILES: PlayerProfile[] = [
     created_at: '2024-02-14T09:45:00.000Z',
     updated_at: '2024-04-11T11:55:00.000Z',
     engine_preference: 'python',
+    show_coordinate_labels: true,
   },
 ] as const;
 
@@ -169,7 +179,9 @@ export function useLeaderboard(limit = 20) {
 
       const { data, error } = await supabase
         .from('players')
-        .select('id, auth_user_id, display_name, avatar_url, rating, games_played, created_at, updated_at, engine_preference')
+        .select(
+          'id, auth_user_id, display_name, avatar_url, rating, games_played, created_at, updated_at, engine_preference, show_coordinate_labels',
+        )
         .order('rating', { ascending: false })
         .limit(limit);
 

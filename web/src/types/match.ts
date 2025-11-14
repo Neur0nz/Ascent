@@ -23,6 +23,7 @@ export interface PlayerProfile {
   created_at: string;
   updated_at: string;
   engine_preference: EnginePreference;
+  show_coordinate_labels: boolean;
 }
 
 export interface MatchRecord {

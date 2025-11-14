@@ -180,8 +180,8 @@ serve(async (req) => {
     .from('matches')
     .insert(insertPayload)
     .select(
-      '*, creator:creator_id (id, auth_user_id, display_name, rating, games_played, created_at, updated_at), ' +
-        'opponent:opponent_id (id, auth_user_id, display_name, rating, games_played, created_at, updated_at)',
+      '*, creator:creator_id (id, auth_user_id, display_name, rating, games_played, created_at, updated_at, show_coordinate_labels), ' +
+        'opponent:opponent_id (id, auth_user_id, display_name, rating, games_played, created_at, updated_at, show_coordinate_labels)',
     )
     .single();
 

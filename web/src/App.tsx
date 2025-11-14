@@ -31,6 +31,7 @@ import AnalyzeWorkspace from '@components/analyze/AnalyzeWorkspace';
 import ProfileWorkspace from '@components/profile/ProfileWorkspace';
 import LeaderboardWorkspace from '@components/leaderboard/LeaderboardWorkspace';
 import { MatchLobbyProvider, useMatchLobbyContext } from '@hooks/matchLobbyContext';
+import { BoardPreferencesProvider } from '@hooks/useBoardPreferences';
 import { AuthLoadingScreen } from '@components/auth/AuthLoadingScreen';
 import EvaluationJobToasts from '@components/analyze/EvaluationJobToasts';
 
@@ -429,7 +430,8 @@ function App() {
   }
 
   return (
-    <MatchLobbyProvider profile={auth.profile}>
+    <BoardPreferencesProvider value={{ showCoordinateLabels: auth.profile?.show_coordinate_labels ?? true }}>
+      <MatchLobbyProvider profile={auth.profile}>
       <MatchLobbySideEffects
         profileId={auth.profile?.id ?? null}
         onNavigateToPlay={() => setActiveTab('play')}
@@ -505,7 +507,8 @@ function App() {
           </Flex>
         </Flex>
       </Tabs>
-    </MatchLobbyProvider>
+      </MatchLobbyProvider>
+    </BoardPreferencesProvider>
   );
 }
 

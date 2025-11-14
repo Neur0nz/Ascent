@@ -269,10 +269,11 @@ function EvaluationPanel({
           </Box>
           <Box mt={movesDisclosure.isOpen ? 0 : -6}>
             <Collapse in={movesDisclosure.isOpen} animateOpacity>
-              <Stack spacing={3} mt={2}>
-                <HStack spacing={2} align="center" flexWrap="wrap">
-                  <Select
-                    size="sm"
+              <Box mt={2} maxH="240px" overflowY="auto" pr={1}>
+                <Stack spacing={3}>
+                  <HStack spacing={2} align="center" flexWrap="wrap">
+                    <Select
+                      size="sm"
                     maxW="180px"
                     value={optionsSelectValue}
                     onChange={(event) => {
@@ -340,7 +341,8 @@ function EvaluationPanel({
                     </Box>
                   );
                 })}
-              </Stack>
+                </Stack>
+              </Box>
             </Collapse>
           </Box>
             </Stack>

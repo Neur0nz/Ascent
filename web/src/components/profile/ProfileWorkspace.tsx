@@ -37,6 +37,7 @@ import {
   SliderThumb,
   SliderTrack,
   Stack,
+  Switch,
   Text,
   useBoolean,
   useColorModeValue,
@@ -114,6 +115,7 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
     updateDisplayName,
     updateAvatar,
     updateEnginePreference,
+    updateCoordinatePreference,
     refreshProfile,
   } = auth;
   const [savingName, setSavingName] = useBoolean(false);
@@ -122,10 +124,12 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
   const [retrying, setRetrying] = useBoolean(false);
   const [savingAvatar, setSavingAvatar] = useBoolean(false);
   const [savingEnginePreference, setSavingEnginePreference] = useBoolean(false);
+  const [savingCoordinatePreference, setSavingCoordinatePreference] = useBoolean(false);
   const [displayNameValue, setDisplayNameValue] = useState('');
   const [nameError, setNameError] = useState<string | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [enginePreference, setEnginePreference] = useState<EnginePreference>('python');
+  const [showCoordinateLabels, setShowCoordinateLabels] = useState(true);
   const { isOpen: isCropOpen, onOpen: openCrop, onClose: closeCrop } = useDisclosure();
   const [cropImageUrl, setCropImageUrl] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -160,6 +164,10 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
   useEffect(() => {
     setEnginePreference(profile?.engine_preference ?? 'python');
   }, [profile?.engine_preference]);
+
+  useEffect(() => {
+    setShowCoordinateLabels(profile?.show_coordinate_labels ?? true);
+  }, [profile?.show_coordinate_labels]);
 
   useEffect(() => {
     setAvatarPreview(null);
@@ -246,6 +254,33 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
       setEnginePreference(profile.engine_preference);
     } finally {
       setSavingEnginePreference.off();
+    }
+  };
+
+  const handleSaveCoordinatePreference = async () => {
+    if (!profile || showCoordinateLabels === profile.show_coordinate_labels) {
+      return;
+    }
+    setSavingCoordinatePreference.on();
+    try {
+      await updateCoordinatePreference(showCoordinateLabels);
+      toast({
+        title: 'Board preference updated',
+        status: 'success',
+        description: showCoordinateLabels
+          ? 'Coordinates will appear on the board edges.'
+          : 'Coordinates will stay hidden until you re-enable them.',
+      });
+    } catch (updateError) {
+      const description = updateError instanceof Error ? updateError.message : 'Unable to update board preference.';
+      toast({
+        title: 'Update failed',
+        status: 'error',
+        description,
+      });
+      setShowCoordinateLabels(profile.show_coordinate_labels);
+    } finally {
+      setSavingCoordinatePreference.off();
     }
   };
 
@@ -657,6 +692,7 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
 
   const displayNameChanged = Boolean(profile && displayNameValue.trim() !== profile.display_name);
   const enginePreferenceChanged = Boolean(profile && enginePreference !== profile.engine_preference);
+  const coordinatePreferenceChanged = Boolean(profile && showCoordinateLabels !== profile.show_coordinate_labels);
   const avatarSrc = avatarPreview
     ?? profile?.avatar_url
     ?? (typeof session?.user.user_metadata?.avatar_url === 'string' ? session.user.user_metadata.avatar_url : undefined);
@@ -818,6 +854,41 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
             isLoading={savingEnginePreference}
           >
             Save preference
+          </Button>
+        </CardBody>
+      </Card>
+      <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder} w="100%" mt={{ base: 6, md: 8 }}>
+        <CardBody as={Stack} spacing={5}>
+          <Stack spacing={1}>
+            <Heading size="sm" color={accentHeading}>
+              Board coordinates
+            </Heading>
+            <Text fontSize="sm" color={mutedText}>
+              Show file and rank letters on the Santorini board so it&rsquo;s easier to describe moves to your opponent.
+            </Text>
+          </Stack>
+          <FormControl display="flex" alignItems="center">
+            <FormLabel htmlFor="coordinate-labels-toggle" mb="0">
+              Show coordinate overlays
+            </FormLabel>
+            <Switch
+              id="coordinate-labels-toggle"
+              isChecked={showCoordinateLabels}
+              onChange={(event) => setShowCoordinateLabels(event.target.checked)}
+              colorScheme="teal"
+            />
+          </FormControl>
+          <Text fontSize="xs" color={mutedText}>
+            This preference syncs across devices and updates any board you view once saved.
+          </Text>
+          <Button
+            alignSelf="flex-start"
+            colorScheme="teal"
+            onClick={handleSaveCoordinatePreference}
+            isDisabled={!coordinatePreferenceChanged || savingCoordinatePreference}
+            isLoading={savingCoordinatePreference}
+          >
+            Save board setting
           </Button>
         </CardBody>
       </Card>

@@ -15,6 +15,7 @@ import {
 } from '@chakra-ui/react';
 import { useEffect, useMemo, useState } from 'react';
 import type { ButtonsState } from '@hooks/useSantorini';
+import { useBoardPreferences } from '@hooks/useBoardPreferences';
 import type { BoardCell } from '@game/boardView';
 
 export interface GameBoardProps {
@@ -35,7 +36,18 @@ export interface GameBoardProps {
   undoIsLoading?: boolean;
   isTurnActive?: boolean;
   turnHighlightColor?: string;
+  showCoordinates?: boolean;
 }
+
+const getColumnLabel = (index: number) => {
+  let position = index;
+  let label = '';
+  while (position >= 0) {
+    label = String.fromCharCode(65 + (position % 26)) + label;
+    position = Math.floor(position / 26) - 1;
+  }
+  return label;
+};
 
 function GameBoard({
   board,
@@ -55,7 +67,11 @@ function GameBoard({
   undoIsLoading = false,
   isTurnActive = false,
   turnHighlightColor,
+  showCoordinates,
 }: GameBoardProps) {
+  const { showCoordinateLabels: contextCoordinatePreference } = useBoardPreferences();
+  const coordinateOverlayEnabled =
+    typeof showCoordinates === 'boolean' ? showCoordinates : contextCoordinatePreference;
   const cellBg = useColorModeValue('gray.50', 'gray.700');
   const selectableBg = useColorModeValue('teal.100', 'teal.700');
   const cancelSelectableBg = useColorModeValue('orange.200', 'orange.700');
@@ -65,6 +81,12 @@ function GameBoard({
   const boardFrameBg = useColorModeValue('gray.100', 'blackAlpha.500');
   const defaultBorderColor = useColorModeValue('gray.300', 'whiteAlpha.300');
   const buildingColor = useColorModeValue('gray.900', 'whiteAlpha.900');
+  const coordinateLabelColor = useColorModeValue('gray.700', 'whiteAlpha.800');
+  const coordinateLabelBg = useColorModeValue('whiteAlpha.800', 'blackAlpha.600');
+  const coordinateLabelShadow = useColorModeValue(
+    '0 0 4px rgba(255, 255, 255, 0.8)',
+    '0 0 4px rgba(0, 0, 0, 0.9)',
+  );
   const boardSizeControlVisible = useBreakpointValue({ base: false, md: true });
   const [boardPixels, setBoardPixels] = useState<number>(() => {
     if (typeof window === 'undefined') {
@@ -106,10 +128,27 @@ function GameBoard({
     return () => window.clearTimeout(timeoutId);
   }, [boardPixels]);
 
-  const boardColumns = Math.max(1, board[0]?.length ?? board.length);
+  const boardRows = Math.max(1, board.length);
+  const boardColumns = Math.max(1, board[0]?.length ?? boardRows);
   const gridTemplateColumns = `repeat(${boardColumns}, 1fr)`;
 
   const boardMaxWidth = useMemo(() => `min(${boardPixels}px, 100vw)`, [boardPixels]);
+  const approxCellSize = useMemo(() => {
+    if (!boardColumns) {
+      return boardPixels / 5;
+    }
+    return boardPixels / boardColumns;
+  }, [boardPixels, boardColumns]);
+  const coordinateFontSize = useMemo(() => {
+    const base = approxCellSize * 0.2;
+    const clamped = Math.max(9, Math.min(base, 16));
+    return `${Math.round(clamped * 10) / 10}px`;
+  }, [approxCellSize]);
+  const coordinateOffset = useMemo(() => {
+    const base = approxCellSize * 0.04;
+    const clamped = Math.max(2, Math.min(base, 6));
+    return `${Math.round(clamped * 10) / 10}px`;
+  }, [approxCellSize]);
   const defaultGlowColor = useColorModeValue('teal.400', 'teal.200');
   const activeGlowColor = turnHighlightColor ?? defaultGlowColor;
   const boardBoxShadow = isTurnActive
@@ -177,9 +216,13 @@ function GameBoard({
               {board.map((row, y) =>
                 row.map((cell, x) => {
                   const isSelectable = selectable[y]?.[x];
-                      const isCancelSelectable = cancelSelectable?.[y]?.[x];
+                  const isCancelSelectable = cancelSelectable?.[y]?.[x];
                   const isSetupSelectable = buttons.setupMode && cell.worker === 0; // Empty cells during setup
-                      const canClick = isSelectable || isCancelSelectable || isSetupSelectable;
+                  const canClick = isSelectable || isCancelSelectable || isSetupSelectable;
+                  const columnLabel = getColumnLabel(x);
+                  const rowLabel = String(y + 1);
+                  const isBottomRow = y === boardRows - 1;
+                  const isRightmostColumn = x === boardColumns - 1;
                   return (
                     <GridItem key={`${y}-${x}`}>
                       <AspectRatio ratio={1} w="100%">
@@ -203,11 +246,11 @@ function GameBoard({
                           bg={
                             isSetupSelectable
                               ? setupSelectableBg
-                                  : isCancelSelectable
-                                    ? cancelSelectableBg
-                              : isSelectable
-                                ? selectableBg
-                                : cellBg
+                              : isCancelSelectable
+                                ? cancelSelectableBg
+                                : isSelectable
+                                  ? selectableBg
+                                  : cellBg
                           }
                           display="flex"
                           alignItems="center"
@@ -234,6 +277,44 @@ function GameBoard({
                             }}
                             dangerouslySetInnerHTML={{ __html: cell.svg }}
                           />
+                          {coordinateOverlayEnabled && isBottomRow && (
+                            <Text
+                              pointerEvents="none"
+                              position="absolute"
+                              bottom={coordinateOffset}
+                              left={coordinateOffset}
+                              fontSize={coordinateFontSize}
+                              fontWeight="semibold"
+                              color={coordinateLabelColor}
+                              bg={coordinateLabelBg}
+                              px="2px"
+                              py="1px"
+                              borderRadius="sm"
+                              lineHeight="shorter"
+                              textShadow={coordinateLabelShadow}
+                            >
+                              {columnLabel}
+                            </Text>
+                          )}
+                          {coordinateOverlayEnabled && isRightmostColumn && (
+                            <Text
+                              pointerEvents="none"
+                              position="absolute"
+                              top={coordinateOffset}
+                              right={coordinateOffset}
+                              fontSize={coordinateFontSize}
+                              fontWeight="semibold"
+                              color={coordinateLabelColor}
+                              bg={coordinateLabelBg}
+                              px="2px"
+                              py="1px"
+                              borderRadius="sm"
+                              lineHeight="shorter"
+                              textShadow={coordinateLabelShadow}
+                            >
+                              {rowLabel}
+                            </Text>
+                          )}
                         </Box>
                       </AspectRatio>
                     </GridItem>
