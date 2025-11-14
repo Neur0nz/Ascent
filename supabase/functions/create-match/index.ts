@@ -124,12 +124,13 @@ serve(async (req) => {
     startingPlayerOption = 'creator';
   }
   
-  let startingPlayerIndex = 0; // 0 = creator, 1 = opponent
+  let resolvedStartingRole: 'creator' | 'opponent' = 'creator';
   if (startingPlayerOption === 'opponent') {
-    startingPlayerIndex = 1;
+    resolvedStartingRole = 'opponent';
   } else if (startingPlayerOption === 'random') {
-    startingPlayerIndex = Math.random() < 0.5 ? 0 : 1;
+    resolvedStartingRole = Math.random() < 0.5 ? 'creator' : 'opponent';
   }
+  const playerZeroRole = resolvedStartingRole;
 
   const clockInitialSeconds = hasClock ? Math.max(0, Math.round(initialMinutes * 60)) : 0;
   const clockIncrementSeconds = hasClock ? Math.max(0, Math.round(incrementSeconds)) : 0;
@@ -199,8 +200,8 @@ serve(async (req) => {
 
   const joinCode = opponentType === 'human' && visibility === 'private' ? generateJoinCode() : null;
 
-  const { snapshot } = SantoriniEngine.createInitial(startingPlayerIndex);
-  console.log('Creating match with starting player:', startingPlayerIndex, 'from option:', startingPlayerOption);
+  const { snapshot } = SantoriniEngine.createInitial(0, { playerZeroRole });
+  console.log('Creating match with starting role:', playerZeroRole, 'from option:', startingPlayerOption);
 
   const insertPayload = {
     creator_id: profile.id,

@@ -17,6 +17,11 @@ const NB_GODS = 1;
 const ACTION_SIZE = NB_GODS * 2 * 9 * 9; // 162 total actions
 
 export type PlacementContext = { player: 0 | 1; workerId: 1 | 2 | -1 | -2 };
+export type PlayerRoleLabel = 'creator' | 'opponent';
+
+export interface SantoriniMetadata {
+  playerZeroRole?: PlayerRoleLabel;
+}
 
 const DIRECTIONS: Array<[number, number]> = [
   [-1, -1], [-1, 0], [-1, 1],
@@ -32,6 +37,7 @@ export interface SantoriniSnapshot {
   future: unknown[];
   gameEnded: [number, number];
   validMoves: boolean[];
+  metadata?: SantoriniMetadata;
 }
 
 interface InternalBoardState {
@@ -133,6 +139,7 @@ export class SantoriniEngine {
   private validMoves: boolean[];
   private history: HistoryEntry[];
   private future: HistoryEntry[]; // For redo support
+  private metadata?: SantoriniMetadata;
 
   private constructor(
     board: InternalBoardState,
@@ -140,6 +147,7 @@ export class SantoriniEngine {
     validMoves: boolean[],
     gameEnded: [number, number],
     initialStartingPlayer: 0 | 1,
+    metadata?: SantoriniMetadata,
   ) {
     this.workers = cloneGrid(board.workers);
     this.levels = cloneGrid(board.levels);
@@ -150,9 +158,13 @@ export class SantoriniEngine {
     this.validMoves = validMoves.slice();
     this.history = [];
     this.future = [];
+    this.metadata = metadata ? { ...metadata } : undefined;
   }
 
-  static createInitial(startingPlayer: number = 0): { engine: SantoriniEngine; snapshot: SantoriniSnapshot } {
+  static createInitial(
+    startingPlayer: number = 0,
+    metadata?: SantoriniMetadata,
+  ): { engine: SantoriniEngine; snapshot: SantoriniSnapshot } {
     const workers = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0));
     const levels = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0));
     const round = 0;
@@ -164,6 +176,7 @@ export class SantoriniEngine {
       Array(ACTION_SIZE).fill(false),
       [0, 0],
       player,
+      metadata,
     );
     // BUG FIX: Compute valid moves for the ACTUAL starting player, not always player 0
     const placementPlayer = engine.getNextPlacement()?.player ?? 0;
@@ -187,7 +200,10 @@ export class SantoriniEngine {
       Array.isArray(snapshot.gameEnded) ? Number(snapshot.gameEnded[1]) || 0 : 0,
     ];
     const sanitizedPlayer = player === 1 ? 1 : 0;
-    const engine = new SantoriniEngine(board, player, validMoves, gameEnded, sanitizedPlayer);
+    const metadata = snapshot && typeof snapshot.metadata === 'object'
+      ? { ...snapshot.metadata }
+      : undefined;
+    const engine = new SantoriniEngine(board, player, validMoves, gameEnded, sanitizedPlayer, metadata);
     // BUG FIX: During placement, compute valid moves for the player who should place, not currentPlayer
     const placementPlayer = engine.getNextPlacement()?.player ?? player;
     engine.validMoves = engine.computeValidMoves(placementPlayer);
@@ -446,6 +462,7 @@ export class SantoriniEngine {
       })),
       gameEnded: [this.gameEnded[0], this.gameEnded[1]],
       validMoves: this.validMoves.slice(),
+      metadata: this.metadata ? { ...this.metadata } : undefined,
     };
   }
 
@@ -566,10 +583,15 @@ export class SantoriniEngine {
 
   private getNextPlacement(): PlacementContext | null {
     const hasWorker = (id: number) => this.findWorker(id) !== null;
-    if (!hasWorker(1)) return { player: 0, workerId: 1 };
-    if (!hasWorker(2)) return { player: 0, workerId: 2 };
-    if (!hasWorker(-1)) return { player: 1, workerId: -1 };
-    if (!hasWorker(-2)) return { player: 1, workerId: -2 };
+    const playerOrder: Array<0 | 1> = [this.initialStartingPlayer, (1 - this.initialStartingPlayer) as 0 | 1];
+    for (const player of playerOrder) {
+      const workerIds: Array<1 | 2 | -1 | -2> = player === 0 ? [1, 2] : [-1, -2];
+      for (const workerId of workerIds) {
+        if (!hasWorker(workerId)) {
+          return { player, workerId: workerId as 1 | 2 | -1 | -2 };
+        }
+      }
+    }
     return null;
   }
 }

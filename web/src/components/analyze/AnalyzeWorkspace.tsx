@@ -79,6 +79,22 @@ const NUMERIC_PRESET_VALUES = new Set(
   EVALUATION_DEPTH_PRESETS.filter((preset) => preset.value !== 'ai').map((preset) => preset.value),
 );
 
+const toMoveArray = (move: number | number[] | null | undefined): number[] => {
+  if (Array.isArray(move)) {
+    return move.map((value) => Number(value)).filter((value) => Number.isInteger(value) && value >= 0);
+  }
+  return typeof move === 'number' && Number.isInteger(move) && move >= 0 ? [move] : [];
+};
+
+const formatMoveLabel = (action: SantoriniMoveAction | null | undefined): string => {
+  if (!action || action.kind !== 'santorini.move') {
+    return 'Move';
+  }
+  const moveValue = action.move;
+  const moveText = Array.isArray(moveValue) ? moveValue.join(', ') : moveValue;
+  return `Move ${moveText}`;
+};
+
 const DEFAULT_CUSTOM_DEPTH = 800;
 
 function describeMatch(match: LobbyMatch, profile: PlayerProfile | null) {
@@ -241,13 +257,15 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
             const lastIndex = Math.min(index, analysis.moves.length - 1);
             for (let i = 0; i <= lastIndex; i++) {
               const action = analysis.moves[i]?.action;
-              if (action && action.kind === 'santorini.move' && typeof action.move === 'number') {
-                try {
-                  playbackEngine.applyMove(action.move);
-                } catch (moveError) {
-                  console.warn('Skipping invalid move during replay', { index: i, move: action.move }, moveError);
-                  // Don't break - continue with partial replay
-                  // The snapshot will still be valid up to the last successful move
+              if (action && action.kind === 'santorini.move') {
+                const moveSequence = toMoveArray(action.move);
+                for (const value of moveSequence) {
+                  try {
+                    playbackEngine.applyMove(value);
+                  } catch (moveError) {
+                    console.warn('Skipping invalid move during replay', { index: i, move: value }, moveError);
+                    break;
+                  }
                 }
               }
             }
@@ -1015,7 +1033,7 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
                             >
                               <HStack justify="space-between" align="center">
                                 <Text fontWeight={isSelected ? 'bold' : 'semibold'} fontSize="sm">
-                                  {index + 1}. {move.action?.kind === 'santorini.move' ? `Move ${move.action.move}` : 'Move'}
+                                  {index + 1}. {formatMoveLabel(move.action as SantoriniMoveAction | undefined)}
                                 </Text>
                                 <Text fontSize="xs" color={helperText}>
                                   {new Date(move.created_at).toLocaleTimeString([], { 

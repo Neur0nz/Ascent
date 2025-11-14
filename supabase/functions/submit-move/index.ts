@@ -6,7 +6,7 @@ import { sendPushNotificationWithRetry, type StoredPushSubscription } from '../_
 
 interface SantoriniMoveAction {
   kind: 'santorini.move';
-  move: number;
+  move: number | number[];
   by?: 'creator' | 'opponent';
   clocks?: { creatorMs?: number; opponentMs?: number } | null;
 }
@@ -71,6 +71,24 @@ const MAX_ELAPSED_SAMPLE_MS = 12 * 60 * 60 * 1000; // clamp elapsed calculations
 
 type ServiceSupabaseClient = SupabaseClient<any, any, any>;
 type PlayerRole = 'creator' | 'opponent';
+
+function getPlayerZeroRole(metadata?: SantoriniStateSnapshot['metadata']): PlayerRole {
+  return metadata?.playerZeroRole === 'opponent' ? 'opponent' : 'creator';
+}
+
+function mapPlayerIndexToRole(index: number, metadata?: SantoriniStateSnapshot['metadata']): PlayerRole {
+  const sanitizedIndex: 0 | 1 = index === 1 ? 1 : 0;
+  const zeroRole = getPlayerZeroRole(metadata);
+  if (sanitizedIndex === 0) {
+    return zeroRole;
+  }
+  return zeroRole === 'creator' ? 'opponent' : 'creator';
+}
+
+function roleToPlayerIndex(role: PlayerRole, metadata?: SantoriniStateSnapshot['metadata']): 0 | 1 {
+  const zeroRole = getPlayerZeroRole(metadata);
+  return role === zeroRole ? 0 : 1;
+}
 
 interface CachedTokenEntry {
   userId: string;
@@ -181,6 +199,7 @@ function computeServerClocks(
   match: any,
   lastMove: any | null,
   actingPlayerIndex: number,
+  metadata?: SantoriniStateSnapshot['metadata'],
 ): ComputedClockState {
   const initialMs = getInitialClockMs(match);
   if (initialMs <= 0) {
@@ -217,17 +236,18 @@ function computeServerClocks(
     elapsedMs = MAX_ELAPSED_SAMPLE_MS;
   }
 
-  if (actingPlayerIndex === 0) {
+  const actingRole = mapPlayerIndexToRole(actingPlayerIndex, metadata);
+  if (actingRole === 'creator') {
     creatorMs = Math.max(0, creatorMs - elapsedMs);
-  } else if (actingPlayerIndex === 1) {
+  } else {
     opponentMs = Math.max(0, opponentMs - elapsedMs);
   }
 
   const incrementMs = getIncrementMs(match);
   if (incrementMs > 0) {
-    if (actingPlayerIndex === 0) {
+    if (actingRole === 'creator') {
       creatorMs += incrementMs;
-    } else if (actingPlayerIndex === 1) {
+    } else {
       opponentMs += incrementMs;
     }
   }
@@ -847,10 +867,6 @@ serve(async (req) => {
     return jsonResponse({ error: 'Unsupported action payload' }, { status: 400 });
   }
 
-  if (!Number.isInteger(payload.action.move) || payload.action.move < 0) {
-    return jsonResponse({ error: 'Move must be a non-negative integer' }, { status: 400 });
-  }
-
   const moveAction = payload.action as SantoriniMoveAction;
 
   let engine: SantoriniEngine;
@@ -877,29 +893,40 @@ serve(async (req) => {
 
   const placementContext = engine.getPlacementContext();
   const actingPlayerIndex = placementContext ? placementContext.player : engine.player;
-  const actingRole: PlayerRole = actingPlayerIndex === 0 ? 'creator' : 'opponent';
+  const actingRole: PlayerRole = mapPlayerIndexToRole(actingPlayerIndex, snapshot.metadata);
   const actingPlayerId = actingRole === 'creator' ? match.creator_id : match.opponent_id;
   if (!playerControlsAi) {
-    if (actingPlayerIndex === 0 && role !== 'creator') {
-      return jsonResponse({ error: "It is the creator's turn" }, { status: 403 });
-    }
-    if (actingPlayerIndex === 1 && role !== 'opponent') {
-      return jsonResponse({ error: "It is the opponent's turn" }, { status: 403 });
+    if (role !== actingRole) {
+      return jsonResponse({ error: actingRole === 'creator' ? "It is the creator's turn" : "It is the opponent's turn" }, { status: 403 });
     }
   } else if (!actingPlayerId) {
     return jsonResponse({ error: 'AI opponent is not fully initialized' }, { status: 409 });
   }
 
+  const movesToApply = Array.isArray(moveAction.move) ? moveAction.move : [moveAction.move];
   let applyResult;
   try {
     const validMoveCount = engine.snapshot.validMoves.filter((value) => Boolean(value)).length;
-    console.log('Applying move:', moveAction.move, 'for player:', actingPlayerIndex);
+    if (movesToApply.length === 0) {
+      throw new Error('Empty move payload');
+    }
+    if (movesToApply.some((value) => typeof value !== 'number' || !Number.isInteger(value))) {
+      throw new Error('Move payload must contain integers');
+    }
+    console.log('Applying move sequence:', movesToApply, 'for player:', actingPlayerIndex);
     console.log('Engine state before move - player:', engine.player, 'validMoves count:', validMoveCount);
-    applyResult = engine.applyMove(moveAction.move);
+    let lastResult: { snapshot: SantoriniStateSnapshot; winner: 0 | 1 | null } | null = null;
+    for (const singleMove of movesToApply) {
+      lastResult = engine.applyMove(singleMove);
+    }
+    if (!lastResult) {
+      throw new Error('Move sequence did not apply');
+    }
+    applyResult = lastResult;
     console.log('Move applied successfully, winner:', applyResult.winner);
   } catch (error) {
     console.error('Rejected illegal move', error);
-    console.error('Move was:', payload.action.move, 'Player:', actingPlayerIndex);
+    console.error('Move sequence was:', movesToApply, 'Player:', actingPlayerIndex);
     console.error('Engine player:', engine.player);
     const blocked = recordIllegalMoveAttempt(authContext.userId);
     const status = blocked ? 429 : 422;
@@ -909,7 +936,7 @@ serve(async (req) => {
     return jsonResponse({ error: message }, { status });
   }
 
-  const computedClocks = computeServerClocks(match, lastMove, actingPlayerIndex);
+  const computedClocks = computeServerClocks(match, lastMove, actingPlayerIndex, snapshot.metadata);
   if (computedClocks.clocks) {
     console.log('🕒  Applied clock state', computedClocks.clocks, 'after elapsedMs', computedClocks.elapsedMs);
   }
@@ -944,10 +971,9 @@ serve(async (req) => {
   clearIllegalMovePenalties(authContext.userId);
 
   let winnerId: string | null = null;
-  if (applyResult.winner === 0) {
-    winnerId = match.creator_id;
-  } else if (applyResult.winner === 1) {
-    winnerId = match.opponent_id;
+  if (applyResult.winner === 0 || applyResult.winner === 1) {
+    const winningRole = mapPlayerIndexToRole(applyResult.winner, snapshot.metadata);
+    winnerId = winningRole === 'creator' ? match.creator_id : match.opponent_id;
   }
 
   const clockUpdatedAt = new Date().toISOString();

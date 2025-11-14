@@ -138,8 +138,8 @@ function MatchCreationModal({
         const opponentName = createdMatch?.opponent?.display_name ?? 'Your opponent';
         const suffix = createdMatch?.opponent ? '' : ' once they join';
         description = usedRandom
-          ? `Random coin flip picked ${opponentName}${suffix} to move first as the red player.`
-          : `${opponentName}${suffix} will move first as the red player.`;
+          ? `Random coin flip picked ${opponentName}${suffix} to move first as the green player.`
+          : `${opponentName}${suffix} will move first as the green player.`;
       }
       toast({
         title: isAiMatch ? 'AI match started!' : 'Match created successfully!',
@@ -633,14 +633,24 @@ function ActiveMatchContent({
     onSubmitMove: onSubmitMove,
     onGameComplete: handleGameComplete,
   });
-  const creatorName = lobbyMatch?.creator?.display_name ?? 'Green player';
-  const opponentName = lobbyMatch?.opponent?.display_name ?? 'Red player';
+  const creatorName = lobbyMatch?.creator?.display_name ?? 'Creator';
+  const opponentName = lobbyMatch?.opponent?.display_name
+    ?? (lobbyMatch?.is_ai_match ? 'Santorini AI' : 'Waiting for opponent');
+  const playerZeroRole = lobbyMatch?.initial_state?.metadata?.playerZeroRole === 'opponent' ? 'opponent' : 'creator';
+  const greenRole = playerZeroRole;
+  const redRole = playerZeroRole === 'creator' ? 'opponent' : 'creator';
+  const greenPlayerName = greenRole === 'creator' ? creatorName : opponentName;
+  const redPlayerName = redRole === 'creator' ? creatorName : opponentName;
   const creatorClock = santorini.formatClock(santorini.creatorClockMs);
   const opponentClock = santorini.formatClock(santorini.opponentClockMs);
+  const greenClock = greenRole === 'creator' ? creatorClock : opponentClock;
+  const redClock = redRole === 'creator' ? creatorClock : opponentClock;
   const creatorTurnActive = santorini.currentTurn === 'creator';
   const opponentTurnActive = santorini.currentTurn === 'opponent';
+  const greenTurnActive = greenRole === 'creator' ? creatorTurnActive : opponentTurnActive;
+  const redTurnActive = redRole === 'creator' ? creatorTurnActive : opponentTurnActive;
   const isMyTurn = role === 'creator' ? creatorTurnActive : role === 'opponent' ? opponentTurnActive : false;
-  const turnGlowColor = role === 'creator' ? 'green.400' : role === 'opponent' ? 'red.400' : undefined;
+  const turnGlowColor = role ? (role === greenRole ? 'green.400' : 'red.400') : undefined;
   const undoDisabledOverride = !canRequestUndo;
   const startingRole = useMemo(
     () => deriveStartingRole(lobbyMatch?.initial_state),
@@ -648,16 +658,14 @@ function ActiveMatchContent({
   );
   const startingPlayerLabel = useMemo(() => {
     if (!startingRole) return null;
-    if (startingRole === 'creator') return creatorName;
-    if (!lobbyMatch?.opponent) return 'Opponent';
-    return opponentName;
-  }, [creatorName, lobbyMatch?.opponent, opponentName, startingRole]);
+    return startingRole === 'creator' ? creatorName : opponentName;
+  }, [creatorName, opponentName, startingRole]);
   const viewerStarts = Boolean(startingRole && role && startingRole === role);
   const startingSummary =
-    startingRole === 'creator'
-      ? `Green – ${creatorName}`
-      : startingRole === 'opponent'
-        ? `Red – ${opponentName}`
+    startingRole === greenRole
+      ? `Green – ${greenPlayerName}`
+      : startingRole === redRole
+        ? `Red – ${redPlayerName}`
         : null;
   const startingBadgeLabel = startingRole
     ? viewerStarts
@@ -731,6 +739,8 @@ function ActiveMatchContent({
     () => resolveConnectionState(lobbyMatch?.opponent_id),
     [lobbyMatch?.opponent_id, resolveConnectionState],
   );
+  const greenConnection = greenRole === 'creator' ? creatorConnection : opponentConnection;
+  const redConnection = redRole === 'creator' ? creatorConnection : opponentConnection;
 
   // Note: Abort feature hooks are available but UI implementation is minimal for now
   // Full implementation with request/response flow can be added later
@@ -759,7 +769,7 @@ function ActiveMatchContent({
                 </HStack>
                 <Text>vs</Text>
                 <HStack spacing={1} align="center">
-                  <Text>{lobbyMatch.opponent ? opponentName : 'Waiting for opponent'}</Text>
+                  <Text>{opponentName}</Text>
                   {lobbyMatch.opponent && opponentConnection && (
                     <ConnectionIndicator
                       status={opponentConnection.status}
@@ -775,7 +785,7 @@ function ActiveMatchContent({
           </Stack>
           <HStack spacing={3}>
             {startingRole && startingBadgeLabel && (
-              <Badge colorScheme={startingRole === 'creator' ? 'green' : 'red'}>
+              <Badge colorScheme={startingRole === greenRole ? 'green' : 'red'}>
                 {startingBadgeLabel}
               </Badge>
             )}
@@ -831,21 +841,21 @@ function ActiveMatchContent({
                 >
                   <VStack spacing={1} align={{ base: 'center', sm: 'flex-start' }} w="100%">
                     <Text fontSize="sm" color={mutedText}>
-                      {role === 'creator' ? 'Your clock (green pieces)' : 'Green player'}
+                      {role && role === greenRole ? 'Your clock (green pieces)' : `Green – ${greenPlayerName}`}
                     </Text>
-                    <Heading size="lg" color={creatorTurnActive ? accentHeading : strongText}>
-                      {creatorClock}
+                    <Heading size="lg" color={greenTurnActive ? accentHeading : strongText}>
+                      {greenClock}
                     </Heading>
                     <HStack spacing={1} justify={{ base: 'center', sm: 'flex-start' }}>
                       <Text fontSize="xs" color={helperText}>
-                        {creatorName}
+                        {greenPlayerName}
                       </Text>
-                      {creatorConnection && (
+                      {greenConnection && (
                         <ConnectionIndicator
-                          status={creatorConnection.status}
-                          lastSeen={creatorConnection.lastSeen}
-                          isSelf={creatorConnection.isSelf}
-                          activity={creatorConnection.activity}
+                          status={greenConnection.status}
+                          lastSeen={greenConnection.lastSeen}
+                          isSelf={greenConnection.isSelf}
+                          activity={greenConnection.activity}
                           size="xs"
                         />
                       )}
@@ -853,21 +863,21 @@ function ActiveMatchContent({
                   </VStack>
                   <VStack spacing={1} align={{ base: 'center', sm: 'flex-end' }} w="100%">
                     <Text fontSize="sm" color={mutedText} textAlign={{ base: 'center', sm: 'right' }}>
-                      {role === 'opponent' ? 'Your clock (red pieces)' : 'Red player'}
+                      {role && role === redRole ? 'Your clock (red pieces)' : `Red – ${redPlayerName}`}
                     </Text>
-                    <Heading size="lg" color={opponentTurnActive ? accentHeading : strongText}>
-                      {opponentClock}
+                    <Heading size="lg" color={redTurnActive ? accentHeading : strongText}>
+                      {redClock}
                     </Heading>
                     <HStack spacing={1} justify={{ base: 'center', sm: 'flex-end' }}>
                       <Text fontSize="xs" color={helperText}>
-                        {opponentName}
+                        {redPlayerName}
                       </Text>
-                      {opponentConnection && (
+                      {redConnection && (
                         <ConnectionIndicator
-                          status={opponentConnection.status}
-                          lastSeen={opponentConnection.lastSeen}
-                          isSelf={opponentConnection.isSelf}
-                          activity={opponentConnection.activity}
+                          status={redConnection.status}
+                          lastSeen={redConnection.lastSeen}
+                          isSelf={redConnection.isSelf}
+                          activity={redConnection.activity}
                           size="xs"
                         />
                       )}
@@ -883,9 +893,9 @@ function ActiveMatchContent({
                     Match status
                   </Heading>
                   <Text fontSize="sm" color={strongText}>
-                    {role === 'creator'
+                    {role === greenRole
                       ? 'You control the green workers'
-                      : role === 'opponent'
+                      : role === redRole
                         ? 'You control the red workers'
                         : 'Spectating this match'}
                   </Text>
@@ -894,9 +904,9 @@ function ActiveMatchContent({
                     {startingSummary ? ` · First move: ${startingSummary}` : ' · First move: syncing...'}
                     {' · '}
                     Turn:{' '}
-                    {santorini.currentTurn === 'creator'
-                      ? `Green – ${creatorName}`
-                      : `Red – ${opponentName}`}
+                    {santorini.currentTurn === greenRole
+                      ? `Green – ${greenPlayerName}`
+                      : `Red – ${redPlayerName}`}
                   </Text>
                 </Box>
                 <Box>
@@ -1355,7 +1365,7 @@ function PlayWorkspace({ auth }: { auth: SupabaseAuthState }) {
                             <Stack spacing={0}>
                               <HStack spacing={2}>
                                 <Text fontWeight="semibold" fontSize="sm">
-                                  {opponentName || 'Waiting for opponent...'}
+                                  {opponentName}
                                 </Text>
                                 <Badge colorScheme={
                                   m.status === 'in_progress' ? 'green' :

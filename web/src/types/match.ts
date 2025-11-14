@@ -1,5 +1,6 @@
 export type MatchVisibility = 'public' | 'private';
 export type MatchStatus = 'waiting_for_opponent' | 'in_progress' | 'completed' | 'abandoned';
+export type MatchRole = 'creator' | 'opponent';
 
 export interface SantoriniStateSnapshot {
   version: number;
@@ -9,6 +10,9 @@ export interface SantoriniStateSnapshot {
   future: unknown[];
   gameEnded: [number, number];
   validMoves: boolean[];
+  metadata?: {
+    playerZeroRole?: MatchRole;
+  };
 }
 
 export type EnginePreference = 'python' | 'rust';
@@ -59,7 +63,7 @@ export interface MatchMoveRecord<TAction = unknown> {
 
 export type SantoriniMoveAction = {
   kind: 'santorini.move';
-  move: number;
+  move: number | number[];
   by: 'creator' | 'opponent';
   clocks?: {
     creatorMs: number;

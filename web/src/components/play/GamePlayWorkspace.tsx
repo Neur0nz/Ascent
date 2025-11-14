@@ -364,16 +364,20 @@ function ActiveMatchContent({
       autoUndoKeyRef.current = null;
     }
   }, [undoState]);
+  const fallbackOpponentName = lobbyMatch?.is_ai_match ? 'Santorini AI' : 'Player 2';
   const creatorBaseName = lobbyMatch?.creator?.display_name ?? 'Player 1';
-  const opponentBaseName = lobbyMatch?.opponent?.display_name ?? 'Player 2';
+  const opponentBaseName = lobbyMatch?.opponent?.display_name ?? fallbackOpponentName;
   const creatorDisplayName = formatNameWithRating(lobbyMatch?.creator, creatorBaseName);
   const opponentDisplayName = formatNameWithRating(lobbyMatch?.opponent, opponentBaseName);
   const creatorClock = santorini.formatClock(santorini.creatorClockMs);
   const opponentClock = santorini.formatClock(santorini.opponentClockMs);
   const creatorTurnActive = santorini.currentTurn === 'creator';
   const opponentTurnActive = santorini.currentTurn === 'opponent';
+  const playerZeroRole = lobbyMatch?.initial_state?.metadata?.playerZeroRole === 'opponent' ? 'opponent' : 'creator';
+  const greenRole = playerZeroRole;
+  const redRole = playerZeroRole === 'creator' ? 'opponent' : 'creator';
   const isMyTurn = role === 'creator' ? creatorTurnActive : role === 'opponent' ? opponentTurnActive : false;
-  const turnGlowColor = role === 'creator' ? 'green.400' : role === 'opponent' ? 'red.400' : undefined;
+  const turnGlowColor = role ? (role === greenRole ? 'green.400' : 'red.400') : undefined;
   const normalizeRating = (value: number | null | undefined): number | null =>
     typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : null;
   const creatorRatingValue = normalizeRating(lobbyMatch?.creator?.rating);
@@ -389,8 +393,10 @@ function ActiveMatchContent({
     const ratingLabel = rating !== null ? ` (${rating})` : '';
     return `${colorEmoji} ${baseName}${ratingLabel}`;
   };
-  const creatorClockLabel = formatClockLabel(creatorBaseName, creatorRatingValue, 'Green', role === 'creator');
-  const opponentClockLabel = formatClockLabel(opponentBaseName, opponentRatingValue, 'Red', role === 'opponent');
+  const creatorColorName = playerZeroRole === 'creator' ? 'Green' : 'Red';
+  const opponentColorName = creatorColorName === 'Green' ? 'Red' : 'Green';
+  const creatorClockLabel = formatClockLabel(creatorBaseName, creatorRatingValue, creatorColorName, role === 'creator');
+  const opponentClockLabel = formatClockLabel(opponentBaseName, opponentRatingValue, opponentColorName, role === 'opponent');
   const notificationPromptBg = useColorModeValue('white', 'gray.800');
   const notificationPromptBorder = useColorModeValue('teal.400', 'teal.300');
   const [requestingUndo, setRequestingUndo] = useBoolean(false);
@@ -1822,8 +1828,14 @@ function GamePlayWorkspace({
     if (!match) {
       return null;
     }
-    const creatorLabel = formatNameWithRating(match.creator, match.creator?.display_name ?? 'Player 1 (Green)');
-    const opponentLabel = formatNameWithRating(match.opponent, match.opponent?.display_name ?? 'Player 2 (Red)');
+    const playerZeroRole = match.initial_state?.metadata?.playerZeroRole === 'opponent' ? 'opponent' : 'creator';
+    const greenRole = playerZeroRole;
+    const redRole = playerZeroRole === 'creator' ? 'opponent' : 'creator';
+    const fallbackOpponentName = match.is_ai_match ? 'Santorini AI' : 'Opponent';
+    const creatorFallback = playerZeroRole === 'creator' ? 'Player 1 (Green)' : 'Player 1 (Red)';
+    const opponentFallback = playerZeroRole === 'opponent' ? 'Player 2 (Green)' : 'Player 2 (Red)';
+    const creatorLabel = formatNameWithRating(match.creator, match.creator?.display_name ?? creatorFallback);
+    const opponentLabel = formatNameWithRating(match.opponent, match.opponent?.display_name ?? opponentFallback);
     const moveCount = lobby.moves.filter(
       (move) => (move.action as SantoriniMoveAction | undefined)?.kind === 'santorini.move',
     ).length;
@@ -1832,24 +1844,21 @@ function GamePlayWorkspace({
         ? `${Math.round(match.clock_initial_seconds / 60)}+${match.clock_increment_seconds}`
         : null;
     const startingRole = deriveStartingRole(match.initial_state);
-    const startingLabel =
-      startingRole === 'creator'
-        ? `${match.creator?.display_name ?? 'Green player'} moves first`
-        : startingRole === 'opponent'
-          ? match.opponent
-            ? `${match.opponent.display_name} moves first`
-            : 'Opponent moves first'
-          : null;
+    const greenName = greenRole === 'creator' ? (match.creator?.display_name ?? 'Creator') : (match.opponent?.display_name ?? fallbackOpponentName);
+    const redName = redRole === 'creator' ? (match.creator?.display_name ?? 'Creator') : (match.opponent?.display_name ?? fallbackOpponentName);
+    const startingLabel = startingRole
+      ? `${startingRole === greenRole ? 'Green' : 'Red'} – ${startingRole === greenRole ? greenName : redName} moves first`
+      : null;
     return {
       vsLabel: `${creatorLabel} vs ${opponentLabel}`,
       ratedLabel: match.rated ? 'Rated' : 'Casual',
       moveCount,
       clockLabel,
       joinCode: match.visibility === 'private' && match.private_join_code ? match.private_join_code : null,
-      startingBadge: startingLabel
+      startingBadge: startingLabel && startingRole
         ? {
             label: startingLabel,
-            colorScheme: startingRole === 'creator' ? 'green' : 'red',
+            colorScheme: startingRole === greenRole ? 'green' : 'red',
           }
         : null,
     };

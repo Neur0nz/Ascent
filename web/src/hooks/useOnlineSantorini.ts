@@ -17,8 +17,8 @@ export interface UseOnlineSantoriniOptions {
 
 interface PendingLocalMove {
   expectedMoveIndex: number;
-  moveAction: number;
-  snapshotBefore: SantoriniSnapshot;
+  moveAction: number | number[];
+  snapshotBefore: SantoriniSnapshot | null;
 }
 
 /**
@@ -30,19 +30,50 @@ interface PendingLocalMove {
 
 const TICK_INTERVAL = 250;
 
-const resolveActiveRole = (engine: SantoriniEngine): 'creator' | 'opponent' => {
-  const placement = engine.getPlacementContext();
-  if (placement) {
-    return placement.player === 0 ? 'creator' : 'opponent';
+const toMoveArray = (move: number | number[] | null | undefined): number[] => {
+  if (Array.isArray(move)) {
+    return move
+      .map((value) => Number(value))
+      .filter((value) => Number.isInteger(value) && value >= 0);
   }
-  return engine.player === 0 ? 'creator' : 'opponent';
+  return typeof move === 'number' && Number.isInteger(move) && move >= 0 ? [move] : [];
 };
 
-const isRoleTurn = (engine: SantoriniEngine, role: 'creator' | 'opponent' | null): boolean => {
+const getPlayerZeroRole = (snapshot?: SantoriniSnapshot | null): 'creator' | 'opponent' => {
+  return snapshot?.metadata?.playerZeroRole === 'opponent' ? 'opponent' : 'creator';
+};
+
+const mapPlayerIndexToRole = (
+  playerIndex: number,
+  playerZeroRole: 'creator' | 'opponent',
+): 'creator' | 'opponent' => {
+  const sanitized: 0 | 1 = playerIndex === 1 ? 1 : 0;
+  if (sanitized === 0) {
+    return playerZeroRole;
+  }
+  return playerZeroRole === 'creator' ? 'opponent' : 'creator';
+};
+
+const resolveActiveRole = (
+  engine: SantoriniEngine,
+  playerZeroRole: 'creator' | 'opponent',
+): 'creator' | 'opponent' => {
+  const placement = engine.getPlacementContext();
+  if (placement) {
+    return mapPlayerIndexToRole(placement.player, playerZeroRole);
+  }
+  return mapPlayerIndexToRole(engine.player, playerZeroRole);
+};
+
+const isRoleTurn = (
+  engine: SantoriniEngine,
+  role: 'creator' | 'opponent' | null,
+  playerZeroRole: 'creator' | 'opponent',
+): boolean => {
   if (!role) {
     return false;
   }
-  return resolveActiveRole(engine) === role;
+  return resolveActiveRole(engine, playerZeroRole) === role;
 };
 
 function isSantoriniMoveAction(action: MatchAction | null | undefined): action is SantoriniMoveAction {
@@ -52,8 +83,11 @@ function isSantoriniMoveAction(action: MatchAction | null | undefined): action i
 const getLastSantoriniMove = (records: MatchMoveRecord<MatchAction>[]): number | null => {
   for (let index = records.length - 1; index >= 0; index -= 1) {
     const action = records[index]?.action;
-    if (isSantoriniMoveAction(action) && typeof action.move === 'number') {
-      return action.move;
+    if (isSantoriniMoveAction(action)) {
+      const sequence = toMoveArray(action.move);
+      if (sequence.length > 0) {
+        return sequence[sequence.length - 1];
+      }
     }
   }
   return null;
@@ -119,6 +153,10 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
   const { match, moves, role, onSubmitMove, onGameComplete } = options;
   const matchId = match?.id ?? null;
   const toast = useToast();
+  const playerZeroRole = useMemo(
+    () => getPlayerZeroRole(match?.initial_state ?? null),
+    [match?.initial_state?.metadata?.playerZeroRole, match?.id],
+  );
   
   // Game engine state - pure TypeScript!
   // NOTE: engineRef is the SINGLE SOURCE OF TRUTH for game state
@@ -155,6 +193,10 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
     appliedMoveCount: 0
   });
   const pendingLocalMovesRef = useRef<PendingLocalMove[]>([]);
+  const placementBatchRef = useRef<{ actions: number[]; snapshotBefore: SantoriniSnapshot | null }>({
+    actions: [],
+    snapshotBefore: null,
+  });
   const nextLocalMoveIndexRef = useRef<number>(0);
   const [pendingMoveVersion, setPendingMoveVersion] = useState(0); // Trigger submission effect
   const gameCompletedRef = useRef<string | null>(null);
@@ -210,7 +252,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
     try {
       const newEngine = SantoriniEngine.fromSnapshot(match.initial_state);
       moveSelectorRef.current.reset();
-      const myTurn = isRoleTurn(newEngine, role);
+      const myTurn = isRoleTurn(newEngine, role, playerZeroRole);
       
       // Atomically update all state
       updateEngineState(newEngine, myTurn);
@@ -221,13 +263,14 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
         appliedMoveCount: 0
       };
       pendingLocalMovesRef.current = [];
+      placementBatchRef.current = { actions: [], snapshotBefore: null };
       setPendingSubmissionCount(0);
       setClock(deriveInitialClocks(match));
       nextLocalMoveIndexRef.current = moves.length;
     } catch (error) {
       console.error('Failed to reset match to server snapshot', error);
     }
-  }, [match, moves.length, role, updateEngineState]);
+  }, [match, moves.length, playerZeroRole, role, updateEngineState]);
 
   const previousMatchRef = useRef<{
     id: string | null;
@@ -244,6 +287,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       setClockEnabled(false);
       lastSyncedStateRef.current = { matchId: null, snapshotMoveIndex: -1, appliedMoveCount: 0 };
       pendingLocalMovesRef.current = [];
+      placementBatchRef.current = { actions: [], snapshotBefore: null };
       setPendingSubmissionCount(0);
       previousMatchRef.current = { id: null, status: null, clockSeconds: null };
       setPlacementComplete(false);
@@ -266,6 +310,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       setClock(deriveInitialClocks(match));
       lastSyncedStateRef.current = { matchId: match.id, snapshotMoveIndex: -1, appliedMoveCount: 0 };
       pendingLocalMovesRef.current = [];
+      placementBatchRef.current = { actions: [], snapshotBefore: null };
       setPendingSubmissionCount(0);
       resetMatch();
     }
@@ -312,37 +357,48 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       const lastMove = moves[moves.length - 1];
       const action = lastMove.action;
       
-      if (isSantoriniMoveAction(action) && typeof action.move === 'number') {
+      if (isSantoriniMoveAction(action)) {
+        const moveSequence = toMoveArray(action.move);
+        if (moveSequence.length === 0) {
+          setSyncInProgress(false);
+          return;
+        }
         if (action.by === role) {
           debugLog('⚡ FAST PATH skipped for local move');
           setSyncInProgress(false);
           return;
         }
         try {
-          debugLog('⚡ FAST PATH: Applying single optimistic move', action.move);
+          debugLog('⚡ FAST PATH: Applying optimistic move sequence', moveSequence);
           
           // Use engineRef for current state (not stale useState value)
           const currentEngine = engineRef.current;
 
-          // Strict guards: only fast-apply if it's the correct player's turn and move is valid
-          const placementCtx = currentEngine.getPlacementContext();
-          const engineTurnRole = placementCtx
-            ? (placementCtx.player === 0 ? 'creator' : 'opponent')
-            : (currentEngine.player === 0 ? 'creator' : 'opponent');
+          // Strict guards: only fast-apply if it's the correct player's turn and moves are valid
+          const engineTurnRole = resolveActiveRole(currentEngine, playerZeroRole);
           if (action.by && action.by !== engineTurnRole) {
             throw new Error(`Out-of-turn optimistic apply (expected ${engineTurnRole}, got ${action.by})`);
           }
-          const valid = currentEngine.getValidMoves();
-          if (!valid[action.move]) {
-            throw new Error('Optimistic move not valid on current snapshot');
+          
+          let lastResult: { snapshot: SantoriniSnapshot; winner: 0 | 1 | null } | null = null;
+          for (const value of moveSequence) {
+            const valid = currentEngine.getValidMoves();
+            if (!valid[value]) {
+              throw new Error('Optimistic move not valid on current snapshot');
+            }
+            lastResult = currentEngine.applyMove(value);
           }
-          const result = currentEngine.applyMove(action.move);
-          const newEngine = SantoriniEngine.fromSnapshot(result.snapshot);
+
+          if (!lastResult) {
+            throw new Error('No optimistic moves applied');
+          }
+
+          const newEngine = SantoriniEngine.fromSnapshot(lastResult.snapshot);
           
           moveSelectorRef.current.reset();
           
           // Atomically update all state
-          const myTurn = isRoleTurn(newEngine, role);
+          const myTurn = isRoleTurn(newEngine, role, playerZeroRole);
           updateEngineState(newEngine, myTurn);
 
           if (action.clocks) {
@@ -406,14 +462,17 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       // Replay each move after the snapshot
       for (const moveRecord of movesToReplay) {
         const action = moveRecord.action;
-        if (isSantoriniMoveAction(action) && typeof action.move === 'number') {
-          try {
-            const result = newEngine.applyMove(action.move);
-            newEngine = SantoriniEngine.fromSnapshot(result.snapshot);
-            debugLog('useOnlineSantorini: Replayed move', action.move, 'at index', moveRecord.move_index);
-          } catch (error) {
-            console.error('useOnlineSantorini: Failed to replay move', action.move, error);
-            // Don't throw - continue with next moves
+        if (isSantoriniMoveAction(action)) {
+          const sequence = toMoveArray(action.move);
+          for (const value of sequence) {
+            try {
+              const result = newEngine.applyMove(value);
+              newEngine = SantoriniEngine.fromSnapshot(result.snapshot);
+              debugLog('useOnlineSantorini: Replayed move', value, 'at index', moveRecord.move_index);
+            } catch (error) {
+              console.error('useOnlineSantorini: Failed to replay move', value, error);
+              break;
+            }
           }
         }
       }
@@ -421,7 +480,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       moveSelectorRef.current.reset();
       
       // Atomically update all state
-      const myTurn = isRoleTurn(newEngine, role);
+      const myTurn = isRoleTurn(newEngine, role, playerZeroRole);
       updateEngineState(newEngine, myTurn);
       
       // Update clock states from all moves (only process last clock update for speed)
@@ -449,14 +508,14 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       console.error('useOnlineSantorini: Failed to synchronize board with server', error);
       setSyncInProgress(false);
     }
-  }, [clockEnabled, match, moves, role, setSyncInProgress, updateEngineState]);
+  }, [clockEnabled, match, moves, playerZeroRole, role, setSyncInProgress, updateEngineState]);
 
   // Clock tick effect
   // Use engineVersion as dependency to recompute when engine changes
   const currentTurn = useMemo(() => {
     if (!match) return null;
-    return resolveActiveRole(engineRef.current);
-  }, [engineVersion, match]);
+    return resolveActiveRole(engineRef.current, playerZeroRole);
+  }, [engineVersion, match, playerZeroRole]);
   
   const isMyTurn = useMemo(() => {
     return role !== null && currentTurn === role;
@@ -657,6 +716,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
           description: error instanceof Error ? error.message : 'Unknown error',
         });
         pendingLocalMovesRef.current = [];
+        placementBatchRef.current = { actions: [], snapshotBefore: null };
         setPendingSubmissionCount(0);
         const nextFromRecords = getNextMoveIndexFromRecords(moves);
         nextLocalMoveIndexRef.current = nextFromRecords;
@@ -664,7 +724,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
           try {
             const revertEngine = SantoriniEngine.fromSnapshot(pendingSnapshot);
             moveSelectorRef.current.reset();
-            const myTurn = isRoleTurn(revertEngine, role);
+            const myTurn = isRoleTurn(revertEngine, role, playerZeroRole);
             updateEngineState(revertEngine, myTurn);
           } catch (revertError) {
             console.error('useOnlineSantorini: Failed to revert local move after submission error', revertError);
@@ -741,7 +801,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       const engine = engineRef.current;
       const validMoves = engine.getValidMoves();
       const placement = engine.getPlacementContext();
-      const placementRole = placement ? (placement.player === 0 ? 'creator' : 'opponent') : null;
+      const placementRole = placement ? mapPlayerIndexToRole(placement.player, playerZeroRole) : null;
       const isPlacementPhase = Boolean(placement);
 
       const hasPendingMoves = pendingLocalMovesRef.current.length > 0;
@@ -788,34 +848,53 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
           moveSelectorRef.current.reset();
           
           // Atomically update state
-          const myTurn = isRoleTurn(newEngine, role);
+          const myTurn = isRoleTurn(newEngine, role, playerZeroRole);
           updateEngineState(newEngine, myTurn);
-          
-          const nextMoveIndex = nextLocalMoveIndexRef.current;
-          nextLocalMoveIndexRef.current += 1;
 
-          // Store pending move (server will compute state)
-          pendingLocalMovesRef.current.push({
-            expectedMoveIndex: nextMoveIndex,
-            moveAction: placementAction,
-            snapshotBefore,
-          });
-          setPendingSubmissionCount(pendingLocalMovesRef.current.length);
-
-          if (clockEnabled && incrementMs > 0 && role) {
-            setClock((prev) => {
-              const next = { ...prev };
-              if (role === 'creator') {
-                next.creatorMs = Math.max(0, next.creatorMs + incrementMs);
-              } else if (role === 'opponent') {
-                next.opponentMs = Math.max(0, next.opponentMs + incrementMs);
-              }
-              return next;
-            });
+          const batch = placementBatchRef.current;
+          if (batch.actions.length === 0) {
+            batch.snapshotBefore = snapshotBefore;
           }
-          
-          debugLog('✅ Placement move queued for submission', { placementAction, nextMoveIndex });
-          setPendingMoveVersion(v => v + 1); // Trigger submission effect
+          batch.actions.push(placementAction);
+
+          const nextPlacement = newEngine.getPlacementContext();
+          const stillMyPlacement = nextPlacement
+            ? mapPlayerIndexToRole(nextPlacement.player, playerZeroRole) === role
+            : false;
+
+          if (!stillMyPlacement) {
+            const nextMoveIndex = nextLocalMoveIndexRef.current;
+            nextLocalMoveIndexRef.current += 1;
+            const movePayload = batch.actions.length === 1 ? batch.actions[0] : batch.actions.slice();
+            pendingLocalMovesRef.current.push({
+              expectedMoveIndex: nextMoveIndex,
+              moveAction: movePayload,
+              snapshotBefore: batch.snapshotBefore ?? snapshotBefore,
+            });
+            setPendingSubmissionCount(pendingLocalMovesRef.current.length);
+
+            if (clockEnabled && incrementMs > 0 && role) {
+              setClock((prev) => {
+                const next = { ...prev };
+                if (role === 'creator') {
+                  next.creatorMs = Math.max(0, next.creatorMs + incrementMs);
+                } else {
+                  next.opponentMs = Math.max(0, next.opponentMs + incrementMs);
+                }
+                return next;
+              });
+            }
+
+            debugLog('✅ Placement batch queued for submission', {
+              placementActions: batch.actions,
+              nextMoveIndex,
+            });
+            batch.actions = [];
+            batch.snapshotBefore = null;
+            setPendingMoveVersion((v) => v + 1);
+          } else {
+            debugLog('🧱 Placement recorded locally, awaiting remaining workers');
+          }
         } catch (error) {
           console.error('useOnlineSantorini: Move failed', error);
           toast({ title: 'Invalid move', status: 'error' });
@@ -890,7 +969,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
             moveSelector.reset();
             
             // Atomically update state
-            const myTurn = isRoleTurn(newEngine, role);
+            const myTurn = isRoleTurn(newEngine, role, playerZeroRole);
             updateEngineState(newEngine, myTurn);
             
             const nextMoveIndex = nextLocalMoveIndexRef.current;
@@ -936,7 +1015,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
         processingMoveRef.current = false;
       }
     },
-    [clockEnabled, currentTurn, incrementMs, isMyTurn, match, moves.length, role, selectable, toast, updateEngineState],
+    [clockEnabled, currentTurn, incrementMs, isMyTurn, match, moves.length, playerZeroRole, role, selectable, toast, updateEngineState],
   );
 
   // Game completion detection
@@ -959,32 +1038,33 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
 
     gameCompletedRef.current = match.id;
 
-     const winnerRole = p0Score === 1 ? 'creator' : p1Score === 1 ? 'opponent' : null;
-     if (winnerRole) {
-       const isUserWinner = winnerRole === role;
-       toast({
-         title: isUserWinner ? 'Victory!' : 'Defeat',
-         description: isUserWinner ? 'You reached level 3.' : 'Your opponent reached level 3.',
-         status: isUserWinner ? 'success' : 'error',
-         duration: 4000,
-       });
-     } else {
-       toast({
-         title: 'Drawn game',
-         description: 'Neither player could secure a win.',
-         status: 'info',
-         duration: 4000,
-       });
-     }
+    const winnerIndex = p0Score === 1 ? 0 : p1Score === 1 ? 1 : null;
+    const winnerRole = winnerIndex === null ? null : mapPlayerIndexToRole(winnerIndex, playerZeroRole);
+    if (winnerRole) {
+      const isUserWinner = winnerRole === role;
+      toast({
+        title: isUserWinner ? 'Victory!' : 'Defeat',
+        description: isUserWinner ? 'You reached level 3.' : 'Your opponent reached level 3.',
+        status: isUserWinner ? 'success' : 'error',
+        duration: 4000,
+      });
+    } else {
+      toast({
+        title: 'Drawn game',
+        description: 'Neither player could secure a win.',
+        status: 'info',
+        duration: 4000,
+      });
+    }
 
-    const winnerId = p0Score === 1 ? match.creator_id : p1Score === 1 ? match.opponent_id : null;
+    const winnerId = winnerRole === 'creator' ? match.creator_id : winnerRole === 'opponent' ? match.opponent_id : null;
     
     debugLog('useOnlineSantorini: Game end detected locally, winner:', winnerId);
     debugLog('useOnlineSantorini: Server will handle match status update - NOT calling onGameComplete to avoid 409 conflict');
     // DON'T call onGameComplete here! The server already updates match status
     // when it processes the winning move in submit-move edge function.
     // Calling it from client causes 409 Conflict race condition.
-  }, [engineVersion, match, onGameComplete, role, toast]);
+  }, [engineVersion, match, onGameComplete, playerZeroRole, role, toast]);
 
   // Stub functions for compatibility with GameBoard component
   const onCellHover = useCallback(async () => {}, []);
@@ -993,20 +1073,24 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
   const redo = useCallback(async () => {}, []);
 
   const moveHistory = useMemo(() => {
-    const creatorName = match?.creator?.display_name ?? 'Player 1 (Green)';
-    const opponentName = match?.opponent?.display_name ?? 'Player 2 (Red)';
+    const creatorName = match?.creator?.display_name ?? 'Creator';
+    const opponentName = match?.opponent?.display_name ?? (match?.is_ai_match ? 'Santorini AI' : 'Opponent');
+    const greenRole = playerZeroRole;
     return moves
       .filter((move) => isSantoriniMoveAction(move.action))
       .sort((a, b) => a.move_index - b.move_index)
       .map((move, index) => {
         const action = move.action as SantoriniMoveAction;
-        const actorName = action.by === 'creator' ? creatorName : opponentName;
+        const actorRole = action.by === 'creator' ? 'creator' : 'opponent';
+        const actorName = actorRole === 'creator' ? creatorName : opponentName;
+        const colorLabel = actorRole === greenRole ? 'Green' : 'Red';
+        const moveDescriptor = toMoveArray(action.move).join(', ');
         return {
           action: action.move,
-          description: `${index + 1}. ${actorName} played action ${action.move}`,
+          description: `${index + 1}. ${actorName} (${colorLabel}) played ${moveDescriptor || 'action'}`,
         };
       });
-  }, [match?.creator?.display_name, match?.opponent?.display_name, moves]);
+  }, [match?.creator?.display_name, match?.is_ai_match, match?.opponent?.display_name, moves, playerZeroRole]);
 
   return {
     board,

@@ -65,6 +65,13 @@ const yieldToMainThread = () =>
 
 const createJobId = () => `eval-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
+const toMoveArray = (move: number | number[] | null | undefined): number[] => {
+  if (Array.isArray(move)) {
+    return move.map((value) => Number(value)).filter((value) => Number.isInteger(value) && value >= 0);
+  }
+  return typeof move === 'number' && Number.isInteger(move) && move >= 0 ? [move] : [];
+};
+
 const buildSnapshotSequence = (
   match: MatchRecord,
   moves: MatchMoveRecord<SantoriniMoveAction>[],
@@ -86,7 +93,12 @@ const buildSnapshotSequence = (
 
   for (const move of moves) {
     const action = move.action;
-    if (!action || action.kind !== 'santorini.move' || typeof action.move !== 'number') {
+    if (!action || action.kind !== 'santorini.move') {
+      continue;
+    }
+
+    const moveSequence = toMoveArray(action.move);
+    if (moveSequence.length === 0) {
       continue;
     }
 
@@ -110,14 +122,19 @@ const buildSnapshotSequence = (
     }
 
     try {
-      const result = playbackEngine.applyMove(action.move);
-      snapshots.push({
-        snapshot: result.snapshot,
-        moveIndex: move.move_index,
-        action,
-        createdAt: move.created_at ?? null,
-      });
-      playbackEngine = SantoriniEngine.fromSnapshot(result.snapshot);
+      let lastResult: { snapshot: SantoriniSnapshot; winner: 0 | 1 | null } | null = null;
+      for (const value of moveSequence) {
+        lastResult = playbackEngine.applyMove(value);
+        playbackEngine = SantoriniEngine.fromSnapshot(lastResult.snapshot);
+      }
+      if (lastResult) {
+        snapshots.push({
+          snapshot: lastResult.snapshot,
+          moveIndex: move.move_index,
+          action,
+          createdAt: move.created_at ?? null,
+        });
+      }
     } catch (error) {
       console.warn('Skipping move during evaluation replay', {
         moveIndex: move.move_index,

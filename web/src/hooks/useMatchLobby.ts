@@ -272,6 +272,7 @@ function createEmptySnapshot(): SantoriniStateSnapshot {
     future: [],
     gameEnded: [0, 0],
     validMoves: [],
+    metadata: { playerZeroRole: 'creator' },
   };
 }
 
@@ -1190,24 +1191,23 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
               return prev;
             }
 
-          // Turn ownership guard: for index N, only accept optimistic apply if
-          // player_id matches the expected player based on move 0 parity.
+          // Turn ownership guard: ensure optimistic apply only fires for the player who
+          // should own the move. Placement currently uses TWO turns total: starting
+          // player places both workers, then the challenger does the same.
           if (prev.activeMatch) {
-            const { creator_id, opponent_id } = prev.activeMatch;
-            const placementOrder: Array<string | null> = [
-              creator_id ?? null,
-              creator_id ?? null,
-              opponent_id ?? null,
-              opponent_id ?? null,
-            ];
+            const { creator_id, opponent_id, initial_state } = prev.activeMatch;
+            const playerZeroRole = initial_state?.metadata?.playerZeroRole === 'opponent' ? 'opponent' : 'creator';
+            const playerZeroId = playerZeroRole === 'creator' ? creator_id : opponent_id;
+            const otherPlayerId = playerZeroRole === 'creator' ? opponent_id : creator_id;
 
             let expectedPlayerId: string | null = null;
+            const placementSlots: Array<string | null> = [playerZeroId ?? null, otherPlayerId ?? null];
 
-            if (broadcastMove.move_index < placementOrder.length) {
-              expectedPlayerId = placementOrder[broadcastMove.move_index] ?? null;
-            } else if (creator_id && opponent_id) {
-              const postPlacementIndex = broadcastMove.move_index - placementOrder.length;
-              expectedPlayerId = postPlacementIndex % 2 === 0 ? creator_id : opponent_id;
+            if (broadcastMove.move_index < placementSlots.length) {
+              expectedPlayerId = placementSlots[broadcastMove.move_index] ?? null;
+            } else if (playerZeroId && otherPlayerId) {
+              const postPlacementIndex = broadcastMove.move_index - placementSlots.length;
+              expectedPlayerId = postPlacementIndex % 2 === 0 ? playerZeroId : otherPlayerId;
             }
 
             if (expectedPlayerId && broadcastMove.player_id !== expectedPlayerId) {
