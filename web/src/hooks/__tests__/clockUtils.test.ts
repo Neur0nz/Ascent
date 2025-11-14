@@ -33,6 +33,8 @@ const baseMatch: LobbyMatch = {
   creator: null,
   opponent: null,
   private_join_code: null,
+  is_ai_match: false,
+  ai_depth: null,
 };
 
 describe('clockUtils', () => {

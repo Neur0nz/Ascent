@@ -333,6 +333,8 @@ function ActiveMatchContent({
       });
   }, [isAiMatch, lobbyMatch, moves, santorini.currentTurn, santorini.isSyncing, santorini.pendingSubmissions, triggerAiMove, undoState, toast]);
 
+  const undoRequestedByMe = undoState && undoState.requestedBy === role;
+
   useEffect(() => {
     if (!isAiMatch) {
       autoUndoKeyRef.current = null;
@@ -527,7 +529,6 @@ function ActiveMatchContent({
     };
   }, [lobbyMatch?.rated, role, typedMoves.length, playerRating, opponentRating]);
 
-  const undoRequestedByMe = undoState && undoState.requestedBy === role;
   const undoPending = undoState?.status === 'pending';
   const undoMoveNumber = undoState ? undoState.moveIndex + 1 : null;
   const seenUndoToastRef = useRef<string | null>(null);
