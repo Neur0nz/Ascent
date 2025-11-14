@@ -16,6 +16,7 @@ import {
   Flex,
   FormControl,
   FormLabel,
+  FormHelperText,
   Heading,
   HStack,
   Icon,
@@ -27,6 +28,11 @@ import {
   ModalFooter,
   ModalHeader,
   ModalOverlay,
+  NumberDecrementStepper,
+  NumberIncrementStepper,
+  NumberInput,
+  NumberInputField,
+  NumberInputStepper,
   Radio,
   RadioGroup,
   Spinner,
@@ -45,7 +51,7 @@ import {
 } from '@chakra-ui/react';
 import { AddIcon, ArrowForwardIcon, RepeatIcon, SearchIcon, StarIcon } from '@chakra-ui/icons';
 import type { SupabaseAuthState } from '@hooks/useSupabaseAuth';
-import type { CreateMatchPayload, LobbyMatch, StartingPlayer } from '@hooks/useMatchLobby';
+import type { CreateMatchPayload, LobbyMatch, StartingPlayer, MatchOpponentType } from '@hooks/useMatchLobby';
 import type { MatchStatus } from '@/types/match';
 import { useMatchLobbyContext } from '@hooks/matchLobbyContext';
 import GoogleIcon from '@components/auth/GoogleIcon';
@@ -415,20 +421,35 @@ function MatchCreationModal({
   const [minutes, setMinutes] = useState(10);
   const [increment, setIncrement] = useState(5);
   const [startingPlayer, setStartingPlayer] = useState<StartingPlayer>('random');
+  const [opponentType, setOpponentType] = useState<MatchOpponentType>('human');
+  const [aiDepth, setAiDepth] = useState(200);
+  const isAiMatch = opponentType === 'ai';
+  const MIN_AI_DEPTH = 10;
+  const MAX_AI_DEPTH = 5000;
   const toast = useToast();
   const { mutedText } = useSurfaceTokens();
 
+  useEffect(() => {
+    if (isAiMatch) {
+      setRated(false);
+      setHasClock(false);
+    }
+  }, [isAiMatch]);
+
   const handleSubmit = async () => {
     try {
+      const clampedDepth = Math.max(MIN_AI_DEPTH, Math.min(MAX_AI_DEPTH, Math.round(aiDepth)));
       await onCreate({
-        visibility,
-        rated,
-        hasClock,
-        clockInitialMinutes: minutes,
-        clockIncrementSeconds: increment,
+        visibility: isAiMatch ? 'private' : visibility,
+        rated: isAiMatch ? false : rated,
+        hasClock: isAiMatch ? false : hasClock,
+        clockInitialMinutes: isAiMatch ? 0 : minutes,
+        clockIncrementSeconds: isAiMatch ? 0 : increment,
         startingPlayer,
+        opponentType,
+        aiDepth: isAiMatch ? clampedDepth : undefined,
       });
-      toast({ title: 'Match created successfully!', status: 'success' });
+      toast({ title: isAiMatch ? 'AI match started!' : 'Match created successfully!', status: 'success' });
       onClose();
     } catch (error) {
       toast({
@@ -447,6 +468,21 @@ function MatchCreationModal({
         <ModalCloseButton />
         <ModalBody as={Stack} spacing={4}>
           <FormControl as={Stack} spacing={2}>
+            <FormLabel fontSize="sm">Opponent</FormLabel>
+            <RadioGroup value={opponentType} onChange={(value) => setOpponentType(value as MatchOpponentType)}>
+              <HStack spacing={4}>
+                <Radio value="human">Real player</Radio>
+                <Radio value="ai">Santorini AI</Radio>
+              </HStack>
+            </RadioGroup>
+          </FormControl>
+          {isAiMatch && (
+            <Alert status="info" borderRadius="md">
+              <AlertIcon />
+              <Text fontSize="sm">AI matches are unrated, have no clock, and let you pick the search depth.</Text>
+            </Alert>
+          )}
+          <FormControl as={Stack} spacing={2} isDisabled={isAiMatch}>
             <FormLabel fontSize="sm">Visibility</FormLabel>
             <RadioGroup value={visibility} onChange={(value) => setVisibility(value as 'public' | 'private')}>
               <HStack spacing={4}>
@@ -454,6 +490,7 @@ function MatchCreationModal({
                 <Radio value="private">Private code</Radio>
               </HStack>
             </RadioGroup>
+            {isAiMatch && <FormHelperText>AI games always use a private slot.</FormHelperText>}
           </FormControl>
           <FormControl as={Stack} spacing={2}>
             <FormLabel fontSize="sm">Starting player</FormLabel>
@@ -465,20 +502,21 @@ function MatchCreationModal({
               </HStack>
             </RadioGroup>
           </FormControl>
-          <FormControl display="flex" alignItems="center" justifyContent="space-between">
+          <FormControl display="flex" alignItems="center" justifyContent="space-between" isDisabled={isAiMatch}>
             <FormLabel htmlFor="rated-switch" mb="0">
               Rated game (affects ELO)
             </FormLabel>
             <Switch id="rated-switch" isChecked={rated} onChange={(event) => setRated(event.target.checked)} />
+            {isAiMatch && <FormHelperText>AI matches never change rating.</FormHelperText>}
           </FormControl>
-          <FormControl display="flex" flexDir="column" gap={3}>
+          <FormControl display="flex" flexDir="column" gap={3} isDisabled={isAiMatch}>
             <HStack justify="space-between">
               <FormLabel htmlFor="clock-switch" mb="0">
                 Enable clock
               </FormLabel>
               <Switch id="clock-switch" isChecked={hasClock} onChange={(event) => setHasClock(event.target.checked)} />
             </HStack>
-            {hasClock && (
+            {hasClock && !isAiMatch && (
               <Stack direction={{ base: 'column', md: 'row' }} spacing={3}>
                 <FormControl>
                   <FormLabel fontSize="sm">Initial time (minutes)</FormLabel>
@@ -500,9 +538,33 @@ function MatchCreationModal({
                 </FormControl>
               </Stack>
             )}
+            {isAiMatch && <FormHelperText>Clocks are disabled when playing against the AI.</FormHelperText>}
           </FormControl>
+          {isAiMatch && (
+            <FormControl>
+              <FormLabel fontSize="sm">AI depth (simulations)</FormLabel>
+              <NumberInput
+                value={aiDepth}
+                min={MIN_AI_DEPTH}
+                max={MAX_AI_DEPTH}
+                step={10}
+                onChange={(_, valueNumber) => {
+                  if (Number.isFinite(valueNumber)) {
+                    setAiDepth(Math.round(valueNumber));
+                  }
+                }}
+              >
+                <NumberInputField />
+                <NumberInputStepper>
+                  <NumberIncrementStepper />
+                  <NumberDecrementStepper />
+                </NumberInputStepper>
+              </NumberInput>
+              <FormHelperText>Higher values make the AI slower but stronger. 200 is a good starting point.</FormHelperText>
+            </FormControl>
+          )}
           <Button colorScheme="teal" onClick={handleSubmit} isDisabled={loading} isLoading={loading} w="full">
-            Create Match
+            {isAiMatch ? 'Start AI Match' : 'Create Match'}
           </Button>
         </ModalBody>
         <ModalFooter>

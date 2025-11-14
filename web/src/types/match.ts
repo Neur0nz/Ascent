@@ -38,6 +38,8 @@ export interface MatchRecord {
   status: MatchStatus;
   winner_id: string | null;
   rematch_parent_id: string | null;
+  is_ai_match: boolean;
+  ai_depth: number | null;
   created_at: string;
   updated_at?: string;
   clock_updated_at?: string | null;

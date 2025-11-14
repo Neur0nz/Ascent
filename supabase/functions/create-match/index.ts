@@ -4,6 +4,11 @@ import { SantoriniEngine } from '../_shared/santorini.ts';
 
 type MatchVisibility = 'public' | 'private';
 type StartingPlayer = 'creator' | 'opponent' | 'random';
+type OpponentType = 'human' | 'ai';
+
+const MATCH_WITH_PROFILES =
+  '*, creator:creator_id (id, auth_user_id, display_name, rating, games_played, created_at, updated_at, show_coordinate_labels), '
+  + 'opponent:opponent_id (id, auth_user_id, display_name, rating, games_played, created_at, updated_at, show_coordinate_labels)';
 
 interface CreateMatchRequest {
   visibility?: MatchVisibility;
@@ -12,10 +17,14 @@ interface CreateMatchRequest {
   clockInitialMinutes?: number;
   clockIncrementSeconds?: number;
   startingPlayer?: StartingPlayer;
+  opponentType?: OpponentType;
+  aiDepth?: number;
 }
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+const AI_PLAYER_ID = Deno.env.get('AI_PLAYER_ID') ?? '00000000-0000-0000-0000-00000000a11a';
+const DEFAULT_AI_DEPTH = 200;
 
 if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
   throw new Error('Missing Supabase configuration environment variables');
@@ -97,11 +106,17 @@ serve(async (req) => {
     return jsonResponse({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const visibility = (payload.visibility === 'private' ? 'private' : 'public') as MatchVisibility;
-  const rated = normalizeBoolean(payload.rated, true);
-  const hasClock = normalizeBoolean(payload.hasClock, true);
+  const opponentType: OpponentType = payload.opponentType === 'ai' ? 'ai' : 'human';
+  const requestedVisibility = (payload.visibility === 'private' ? 'private' : 'public') as MatchVisibility;
+  const visibility: MatchVisibility = opponentType === 'ai' ? 'private' : requestedVisibility;
+  const rated = opponentType === 'ai' ? false : normalizeBoolean(payload.rated, true);
+  const hasClock = opponentType === 'ai' ? false : normalizeBoolean(payload.hasClock, true);
   const initialMinutes = normalizeNumber(payload.clockInitialMinutes, 10);
   const incrementSeconds = normalizeNumber(payload.clockIncrementSeconds, 5);
+  const aiDepth = opponentType === 'ai'
+    ? Math.max(10, Math.min(5000, Math.round(normalizeNumber(payload.aiDepth, DEFAULT_AI_DEPTH))))
+    : null;
+  const opponentId = opponentType === 'ai' ? AI_PLAYER_ID : null;
   
   // Determine starting player
   let startingPlayerOption = payload.startingPlayer || 'creator';
@@ -141,48 +156,70 @@ serve(async (req) => {
   }
 
   // Check for existing active games
-  const { data: existingMatches, error: checkError } = await supabase
-    .from('matches')
-    .select('id, status, creator_id, opponent_id')
-    .or(`creator_id.eq.${profile.id},opponent_id.eq.${profile.id}`)
-    .in('status', ['waiting_for_opponent', 'in_progress'])
-    .limit(1);
+  if (opponentType === 'human') {
+    const { data: existingMatches, error: checkError } = await supabase
+      .from('matches')
+      .select('id, status, creator_id, opponent_id')
+      .or(`creator_id.eq.${profile.id},opponent_id.eq.${profile.id}`)
+      .in('status', ['waiting_for_opponent', 'in_progress'])
+      .limit(1);
 
-  if (checkError) {
-    console.error('Failed to check for existing matches', checkError);
-    return jsonResponse({ error: 'Failed to check for existing matches' }, { status: 500 });
+    if (checkError) {
+      console.error('Failed to check for existing matches', checkError);
+      return jsonResponse({ error: 'Failed to check for existing matches' }, { status: 500 });
+    }
+
+    if (existingMatches && existingMatches.length > 0) {
+      return jsonResponse({ 
+        error: 'You already have an active game. Please finish or cancel your current game before creating a new one.',
+        code: 'ACTIVE_GAME_EXISTS',
+        activeMatchId: existingMatches[0].id
+      }, { status: 409 });
+    }
+  } else {
+    const { data: existingAiMatches, error: aiCheckError } = await supabase
+      .from('matches')
+      .select('id')
+      .eq('creator_id', profile.id)
+      .eq('is_ai_match', true)
+      .in('status', ['in_progress'])
+      .limit(1);
+    if (aiCheckError) {
+      console.error('Failed to check for existing AI matches', aiCheckError);
+      return jsonResponse({ error: 'Failed to check for existing matches' }, { status: 500 });
+    }
+    if (existingAiMatches && existingAiMatches.length > 0) {
+      return jsonResponse({
+        error: 'Finish your current AI game before starting another one.',
+        code: 'ACTIVE_AI_GAME_EXISTS',
+        activeMatchId: existingAiMatches[0].id,
+      }, { status: 409 });
+    }
   }
 
-  if (existingMatches && existingMatches.length > 0) {
-    return jsonResponse({ 
-      error: 'You already have an active game. Please finish or cancel your current game before creating a new one.',
-      code: 'ACTIVE_GAME_EXISTS',
-      activeMatchId: existingMatches[0].id
-    }, { status: 409 });
-  }
-
-  const joinCode = visibility === 'private' ? generateJoinCode() : null;
+  const joinCode = opponentType === 'human' && visibility === 'private' ? generateJoinCode() : null;
 
   const { snapshot } = SantoriniEngine.createInitial(startingPlayerIndex);
   console.log('Creating match with starting player:', startingPlayerIndex, 'from option:', startingPlayerOption);
 
   const insertPayload = {
     creator_id: profile.id,
+    opponent_id: opponentId,
     visibility,
     rated,
     private_join_code: joinCode,
     clock_initial_seconds: clockInitialSeconds,
     clock_increment_seconds: clockIncrementSeconds,
     initial_state: snapshot,
+    is_ai_match: opponentType === 'ai',
+    ai_depth: aiDepth,
+    ...(opponentType === 'ai' ? { status: 'in_progress' as const } : {}),
   };
 
   const { data: match, error: insertError } = await supabase
     .from('matches')
     .insert(insertPayload)
-    .select(
-      '*, creator:creator_id (id, auth_user_id, display_name, rating, games_played, created_at, updated_at, show_coordinate_labels), ' +
-        'opponent:opponent_id (id, auth_user_id, display_name, rating, games_played, created_at, updated_at, show_coordinate_labels)',
-    )
+    .select(MATCH_WITH_PROFILES)
     .single();
 
   if (insertError || !match) {
@@ -209,5 +246,20 @@ serve(async (req) => {
     return jsonResponse({ error: 'Failed to create match' }, { status: 500 });
   }
 
-  return jsonResponse({ match }, { status: 201 });
+  let enrichedMatch = match;
+  if (opponentType === 'ai' && match.status !== 'in_progress') {
+    const { data: patchedMatch, error: patchError } = await supabase
+      .from('matches')
+      .update({ status: 'in_progress' })
+      .eq('id', match.id)
+      .select(MATCH_WITH_PROFILES)
+      .single();
+    if (patchError) {
+      console.warn('create-match: failed to mark AI match as in_progress', patchError);
+    } else if (patchedMatch) {
+      enrichedMatch = patchedMatch;
+    }
+  }
+
+  return jsonResponse({ match: enrichedMatch }, { status: 201 });
 });

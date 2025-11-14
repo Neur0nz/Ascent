@@ -32,6 +32,7 @@ interface SubmitMoveRequest {
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 const APP_BASE_URL = Deno.env.get('APP_BASE_URL') ?? null;
+const AI_PLAYER_ID = Deno.env.get('AI_PLAYER_ID') ?? '00000000-0000-0000-0000-00000000a11a';
 
 if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
   throw new Error('Missing Supabase configuration environment variables');
@@ -703,6 +704,8 @@ serve(async (req) => {
   );
 
   const { match, lastMove, snapshot, lastMoveIndex, role, playerId } = submissionContext;
+  const isAiMatch = Boolean(match?.is_ai_match) || match?.opponent_id === AI_PLAYER_ID;
+  const playerControlsAi = isAiMatch && match?.creator_id === playerId;
 
   if (!role) {
     return jsonResponse({ error: 'You are not a participant in this match' }, { status: 403 });
@@ -874,11 +877,17 @@ serve(async (req) => {
 
   const placementContext = engine.getPlacementContext();
   const actingPlayerIndex = placementContext ? placementContext.player : engine.player;
-  if (actingPlayerIndex === 0 && role !== 'creator') {
-    return jsonResponse({ error: "It is the creator's turn" }, { status: 403 });
-  }
-  if (actingPlayerIndex === 1 && role !== 'opponent') {
-    return jsonResponse({ error: "It is the opponent's turn" }, { status: 403 });
+  const actingRole: PlayerRole = actingPlayerIndex === 0 ? 'creator' : 'opponent';
+  const actingPlayerId = actingRole === 'creator' ? match.creator_id : match.opponent_id;
+  if (!playerControlsAi) {
+    if (actingPlayerIndex === 0 && role !== 'creator') {
+      return jsonResponse({ error: "It is the creator's turn" }, { status: 403 });
+    }
+    if (actingPlayerIndex === 1 && role !== 'opponent') {
+      return jsonResponse({ error: "It is the opponent's turn" }, { status: 403 });
+    }
+  } else if (!actingPlayerId) {
+    return jsonResponse({ error: 'AI opponent is not fully initialized' }, { status: 409 });
   }
 
   let applyResult;
@@ -908,14 +917,14 @@ serve(async (req) => {
   const actionRecord: SantoriniMoveAction = {
     kind: 'santorini.move',
     move: moveAction.move,
-    by: actingPlayerIndex === 0 ? 'creator' : 'opponent',
+    by: actingRole,
     ...(computedClocks.clocks ? { clocks: computedClocks.clocks } : {}),
   };
 
   const insertPayload = {
     match_id: match.id,
     move_index: expectedMoveIndex,
-    player_id: playerId,
+    player_id: actingPlayerId ?? playerId,
     action: actionRecord,
     state_snapshot: applyResult.snapshot,
   };
@@ -978,15 +987,17 @@ serve(async (req) => {
     applyResult.snapshot,
   );
 
-  try {
-    await notifyOpponentOfTurn({
-      supabase,
-      match,
-      actorPlayerId: playerId,
-      actorRole: role,
-    });
-  } catch (error) {
-    console.warn('submit-move: failed to dispatch push notification', error);
+  if (!isAiMatch) {
+    try {
+      await notifyOpponentOfTurn({
+        supabase,
+        match,
+        actorPlayerId: actingPlayerId ?? playerId,
+        actorRole: actingRole,
+      });
+    } catch (error) {
+      console.warn('submit-move: failed to dispatch push notification', error);
+    }
   }
 
   console.log(`⏱️ [TOTAL: ${(performance.now() - startTime).toFixed(0)}ms] Request complete`);

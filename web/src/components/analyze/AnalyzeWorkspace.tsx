@@ -82,6 +82,10 @@ const NUMERIC_PRESET_VALUES = new Set(
 const DEFAULT_CUSTOM_DEPTH = 800;
 
 function describeMatch(match: LobbyMatch, profile: PlayerProfile | null) {
+  if (match.is_ai_match) {
+    const depthLabel = match.ai_depth ? ` (depth ${match.ai_depth})` : '';
+    return `You vs AI${depthLabel}`;
+  }
   const isCreator = profile ? match.creator_id === profile.id : false;
   if (isCreator) {
     const opponentName = match.opponent?.display_name ?? 'Unknown opponent';

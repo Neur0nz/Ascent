@@ -68,10 +68,12 @@ import { useMatchChat } from '@hooks/useMatchChat';
 import OnlineBoardSection from '@components/play/OnlineBoardSection';
 import ConnectionIndicator from '@components/play/ConnectionIndicator';
 import { MatchChatPanel } from '@components/play/MatchChatPanel';
-import type { SantoriniMoveAction, MatchStatus, PlayerProfile } from '@/types/match';
+import type { SantoriniMoveAction, MatchStatus, PlayerProfile, EnginePreference } from '@/types/match';
 import { useSurfaceTokens } from '@/theme/useSurfaceTokens';
 import { EMOJIS } from '@components/EmojiPicker';
 import { deriveStartingRole } from '@/utils/matchStartingRole';
+import { SantoriniWorkerClient } from '@/lib/runtime/santoriniWorkerClient';
+import type { SantoriniSnapshot } from '@/lib/santoriniEngine';
 
 const K_FACTOR = 32;
 const NOTIFICATION_PROMPT_STORAGE_KEY = 'santorini:notificationsPrompted';
@@ -115,6 +117,7 @@ function ActiveMatchContent({
   canSendEmoji = false,
   onSendEmoji,
   onPingOpponent,
+  enginePreference,
 }: {
   match: LobbyMatch | null;
   role: 'creator' | 'opponent' | null;
@@ -135,10 +138,14 @@ function ActiveMatchContent({
   canSendEmoji?: boolean;
   onSendEmoji?: (emoji: string) => void;
   onPingOpponent?: () => Promise<PingOpponentResult>;
+  enginePreference: EnginePreference;
 }) {
   const toast = useToast();
   const [leaveBusy, setLeaveBusy] = useBoolean();
   const lobbyMatch = match ?? null;
+  const isAiMatch = Boolean(lobbyMatch?.is_ai_match);
+  const aiDepth = lobbyMatch?.ai_depth ?? null;
+  const normalizedAiDepth = aiDepth && Number.isFinite(aiDepth) ? aiDepth : 200;
   const { cardBg, cardBorder, mutedText, strongText, accentHeading, panelBg } = useSurfaceTokens();
   // Ensure connectionStates has a default value
   const safeConnectionStates = connectionStates ?? {};
@@ -152,6 +159,11 @@ function ActiveMatchContent({
         })),
     [moves],
   );
+  const aiWorkerRef = useRef<SantoriniWorkerClient | null>(null);
+  const aiInitPromiseRef = useRef<Promise<void> | null>(null);
+  const aiPlannedMoveIndexRef = useRef<number | null>(null);
+  const aiMoveInFlightRef = useRef<Promise<void> | null>(null);
+  const autoUndoKeyRef = useRef<string | null>(null);
   const handleGameComplete = useCallback(
     async (winnerId: string | null) => {
       if (!lobbyMatch) return;
@@ -179,6 +191,177 @@ function ActiveMatchContent({
     onSubmitMove: onSubmitMove,
     onGameComplete: handleGameComplete,
   });
+  const ensureAiWorker = useCallback(async () => {
+    if (!isAiMatch) {
+      return null;
+    }
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    if (aiWorkerRef.current) {
+      return aiWorkerRef.current;
+    }
+    if (!aiInitPromiseRef.current) {
+      aiInitPromiseRef.current = (async () => {
+        const client = new SantoriniWorkerClient();
+        await client.init(enginePreference);
+        aiWorkerRef.current = client;
+      })();
+    }
+    await aiInitPromiseRef.current;
+    return aiWorkerRef.current;
+  }, [enginePreference, isAiMatch]);
+
+  useEffect(() => {
+    if (!isAiMatch) {
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const client = await ensureAiWorker();
+      if (!client || cancelled) {
+        return;
+      }
+      await client.changeDifficulty(normalizedAiDepth);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ensureAiWorker, isAiMatch, normalizedAiDepth]);
+
+  useEffect(() => {
+    if (!isAiMatch) {
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const client = await ensureAiWorker();
+      if (!client || cancelled) {
+        return;
+      }
+      await client.syncSnapshot(santorini.snapshot as SantoriniSnapshot);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ensureAiWorker, isAiMatch, santorini.snapshot]);
+
+  useEffect(() => {
+    return () => {
+      aiWorkerRef.current?.destroy();
+      aiWorkerRef.current = null;
+      aiInitPromiseRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isAiMatch && aiWorkerRef.current) {
+      aiWorkerRef.current.destroy();
+      aiWorkerRef.current = null;
+      aiInitPromiseRef.current = null;
+    }
+  }, [isAiMatch]);
+
+  useEffect(() => {
+    aiPlannedMoveIndexRef.current = null;
+  }, [lobbyMatch?.id]);
+
+  useEffect(() => {
+    if (aiPlannedMoveIndexRef.current !== null && aiPlannedMoveIndexRef.current > moves.length) {
+      aiPlannedMoveIndexRef.current = null;
+    }
+  }, [moves.length]);
+
+  const triggerAiMove = useCallback(
+    async (targetMoveIndex: number) => {
+      const client = await ensureAiWorker();
+      if (!client || !lobbyMatch) {
+        throw new Error('AI opponent unavailable');
+      }
+      await client.syncSnapshot(santorini.snapshot as SantoriniSnapshot);
+      const bestMove = await client.guessBestAction();
+      if (typeof bestMove !== 'number') {
+        throw new Error('AI could not determine a move');
+      }
+      await onSubmitMove(lobbyMatch, targetMoveIndex, {
+        kind: 'santorini.move',
+        move: bestMove,
+        by: 'opponent',
+      });
+    },
+    [ensureAiWorker, lobbyMatch, onSubmitMove, santorini.snapshot],
+  );
+
+  useEffect(() => {
+    if (!isAiMatch) {
+      return;
+    }
+    if (!lobbyMatch || lobbyMatch.status !== 'in_progress') {
+      aiPlannedMoveIndexRef.current = null;
+      return;
+    }
+    if (santorini.isSyncing || santorini.pendingSubmissions > 0) {
+      return;
+    }
+    if (santorini.currentTurn !== 'opponent') {
+      return;
+    }
+    if (undoState?.status === 'pending') {
+      return;
+    }
+    const lastMove = moves[moves.length - 1] ?? null;
+    if (lastMove && typeof lastMove.id === 'string' && lastMove.id.startsWith('optimistic-')) {
+      return;
+    }
+    const targetIndex = moves.length;
+    if (aiPlannedMoveIndexRef.current === targetIndex || aiMoveInFlightRef.current) {
+      return;
+    }
+    aiPlannedMoveIndexRef.current = targetIndex;
+    aiMoveInFlightRef.current = triggerAiMove(targetIndex)
+      .catch((error) => {
+        aiPlannedMoveIndexRef.current = null;
+        console.error('Failed to submit AI move', error);
+        toast({
+          title: 'AI move failed',
+          status: 'error',
+          description: error instanceof Error ? error.message : 'Unknown error',
+        });
+      })
+      .finally(() => {
+        aiMoveInFlightRef.current = null;
+      });
+  }, [isAiMatch, lobbyMatch, moves, santorini.currentTurn, santorini.isSyncing, santorini.pendingSubmissions, triggerAiMove, undoState, toast]);
+
+  useEffect(() => {
+    if (!isAiMatch) {
+      autoUndoKeyRef.current = null;
+      return;
+    }
+    if (!undoState || undoState.status !== 'pending' || !undoRequestedByMe) {
+      return;
+    }
+    const key = `${undoState.matchId}:${undoState.requestedAt}`;
+    if (autoUndoKeyRef.current === key) {
+      return;
+    }
+    autoUndoKeyRef.current = key;
+    (async () => {
+      try {
+        await onRespondUndo(true);
+        toast({ title: 'Undo granted', status: 'info', duration: 2000 });
+      } catch (error) {
+        console.error('Failed to auto-accept undo request', error);
+        autoUndoKeyRef.current = null;
+      }
+    })();
+  }, [isAiMatch, onRespondUndo, toast, undoRequestedByMe, undoState]);
+
+  useEffect(() => {
+    if (!undoState || undoState.status !== 'pending') {
+      autoUndoKeyRef.current = null;
+    }
+  }, [undoState]);
   const creatorBaseName = lobbyMatch?.creator?.display_name ?? 'Player 1';
   const opponentBaseName = lobbyMatch?.opponent?.display_name ?? 'Player 2';
   const creatorDisplayName = formatNameWithRating(lobbyMatch?.creator, creatorBaseName);
@@ -248,8 +431,8 @@ function ActiveMatchContent({
   );
 
   const pingMenuEnabled = useMemo(
-    () => Boolean(onPingOpponent && opponentProfile && lobbyMatch?.status === 'in_progress'),
-    [lobbyMatch?.status, onPingOpponent, opponentProfile],
+    () => Boolean(!isAiMatch && onPingOpponent && opponentProfile && lobbyMatch?.status === 'in_progress'),
+    [isAiMatch, lobbyMatch?.status, onPingOpponent, opponentProfile],
   );
   const pingCooldownRemaining = useMemo(() => {
     if (!pingCooldownUntil) {
@@ -516,6 +699,9 @@ function ActiveMatchContent({
   ]);
 
   useEffect(() => {
+    if (isAiMatch) {
+      return;
+    }
     if (!lobbyMatch || !role) {
       lastMoveCountRef.current = moves.length;
       return;
@@ -553,6 +739,7 @@ function ActiveMatchContent({
       });
     }
   }, [
+    isAiMatch,
     lobbyMatch,
     moves,
     role,
@@ -616,6 +803,9 @@ function ActiveMatchContent({
   }, [onRespondUndo, setRespondingUndo, toast]);
 
   useEffect(() => {
+    if (isAiMatch) {
+      return;
+    }
     if (!undoState || undoState.status !== 'pending' || undoRequestedByMe) {
       return;
     }
@@ -684,6 +874,7 @@ function ActiveMatchContent({
       ),
     });
   }, [
+    isAiMatch,
     toast,
     undoMoveNumber,
     undoRequestedByMe,
@@ -879,6 +1070,11 @@ function ActiveMatchContent({
           justify="center"
           align="stretch"
         >
+          {isAiMatch && (
+            <Badge colorScheme="pink" alignSelf="center">
+              AI opponent · depth {normalizedAiDepth}
+            </Badge>
+          )}
           <PlayerClockCard
             label={creatorClockLabel}
             clock={creatorClock}
@@ -1104,6 +1300,9 @@ function CompletedMatchSummary({
               <Badge colorScheme="green">
                 {Math.round(match.clock_initial_seconds / 60)}+{match.clock_increment_seconds}
               </Badge>
+            )}
+            {match.is_ai_match && (
+              <Badge colorScheme="pink">AI depth {match.ai_depth ?? 200}</Badge>
             )}
           </HStack>
           <HStack spacing={3} flexWrap="wrap">
@@ -2137,6 +2336,7 @@ function GamePlayWorkspace({
           canSendEmoji={canSendEmoji}
           onSendEmoji={handleSendEmoji}
           onPingOpponent={lobby.pingOpponent}
+          enginePreference={auth.profile?.engine_preference ?? 'python'}
         />
         </SantoriniProvider>
       )}

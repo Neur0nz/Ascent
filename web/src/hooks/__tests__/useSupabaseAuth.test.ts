@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, beforeAll } from 'vitest';
 import type { Session } from '@supabase/supabase-js';
 import type { PlayerProfile } from '@/types/match';
 import { __TESTING__ } from '../useSupabaseAuth';
@@ -11,6 +11,30 @@ const {
   cacheAuthState,
   getCachedAuthState,
 } = __TESTING__;
+
+function createMemoryStorage(): Storage {
+  const store = new Map<string, string>();
+  return {
+    get length() {
+      return store.size;
+    },
+    clear() {
+      store.clear();
+    },
+    getItem(key: string) {
+      return store.has(key) ? store.get(key)! : null;
+    },
+    key(index: number) {
+      return Array.from(store.keys())[index] ?? null;
+    },
+    removeItem(key: string) {
+      store.delete(key);
+    },
+    setItem(key: string, value: string) {
+      store.set(key, value);
+    },
+  } satisfies Storage;
+}
 
 const mockSession = {
   access_token: 'access',
@@ -46,6 +70,18 @@ const mockProfile: PlayerProfile = {
 };
 
 describe('useSupabaseAuth helpers', () => {
+  beforeAll(() => {
+    const storage = createMemoryStorage();
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: storage,
+      configurable: true,
+    });
+    Object.defineProperty(globalThis, 'window', {
+      value: { localStorage: storage },
+      configurable: true,
+    });
+  });
+
   beforeEach(() => {
     localStorage.clear();
   });

@@ -84,6 +84,7 @@ import type {
 } from '@/types/match';
 
 export type StartingPlayer = 'creator' | 'opponent' | 'random';
+export type MatchOpponentType = 'human' | 'ai';
 
 export interface CreateMatchPayload {
   visibility: MatchVisibility;
@@ -92,6 +93,8 @@ export interface CreateMatchPayload {
   clockInitialMinutes: number;
   clockIncrementSeconds: number;
   startingPlayer: StartingPlayer;
+  opponentType?: MatchOpponentType;
+  aiDepth?: number;
 }
 
 export interface LobbyMatch extends MatchRecord {
@@ -286,6 +289,8 @@ function createLocalMatch(): LobbyMatch {
     status: 'in_progress',
     winner_id: null,
     rematch_parent_id: null,
+    is_ai_match: false,
+    ai_depth: null,
     created_at: createdAt,
     initial_state: createEmptySnapshot(),
     creator: null,
@@ -1789,6 +1794,11 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         throw new Error('Authentication required.');
       }
 
+      const opponentType: MatchOpponentType = payload.opponentType === 'ai' ? 'ai' : 'human';
+      const aiDepth = opponentType === 'ai'
+        ? Math.max(10, Math.min(5000, Math.round(payload.aiDepth ?? 200)))
+        : null;
+
       const { data, error } = await invokeAuthorizedFunction(client, 'create-match', {
         body: {
           visibility: payload.visibility,
@@ -1797,6 +1807,8 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
           clockInitialMinutes: payload.clockInitialMinutes,
           clockIncrementSeconds: payload.clockIncrementSeconds,
           startingPlayer: payload.startingPlayer,
+          opponentType,
+          aiDepth,
         },
       });
 
@@ -2104,19 +2116,21 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
       }
 
       const broadcastStart = performance.now();
-      
+
       // 1️⃣ BROADCAST FIRST - Instant feedback (50-100ms)!
       console.log('⚡ Broadcasting move to all players...');
       // Reuse the existing subscribed channel instead of creating a new one
       const channel = channelRef.current || client.channel(`match-${match.id}`);
-      
+      const actingPlayerId = movePayload.by === 'creator' ? match.creator_id : match.opponent_id;
+      const broadcastPlayerId = actingPlayerId ?? profile.id;
+
       try {
         await channel.send({
           type: 'broadcast',
           event: 'move',
           payload: {
             move_index: moveIndex,
-            player_id: profile.id,
+            player_id: broadcastPlayerId,
             action: {
               kind: movePayload.kind,
               move: movePayload.move,
@@ -2238,6 +2252,11 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
 
       const hasClock = (currentMatch.clock_initial_seconds ?? 0) > 0;
       const clockInitialMinutes = hasClock ? Math.round((currentMatch.clock_initial_seconds ?? 0) / 60) : 0;
+      const opponentType: MatchOpponentType = currentMatch.is_ai_match ? 'ai' : 'human';
+      const aiDepth =
+        opponentType === 'ai'
+          ? Math.max(10, Math.min(5000, currentMatch.ai_depth ?? 200))
+          : null;
 
       const { data, error } = await invokeAuthorizedFunction(client, 'create-match', {
         body: {
@@ -2247,6 +2266,8 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
           clockInitialMinutes,
           clockIncrementSeconds: currentMatch.clock_increment_seconds,
           startingPlayer: 'opponent',
+          opponentType,
+          aiDepth,
         },
       });
 

@@ -16,6 +16,7 @@ import {
   Flex,
   FormControl,
   FormLabel,
+  FormHelperText,
   Grid,
   GridItem,
   Heading,
@@ -38,6 +39,11 @@ import {
   Text,
   Tooltip,
   VStack,
+  NumberInput,
+  NumberInputField,
+  NumberInputStepper,
+  NumberIncrementStepper,
+  NumberDecrementStepper,
   useBoolean,
   useColorModeValue,
   useDisclosure,
@@ -53,6 +59,7 @@ import {
   type PlayerConnectionState,
   type ConnectionQuality,
   type UndoRequestState,
+  type MatchOpponentType,
 } from '@hooks/useMatchLobby';
 import { useOnlineSantorini } from '@hooks/useOnlineSantorini';
 import { SantoriniProvider, useSantorini } from '@hooks/useSantorini';
@@ -90,20 +97,35 @@ function MatchCreationModal({
   const [increment, setIncrement] = useState(5);
   const [startingPlayer, setStartingPlayer] = useState<StartingPlayer>('random');
   const [submitting, setSubmitting] = useState(false);
+  const [opponentType, setOpponentType] = useState<MatchOpponentType>('human');
+  const [aiDepth, setAiDepth] = useState(200);
+  const isAiMatch = opponentType === 'ai';
+  const MIN_AI_DEPTH = 10;
+  const MAX_AI_DEPTH = 5000;
   const toast = useToast();
   const { mutedText } = useSurfaceTokens();
+
+  useEffect(() => {
+    if (isAiMatch) {
+      setRated(false);
+      setHasClock(false);
+    }
+  }, [isAiMatch]);
 
   const handleSubmit = async () => {
     if (submitting) return;
     setSubmitting(true);
     try {
+      const clampedDepth = Math.max(MIN_AI_DEPTH, Math.min(MAX_AI_DEPTH, Math.round(aiDepth)));
       const createdMatch = await onCreate({
-        visibility,
-        rated,
-        hasClock,
-        clockInitialMinutes: minutes,
-        clockIncrementSeconds: increment,
+        visibility: isAiMatch ? 'private' : visibility,
+        rated: isAiMatch ? false : rated,
+        hasClock: isAiMatch ? false : hasClock,
+        clockInitialMinutes: isAiMatch ? 0 : minutes,
+        clockIncrementSeconds: isAiMatch ? 0 : increment,
         startingPlayer,
+        opponentType,
+        aiDepth: isAiMatch ? clampedDepth : undefined,
       });
       const startingRole = deriveStartingRole(createdMatch?.initial_state);
       const usedRandom = startingPlayer === 'random';
@@ -120,7 +142,7 @@ function MatchCreationModal({
           : `${opponentName}${suffix} will move first as the red player.`;
       }
       toast({
-        title: 'Match created successfully!',
+        title: isAiMatch ? 'AI match started!' : 'Match created successfully!',
         status: 'success',
         description,
       });
@@ -143,70 +165,111 @@ function MatchCreationModal({
         <ModalHeader>Create New Match</ModalHeader>
         <ModalCloseButton />
         <ModalBody as={Stack} spacing={4}>
-        <FormControl as={Stack} spacing={2}>
-          <FormLabel fontSize="sm">Visibility</FormLabel>
-          <RadioGroup value={visibility} onChange={(value) => setVisibility(value as 'public' | 'private')}>
-            <HStack spacing={4}>
-              <Radio value="public">Public lobby</Radio>
-              <Radio value="private">Private code</Radio>
-            </HStack>
-          </RadioGroup>
-        </FormControl>
-        <FormControl as={Stack} spacing={2}>
-          <FormLabel fontSize="sm">Starting player</FormLabel>
-          <RadioGroup value={startingPlayer} onChange={(value) => setStartingPlayer(value as StartingPlayer)}>
-            <HStack spacing={4}>
-              <Radio value="creator">You</Radio>
-              <Radio value="opponent">Opponent</Radio>
-              <Radio value="random">Random</Radio>
-            </HStack>
-          </RadioGroup>
-        </FormControl>
-        <FormControl display="flex" alignItems="center" justifyContent="space-between">
-          <FormLabel htmlFor="rated-switch" mb="0">
-            Rated game (affects ELO)
-          </FormLabel>
-          <Switch id="rated-switch" isChecked={rated} onChange={(event) => setRated(event.target.checked)} />
-        </FormControl>
-        <FormControl display="flex" flexDir="column" gap={3}>
-          <HStack justify="space-between">
-            <FormLabel htmlFor="clock-switch" mb="0">
-              Enable clock
-            </FormLabel>
-            <Switch id="clock-switch" isChecked={hasClock} onChange={(event) => setHasClock(event.target.checked)} />
-          </HStack>
-          {hasClock && (
-            <Stack direction={{ base: 'column', md: 'row' }} spacing={3}>
-              <FormControl>
-                <FormLabel fontSize="sm">Initial time (minutes)</FormLabel>
-                <Input
-                  type="number"
-                  min={1}
-                  value={minutes}
-                  onChange={(event) => setMinutes(Number(event.target.value))}
-                />
-              </FormControl>
-              <FormControl>
-                <FormLabel fontSize="sm">Increment (seconds)</FormLabel>
-                <Input
-                  type="number"
-                  min={0}
-                  value={increment}
-                  onChange={(event) => setIncrement(Number(event.target.value))}
-                />
-              </FormControl>
-            </Stack>
+          <FormControl as={Stack} spacing={2}>
+            <FormLabel fontSize="sm">Opponent</FormLabel>
+            <RadioGroup value={opponentType} onChange={(value) => setOpponentType(value as MatchOpponentType)}>
+              <HStack spacing={4}>
+                <Radio value="human">Real player</Radio>
+                <Radio value="ai">Santorini AI</Radio>
+              </HStack>
+            </RadioGroup>
+          </FormControl>
+          {isAiMatch && (
+            <Alert status="info" borderRadius="md">
+              <AlertIcon />
+              <Text fontSize="sm">AI matches are unrated, have no clock, and let you pick the engine depth.</Text>
+            </Alert>
           )}
-        </FormControl>
-        <Button
-          colorScheme="teal"
-          onClick={handleSubmit}
-          isDisabled={loading || submitting}
-          isLoading={loading || submitting}
-          w="full"
-        >
-          Create Match
-        </Button>
+          <FormControl as={Stack} spacing={2} isDisabled={isAiMatch}>
+            <FormLabel fontSize="sm">Visibility</FormLabel>
+            <RadioGroup value={visibility} onChange={(value) => setVisibility(value as 'public' | 'private')}>
+              <HStack spacing={4}>
+                <Radio value="public">Public lobby</Radio>
+                <Radio value="private">Private code</Radio>
+              </HStack>
+            </RadioGroup>
+            {isAiMatch && <FormHelperText>AI games always use a private slot.</FormHelperText>}
+          </FormControl>
+          <FormControl as={Stack} spacing={2}>
+            <FormLabel fontSize="sm">Starting player</FormLabel>
+            <RadioGroup value={startingPlayer} onChange={(value) => setStartingPlayer(value as StartingPlayer)}>
+              <HStack spacing={4}>
+                <Radio value="creator">You</Radio>
+                <Radio value="opponent">Opponent</Radio>
+                <Radio value="random">Random</Radio>
+              </HStack>
+            </RadioGroup>
+          </FormControl>
+          <FormControl display="flex" alignItems="center" justifyContent="space-between" isDisabled={isAiMatch}>
+            <FormLabel htmlFor="rated-switch" mb="0">
+              Rated game (affects ELO)
+            </FormLabel>
+            <Switch id="rated-switch" isChecked={rated} onChange={(event) => setRated(event.target.checked)} />
+            {isAiMatch && <FormHelperText>AI matches never affect rating.</FormHelperText>}
+          </FormControl>
+          <FormControl display="flex" flexDir="column" gap={3} isDisabled={isAiMatch}>
+            <HStack justify="space-between">
+              <FormLabel htmlFor="clock-switch" mb="0">
+                Enable clock
+              </FormLabel>
+              <Switch id="clock-switch" isChecked={hasClock} onChange={(event) => setHasClock(event.target.checked)} />
+            </HStack>
+            {hasClock && !isAiMatch && (
+              <Stack direction={{ base: 'column', md: 'row' }} spacing={3}>
+                <FormControl>
+                  <FormLabel fontSize="sm">Initial time (minutes)</FormLabel>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={minutes}
+                    onChange={(event) => setMinutes(Number(event.target.value))}
+                  />
+                </FormControl>
+                <FormControl>
+                  <FormLabel fontSize="sm">Increment (seconds)</FormLabel>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={increment}
+                    onChange={(event) => setIncrement(Number(event.target.value))}
+                  />
+                </FormControl>
+              </Stack>
+            )}
+            {isAiMatch && <FormHelperText>Clocks are disabled when playing AI.</FormHelperText>}
+          </FormControl>
+          {isAiMatch && (
+            <FormControl>
+              <FormLabel fontSize="sm">AI depth (simulations)</FormLabel>
+              <NumberInput
+                value={aiDepth}
+                min={MIN_AI_DEPTH}
+                max={MAX_AI_DEPTH}
+                step={10}
+                onChange={(_, valueNumber) => {
+                  if (Number.isFinite(valueNumber)) {
+                    setAiDepth(Math.round(valueNumber));
+                  }
+                }}
+              >
+                <NumberInputField />
+                <NumberInputStepper>
+                  <NumberIncrementStepper />
+                  <NumberDecrementStepper />
+                </NumberInputStepper>
+              </NumberInput>
+              <FormHelperText>Higher depth makes the AI tougher but slower. 200 is the default.</FormHelperText>
+            </FormControl>
+          )}
+          <Button
+            colorScheme="teal"
+            onClick={handleSubmit}
+            isDisabled={loading || submitting}
+            isLoading={loading || submitting}
+            w="full"
+          >
+            {isAiMatch ? 'Start AI Match' : 'Create Match'}
+          </Button>
         </ModalBody>
         <ModalFooter>
           <Button variant="ghost" onClick={onClose} w="full">

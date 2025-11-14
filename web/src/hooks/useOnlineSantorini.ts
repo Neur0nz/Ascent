@@ -161,6 +161,12 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
   const submissionLockRef = useRef<boolean>(false);
   const syncInProgressRef = useRef<boolean>(false); // Prevent moves during sync
   const processingMoveRef = useRef<boolean>(false); // Prevent rapid clicks
+  const [syncing, setSyncing] = useState(false);
+  const [pendingSubmissionCount, setPendingSubmissionCount] = useState(0);
+  const setSyncInProgress = useCallback((value: boolean) => {
+    syncInProgressRef.current = value;
+    setSyncing(value);
+  }, []);
   
   // Helper function to atomically update engine and derived state
   const updateEngineState = useCallback((newEngine: SantoriniEngine, myTurn: boolean) => {
@@ -215,6 +221,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
         appliedMoveCount: 0
       };
       pendingLocalMovesRef.current = [];
+      setPendingSubmissionCount(0);
       setClock(deriveInitialClocks(match));
       nextLocalMoveIndexRef.current = moves.length;
     } catch (error) {
@@ -237,8 +244,10 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       setClockEnabled(false);
       lastSyncedStateRef.current = { matchId: null, snapshotMoveIndex: -1, appliedMoveCount: 0 };
       pendingLocalMovesRef.current = [];
+      setPendingSubmissionCount(0);
       previousMatchRef.current = { id: null, status: null, clockSeconds: null };
       setPlacementComplete(false);
+      setSyncInProgress(false);
       return;
     }
 
@@ -257,18 +266,20 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       setClock(deriveInitialClocks(match));
       lastSyncedStateRef.current = { matchId: match.id, snapshotMoveIndex: -1, appliedMoveCount: 0 };
       pendingLocalMovesRef.current = [];
+      setPendingSubmissionCount(0);
       resetMatch();
     }
 
     setClockEnabled(match.clock_initial_seconds ? match.clock_initial_seconds > 0 : false);
     previousMatchRef.current = next;
-  }, [match?.id, match?.clock_initial_seconds, match?.status, match, resetMatch]);
+  }, [match?.id, match?.clock_initial_seconds, match?.status, match, resetMatch, setSyncInProgress]);
 
   // State synchronization effect - import snapshots and replay moves
   useEffect(() => {
     if (!match) {
       lastSyncedStateRef.current = { matchId: null, snapshotMoveIndex: -1, appliedMoveCount: 0 };
-      syncInProgressRef.current = false;
+      setPendingSubmissionCount(0);
+      setSyncInProgress(false);
       return;
     }
 
@@ -279,12 +290,12 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       lastSynced.appliedMoveCount !== moves.length;
 
     if (!needsResync) {
-      syncInProgressRef.current = false;
+      setSyncInProgress(false);
       return;
     }
 
     // Mark sync as in progress to block user moves
-    syncInProgressRef.current = true;
+    setSyncInProgress(true);
 
     const syncStart = performance.now();
     debugLog('useOnlineSantorini: Syncing state', { 
@@ -304,7 +315,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       if (isSantoriniMoveAction(action) && typeof action.move === 'number') {
         if (action.by === role) {
           debugLog('⚡ FAST PATH skipped for local move');
-          syncInProgressRef.current = false;
+          setSyncInProgress(false);
           return;
         }
         try {
@@ -348,7 +359,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
           };
           nextLocalMoveIndexRef.current = moves.length;
           
-          syncInProgressRef.current = false;
+          setSyncInProgress(false);
           
           const syncElapsed = performance.now() - syncStart;
           debugLog(`⚡ FAST PATH: State sync complete in ${syncElapsed.toFixed(0)}ms`);
@@ -375,7 +386,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       snapshotSource?.state_snapshot ?? match.initial_state ?? null;
     if (!snapshot) {
       debugWarn('useOnlineSantorini: No snapshot available');
-      syncInProgressRef.current = false;
+      setSyncInProgress(false);
       return;
     }
 
@@ -430,15 +441,15 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       };
       nextLocalMoveIndexRef.current = moves.length;
       
-      syncInProgressRef.current = false;
+      setSyncInProgress(false);
       
       const syncElapsed = performance.now() - syncStart;
       debugLog(`useOnlineSantorini: State sync complete in ${syncElapsed.toFixed(0)}ms`);
     } catch (error) {
       console.error('useOnlineSantorini: Failed to synchronize board with server', error);
-      syncInProgressRef.current = false;
+      setSyncInProgress(false);
     }
-  }, [clockEnabled, match, moves, role, updateEngineState]);
+  }, [clockEnabled, match, moves, role, setSyncInProgress, updateEngineState]);
 
   // Clock tick effect
   // Use engineVersion as dependency to recompute when engine changes
@@ -636,6 +647,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
         if (pendingLocalMovesRef.current.length > 0) {
           setPendingMoveVersion((v) => v + 1);
         }
+        setPendingSubmissionCount(pendingLocalMovesRef.current.length);
       })
       .catch((error) => {
         console.error('useOnlineSantorini: Failed to submit move', error);
@@ -645,6 +657,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
           description: error instanceof Error ? error.message : 'Unknown error',
         });
         pendingLocalMovesRef.current = [];
+        setPendingSubmissionCount(0);
         const nextFromRecords = getNextMoveIndexFromRecords(moves);
         nextLocalMoveIndexRef.current = nextFromRecords;
         if (pendingSnapshot) {
@@ -787,6 +800,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
             moveAction: placementAction,
             snapshotBefore,
           });
+          setPendingSubmissionCount(pendingLocalMovesRef.current.length);
 
           if (clockEnabled && incrementMs > 0 && role) {
             setClock((prev) => {
@@ -887,6 +901,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
               moveAction: action,
               snapshotBefore,
             });
+            setPendingSubmissionCount(pendingLocalMovesRef.current.length);
             if (clockEnabled && incrementMs > 0 && role) {
               setClock((prev) => {
                 const next = { ...prev };
@@ -1010,5 +1025,8 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
     undo,
     redo,
     history: moveHistory,
+    pendingSubmissions: pendingSubmissionCount,
+    snapshot: engineRef.current.snapshot,
+    isSyncing: syncing,
   };
 }
