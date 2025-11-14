@@ -86,23 +86,44 @@ const buildSnapshotSequence = (
 
   for (const move of moves) {
     const action = move.action;
-    if (action && action.kind === 'santorini.move' && typeof action.move === 'number') {
+    if (!action || action.kind !== 'santorini.move' || typeof action.move !== 'number') {
+      continue;
+    }
+
+    const recordedSnapshot = move.state_snapshot as SantoriniSnapshot | null;
+    if (recordedSnapshot) {
+      snapshots.push({
+        snapshot: recordedSnapshot,
+        moveIndex: move.move_index,
+        action,
+        createdAt: move.created_at ?? null,
+      });
       try {
-        const result = playbackEngine.applyMove(action.move);
-        snapshots.push({
-          snapshot: result.snapshot,
-          moveIndex: move.move_index,
-          action,
-          createdAt: move.created_at ?? null,
-        });
-        playbackEngine = SantoriniEngine.fromSnapshot(result.snapshot);
+        playbackEngine = SantoriniEngine.fromSnapshot(recordedSnapshot);
       } catch (error) {
-        console.warn('Skipping move during evaluation replay', {
+        console.warn('Failed to restore recorded snapshot during evaluation replay', {
           moveIndex: move.move_index,
-          action: action.move,
           error,
         });
       }
+      continue;
+    }
+
+    try {
+      const result = playbackEngine.applyMove(action.move);
+      snapshots.push({
+        snapshot: result.snapshot,
+        moveIndex: move.move_index,
+        action,
+        createdAt: move.created_at ?? null,
+      });
+      playbackEngine = SantoriniEngine.fromSnapshot(result.snapshot);
+    } catch (error) {
+      console.warn('Skipping move during evaluation replay', {
+        moveIndex: move.move_index,
+        action: action.move,
+        error,
+      });
     }
   }
 
@@ -327,4 +348,3 @@ export function useEvaluationJobs(): EvaluationJobsContextValue {
   }
   return context;
 }
-
