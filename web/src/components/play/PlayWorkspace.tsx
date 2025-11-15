@@ -1367,10 +1367,23 @@ function PlayWorkspace({ auth }: { auth: SupabaseAuthState }) {
                   {lobby.myMatches.map((m) => {
                     const isActive = m.id === lobby.activeMatchId;
                     const isCreator = m.creator_id === auth.profile?.id;
+                    const waitingForOpponent = m.status === 'waiting_for_opponent';
+                    const status = waitingForOpponent
+                      ? 'Waiting...'
+                      : m.status === 'completed'
+                        ? 'Finished'
+                        : 'In Progress';
+                    const statusColorScheme =
+                      m.status === 'in_progress' ? 'green' : waitingForOpponent ? 'yellow' : 'gray';
                     const opponentName = isCreator ? m.opponent?.display_name : m.creator?.display_name;
-                    const status = m.status === 'waiting_for_opponent' ? 'Waiting...' : 
-                                   m.status === 'completed' ? 'Finished' : 'In Progress';
-                    
+                    const fallbackName = isCreator ? 'Waiting for opponent' : 'Unknown player';
+                    const displayName = waitingForOpponent && isCreator ? 'Waiting for opponent' : opponentName ?? fallbackName;
+                    const creationTime = m.created_at ? formatDate(m.created_at) : undefined;
+                    const joinCodeLine =
+                      waitingForOpponent && m.visibility === 'private' && m.private_join_code
+                        ? `Code ${m.private_join_code}`
+                        : undefined;
+
                     return (
                       <Card
                         key={m.id}
@@ -1383,21 +1396,48 @@ function PlayWorkspace({ auth }: { auth: SupabaseAuthState }) {
                       >
                         <CardBody py={3}>
                           <Flex justify="space-between" align="center">
-                            <Stack spacing={0}>
-                              <HStack spacing={2}>
-                                <Text fontWeight="semibold" fontSize="sm">
-                                  {opponentName}
+                            <Stack spacing={0} flex="1" minW={0}>
+                              <HStack spacing={2} flexWrap="wrap" align="center">
+                                <Text
+                                  fontWeight="semibold"
+                                  fontSize="sm"
+                                  flexShrink={1}
+                                  minW={0}
+                                  noOfLines={1}
+                                >
+                                  {displayName}
                                 </Text>
-                                <Badge colorScheme={
-                                  m.status === 'in_progress' ? 'green' :
-                                  m.status === 'waiting_for_opponent' ? 'yellow' : 'gray'
-                                } size="sm">
+                                <Badge colorScheme={statusColorScheme} size="sm">
                                   {status}
                                 </Badge>
+                                {m.visibility === 'private' && (
+                                  <Badge colorScheme="orange" size="sm">
+                                    Private
+                                  </Badge>
+                                )}
                               </HStack>
-                              <Text fontSize="xs" color={mutedText}>
-                                {m.created_at ? formatDate(m.created_at) : ''}
-                              </Text>
+                              {creationTime && (
+                                <Text
+                                  fontSize="xs"
+                                  color={mutedText}
+                                  wordBreak="break-word"
+                                  noOfLines={1}
+                                  minW={0}
+                                >
+                                  {creationTime}
+                                </Text>
+                              )}
+                              {joinCodeLine && (
+                                <Text
+                                  fontSize="xs"
+                                  color={mutedText}
+                                  wordBreak="break-word"
+                                  noOfLines={1}
+                                  minW={0}
+                                >
+                                  {joinCodeLine}
+                                </Text>
+                              )}
                             </Stack>
                             {m.status === 'waiting_for_opponent' && (
                               <Button
