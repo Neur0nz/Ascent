@@ -12,6 +12,7 @@ export interface SantoriniStateSnapshot {
   validMoves: boolean[];
   metadata?: {
     playerZeroRole?: MatchRole;
+    aiDepth?: number;
   };
 }
 

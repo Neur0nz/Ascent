@@ -5,7 +5,7 @@ import { createBoardViewFromSnapshot, createEmptyMask, type BoardCell } from '@g
 import type { LobbyMatch } from './useMatchLobby';
 import type { MatchAction, MatchMoveRecord, SantoriniMoveAction } from '@/types/match';
 import { computeSynchronizedClock, deriveInitialClocks, getIncrementMs, type ClockState } from './clockUtils';
-import { isAiMatch } from '@/utils/matchAiDepth';
+import { isAiMatch, getPlayerZeroRole, getOppositeRole } from '@/utils/matchAiDepth';
 import { useToast } from '@chakra-ui/react';
 
 export interface UseOnlineSantoriniOptions {
@@ -40,10 +40,6 @@ const toMoveArray = (move: number | number[] | null | undefined): number[] => {
   return typeof move === 'number' && Number.isInteger(move) && move >= 0 ? [move] : [];
 };
 
-const getPlayerZeroRole = (snapshot?: SantoriniSnapshot | null): 'creator' | 'opponent' => {
-  return snapshot?.metadata?.playerZeroRole === 'opponent' ? 'opponent' : 'creator';
-};
-
 const mapPlayerIndexToRole = (
   playerIndex: number,
   playerZeroRole: 'creator' | 'opponent',
@@ -52,7 +48,7 @@ const mapPlayerIndexToRole = (
   if (sanitized === 0) {
     return playerZeroRole;
   }
-  return playerZeroRole === 'creator' ? 'opponent' : 'creator';
+  return getOppositeRole(playerZeroRole);
 };
 
 const resolveActiveRole = (
@@ -156,8 +152,8 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
   const matchIsAi = useMemo(() => isAiMatch(match), [match]);
   const toast = useToast();
   const playerZeroRole = useMemo(
-    () => getPlayerZeroRole(match?.initial_state ?? null),
-    [match?.initial_state?.metadata?.playerZeroRole, match?.id],
+    () => getPlayerZeroRole(match),
+    [match?.initial_state, match?.id],
   );
   
   // Game engine state - pure TypeScript!

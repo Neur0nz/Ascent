@@ -145,6 +145,51 @@ serve(async (req) => {
     auth: { persistSession: false },
   });
 
+  if (opponentType === 'ai') {
+    try {
+      await ensureAiProfile(supabase);
+    } catch (error) {
+      console.error('Failed to ensure AI profile exists', error);
+      return jsonResponse({ error: 'Failed to provision AI opponent' }, { status: 500 });
+    }
+  }
+
+async function ensureAiProfile(client: ReturnType<typeof createClient>) {
+  const { data, error } = await client
+    .from('players')
+    .select('id')
+    .eq('id', AI_PLAYER_ID)
+    .maybeSingle();
+
+  if (error && error.code !== 'PGRST116') {
+    throw error;
+  }
+
+  if (data) {
+    return data;
+  }
+
+  const { data: inserted, error: insertError } = await client
+    .from('players')
+    .insert({
+      id: AI_PLAYER_ID,
+      auth_user_id: null,
+      display_name: 'Santorini AI',
+      avatar_url: null,
+      rating: 1500,
+      games_played: 0,
+      engine_preference: 'python',
+      show_coordinate_labels: true,
+    })
+    .select('id')
+    .single();
+
+  if (insertError) {
+    throw insertError;
+  }
+  return inserted;
+}
+
   const { data: authData, error: authError } = await supabase.auth.getUser(token);
   if (authError || !authData?.user) {
     console.error('Failed to authenticate user via token', authError);

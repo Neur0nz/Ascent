@@ -69,7 +69,7 @@ import OnlineBoardSection from '@components/play/OnlineBoardSection';
 import ConnectionIndicator from '@components/play/ConnectionIndicator';
 import { MatchChatPanel } from '@components/play/MatchChatPanel';
 import type { SantoriniMoveAction, MatchStatus, PlayerProfile, EnginePreference } from '@/types/match';
-import { getMatchAiDepth, isAiMatch as detectAiMatch } from '@/utils/matchAiDepth';
+import { getMatchAiDepth, getOppositeRole, getPlayerZeroRole, isAiMatch as detectAiMatch } from '@/utils/matchAiDepth';
 import { useSurfaceTokens } from '@/theme/useSurfaceTokens';
 import { EMOJIS } from '@components/EmojiPicker';
 import { deriveStartingRole } from '@/utils/matchStartingRole';
@@ -144,7 +144,7 @@ function ActiveMatchContent({
   const toast = useToast();
   const [leaveBusy, setLeaveBusy] = useBoolean();
   const lobbyMatch = match ?? null;
-  const isAiMatch = detectAiMatch(lobbyMatch);
+  const isAiMatchFlag = detectAiMatch(lobbyMatch);
   const aiDepth = getMatchAiDepth(lobbyMatch);
   const normalizedAiDepth = aiDepth && Number.isFinite(aiDepth) ? aiDepth : 200;
   const { cardBg, cardBorder, mutedText, strongText, accentHeading, panelBg } = useSurfaceTokens();
@@ -193,7 +193,7 @@ function ActiveMatchContent({
     onGameComplete: handleGameComplete,
   });
   const ensureAiWorker = useCallback(async () => {
-    if (!isAiMatch) {
+    if (!isAiMatchFlag) {
       return null;
     }
     if (typeof window === 'undefined') {
@@ -211,10 +211,10 @@ function ActiveMatchContent({
     }
     await aiInitPromiseRef.current;
     return aiWorkerRef.current;
-  }, [enginePreference, isAiMatch]);
+  }, [enginePreference, isAiMatchFlag]);
 
   useEffect(() => {
-    if (!isAiMatch) {
+    if (!isAiMatchFlag) {
       return;
     }
     let cancelled = false;
@@ -228,10 +228,10 @@ function ActiveMatchContent({
     return () => {
       cancelled = true;
     };
-  }, [ensureAiWorker, isAiMatch, normalizedAiDepth]);
+  }, [ensureAiWorker, isAiMatchFlag, normalizedAiDepth]);
 
   useEffect(() => {
-    if (!isAiMatch) {
+    if (!isAiMatchFlag) {
       return;
     }
     let cancelled = false;
@@ -245,7 +245,7 @@ function ActiveMatchContent({
     return () => {
       cancelled = true;
     };
-  }, [ensureAiWorker, isAiMatch, santorini.snapshot]);
+  }, [ensureAiWorker, isAiMatchFlag, santorini.snapshot]);
 
   useEffect(() => {
     return () => {
@@ -256,12 +256,12 @@ function ActiveMatchContent({
   }, []);
 
   useEffect(() => {
-    if (!isAiMatch && aiWorkerRef.current) {
+    if (!isAiMatchFlag && aiWorkerRef.current) {
       aiWorkerRef.current.destroy();
       aiWorkerRef.current = null;
       aiInitPromiseRef.current = null;
     }
-  }, [isAiMatch]);
+  }, [isAiMatchFlag]);
 
   useEffect(() => {
     aiPlannedMoveIndexRef.current = null;
@@ -294,7 +294,7 @@ function ActiveMatchContent({
   );
 
   useEffect(() => {
-    if (!isAiMatch) {
+    if (!isAiMatchFlag) {
       return;
     }
     if (!lobbyMatch || lobbyMatch.status !== 'in_progress') {
@@ -332,12 +332,12 @@ function ActiveMatchContent({
       .finally(() => {
         aiMoveInFlightRef.current = null;
       });
-  }, [isAiMatch, lobbyMatch, moves, santorini.currentTurn, santorini.isSyncing, santorini.pendingSubmissions, triggerAiMove, undoState, toast]);
+  }, [isAiMatchFlag, lobbyMatch, moves, santorini.currentTurn, santorini.isSyncing, santorini.pendingSubmissions, triggerAiMove, undoState, toast]);
 
   const undoRequestedByMe = undoState && undoState.requestedBy === role;
 
   useEffect(() => {
-    if (!isAiMatch) {
+    if (!isAiMatchFlag) {
       autoUndoKeyRef.current = null;
       return;
     }
@@ -358,14 +358,14 @@ function ActiveMatchContent({
         autoUndoKeyRef.current = null;
       }
     })();
-  }, [isAiMatch, onRespondUndo, toast, undoRequestedByMe, undoState]);
+  }, [isAiMatchFlag, onRespondUndo, toast, undoRequestedByMe, undoState]);
 
   useEffect(() => {
     if (!undoState || undoState.status !== 'pending') {
       autoUndoKeyRef.current = null;
     }
   }, [undoState]);
-  const fallbackOpponentName = isAiMatch ? 'Santorini AI' : 'Player 2';
+  const fallbackOpponentName = isAiMatchFlag ? 'Santorini AI' : 'Player 2';
   const creatorBaseName = lobbyMatch?.creator?.display_name ?? 'Player 1';
   const opponentBaseName = lobbyMatch?.opponent?.display_name ?? fallbackOpponentName;
   const creatorDisplayName = formatNameWithRating(lobbyMatch?.creator, creatorBaseName);
@@ -374,9 +374,9 @@ function ActiveMatchContent({
   const opponentClock = santorini.formatClock(santorini.opponentClockMs);
   const creatorTurnActive = santorini.currentTurn === 'creator';
   const opponentTurnActive = santorini.currentTurn === 'opponent';
-  const playerZeroRole = lobbyMatch?.initial_state?.metadata?.playerZeroRole === 'opponent' ? 'opponent' : 'creator';
+  const playerZeroRole = getPlayerZeroRole(lobbyMatch);
   const greenRole = playerZeroRole;
-  const redRole = playerZeroRole === 'creator' ? 'opponent' : 'creator';
+  const redRole = getOppositeRole(playerZeroRole);
   const isMyTurn = role === 'creator' ? creatorTurnActive : role === 'opponent' ? opponentTurnActive : false;
   const turnGlowColor = role ? (role === greenRole ? 'green.400' : 'red.400') : undefined;
   const normalizeRating = (value: number | null | undefined): number | null =>
@@ -440,8 +440,8 @@ function ActiveMatchContent({
   );
 
   const pingMenuEnabled = useMemo(
-    () => Boolean(!isAiMatch && onPingOpponent && opponentProfile && lobbyMatch?.status === 'in_progress'),
-    [isAiMatch, lobbyMatch?.status, onPingOpponent, opponentProfile],
+    () => Boolean(!isAiMatchFlag && onPingOpponent && opponentProfile && lobbyMatch?.status === 'in_progress'),
+    [isAiMatchFlag, lobbyMatch?.status, onPingOpponent, opponentProfile],
   );
   const pingCooldownRemaining = useMemo(() => {
     if (!pingCooldownUntil) {
@@ -707,7 +707,7 @@ function ActiveMatchContent({
   ]);
 
   useEffect(() => {
-    if (isAiMatch) {
+    if (isAiMatchFlag) {
       return;
     }
     if (!lobbyMatch || !role) {
@@ -747,7 +747,7 @@ function ActiveMatchContent({
       });
     }
   }, [
-    isAiMatch,
+    isAiMatchFlag,
     lobbyMatch,
     moves,
     role,
@@ -811,7 +811,7 @@ function ActiveMatchContent({
   }, [onRespondUndo, setRespondingUndo, toast]);
 
   useEffect(() => {
-    if (isAiMatch) {
+    if (isAiMatchFlag) {
       return;
     }
     if (!undoState || undoState.status !== 'pending' || undoRequestedByMe) {
@@ -882,7 +882,7 @@ function ActiveMatchContent({
       ),
     });
   }, [
-    isAiMatch,
+    isAiMatchFlag,
     toast,
     undoMoveNumber,
     undoRequestedByMe,
@@ -1078,7 +1078,7 @@ function ActiveMatchContent({
           justify="center"
           align="stretch"
         >
-          {isAiMatch && (
+          {isAiMatchFlag && (
             <Badge colorScheme="pink" alignSelf="center">
               AI opponent · depth {normalizedAiDepth}
             </Badge>
@@ -1309,7 +1309,7 @@ function CompletedMatchSummary({
                 {Math.round(match.clock_initial_seconds / 60)}+{match.clock_increment_seconds}
               </Badge>
             )}
-            {isAiMatch(match) && (
+            {detectAiMatch(match) && (
               <Badge colorScheme="pink">AI depth {getMatchAiDepth(match) ?? 200}</Badge>
             )}
           </HStack>
@@ -1829,10 +1829,10 @@ function GamePlayWorkspace({
     if (!match) {
       return null;
     }
-    const playerZeroRole = match.initial_state?.metadata?.playerZeroRole === 'opponent' ? 'opponent' : 'creator';
+    const playerZeroRole = getPlayerZeroRole(match);
     const greenRole = playerZeroRole;
-    const redRole = playerZeroRole === 'creator' ? 'opponent' : 'creator';
-    const fallbackOpponentName = isAiMatch(match) ? 'Santorini AI' : 'Opponent';
+    const redRole = getOppositeRole(playerZeroRole);
+    const fallbackOpponentName = detectAiMatch(match) ? 'Santorini AI' : 'Opponent';
     const creatorFallback = playerZeroRole === 'creator' ? 'Player 1 (Green)' : 'Player 1 (Red)';
     const opponentFallback = playerZeroRole === 'opponent' ? 'Player 2 (Green)' : 'Player 2 (Red)';
     const creatorLabel = formatNameWithRating(match.creator, match.creator?.display_name ?? creatorFallback);

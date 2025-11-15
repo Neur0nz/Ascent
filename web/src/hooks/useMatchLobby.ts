@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import type { FunctionInvokeOptions } from '@supabase/supabase-js';
-import { getMatchAiDepth, isAiMatch } from '@/utils/matchAiDepth';
+import { getMatchAiDepth, getPlayerZeroRole, getRoleForMoveIndex, isAiMatch } from '@/utils/matchAiDepth';
 
 type SupabaseClientType = NonNullable<typeof supabase>;
 
@@ -1196,20 +1196,11 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
           // should own the move. Placement currently uses TWO turns total: starting
           // player places both workers, then the challenger does the same.
           if (prev.activeMatch) {
-            const { creator_id, opponent_id, initial_state } = prev.activeMatch;
-            const playerZeroRole = initial_state?.metadata?.playerZeroRole === 'opponent' ? 'opponent' : 'creator';
-            const playerZeroId = playerZeroRole === 'creator' ? creator_id : opponent_id;
-            const otherPlayerId = playerZeroRole === 'creator' ? opponent_id : creator_id;
-
-            let expectedPlayerId: string | null = null;
-            const placementSlots: Array<string | null> = [playerZeroId ?? null, otherPlayerId ?? null];
-
-            if (broadcastMove.move_index < placementSlots.length) {
-              expectedPlayerId = placementSlots[broadcastMove.move_index] ?? null;
-            } else if (playerZeroId && otherPlayerId) {
-              const postPlacementIndex = broadcastMove.move_index - placementSlots.length;
-              expectedPlayerId = postPlacementIndex % 2 === 0 ? playerZeroId : otherPlayerId;
-            }
+            const { creator_id, opponent_id } = prev.activeMatch;
+            const playerZeroRole = getPlayerZeroRole(prev.activeMatch);
+            const expectedRole = getRoleForMoveIndex(broadcastMove.move_index, playerZeroRole);
+            const expectedPlayerId =
+              expectedRole === 'creator' ? creator_id ?? null : opponent_id ?? null;
 
             if (expectedPlayerId && broadcastMove.player_id !== expectedPlayerId) {
               console.warn('⚡ BROADCAST: Player/turn mismatch for optimistic apply, deferring to DB', {
