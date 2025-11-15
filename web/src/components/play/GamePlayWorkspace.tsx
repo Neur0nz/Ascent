@@ -1078,11 +1078,6 @@ function ActiveMatchContent({
           justify="center"
           align="stretch"
         >
-          {isAiMatchFlag && (
-            <Badge colorScheme="pink" alignSelf="center">
-              AI opponent · depth {normalizedAiDepth}
-            </Badge>
-          )}
           <PlayerClockCard
             label={creatorClockLabel}
             clock={creatorClock}
@@ -1310,7 +1305,7 @@ function CompletedMatchSummary({
               </Badge>
             )}
             {detectAiMatch(match) && (
-              <Badge colorScheme="pink">AI depth {getMatchAiDepth(match) ?? 200}</Badge>
+              <Badge colorScheme="pink">Depth {getMatchAiDepth(match) ?? 200}</Badge>
             )}
           </HStack>
           <HStack spacing={3} flexWrap="wrap">
@@ -1832,7 +1827,8 @@ function GamePlayWorkspace({
     const playerZeroRole = getPlayerZeroRole(match);
     const greenRole = playerZeroRole;
     const redRole = getOppositeRole(playerZeroRole);
-    const fallbackOpponentName = detectAiMatch(match) ? 'Santorini AI' : 'Opponent';
+    const summaryIsAiMatch = detectAiMatch(match);
+    const fallbackOpponentName = summaryIsAiMatch ? 'Santorini AI' : 'Opponent';
     const creatorFallback = playerZeroRole === 'creator' ? 'Player 1 (Green)' : 'Player 1 (Red)';
     const opponentFallback = playerZeroRole === 'opponent' ? 'Player 2 (Green)' : 'Player 2 (Red)';
     const creatorLabel = formatNameWithRating(match.creator, match.creator?.display_name ?? creatorFallback);
@@ -1845,13 +1841,21 @@ function GamePlayWorkspace({
         ? `${Math.round(match.clock_initial_seconds / 60)}+${match.clock_increment_seconds}`
         : null;
     const startingRole = deriveStartingRole(match.initial_state);
-    const greenName = greenRole === 'creator' ? (match.creator?.display_name ?? 'Creator') : (match.opponent?.display_name ?? fallbackOpponentName);
-    const redName = redRole === 'creator' ? (match.creator?.display_name ?? 'Creator') : (match.opponent?.display_name ?? fallbackOpponentName);
+    const greenName =
+      greenRole === 'creator'
+        ? match.creator?.display_name ?? 'Creator'
+        : match.opponent?.display_name ?? fallbackOpponentName;
+    const redName =
+      redRole === 'creator'
+        ? match.creator?.display_name ?? 'Creator'
+        : match.opponent?.display_name ?? fallbackOpponentName;
     const startingLabel = startingRole
       ? `${startingRole === greenRole ? 'Green' : 'Red'} – ${startingRole === greenRole ? greenName : redName} moves first`
       : null;
+    const aiDepth = summaryIsAiMatch ? getMatchAiDepth(match) ?? 200 : null;
     return {
       vsLabel: `${creatorLabel} vs ${opponentLabel}`,
+      aiDepth,
       ratedLabel: match.rated ? 'Rated' : 'Casual',
       moveCount,
       clockLabel,
@@ -2202,6 +2206,13 @@ function GamePlayWorkspace({
                 <WrapItem>
                   <Badge colorScheme="orange" fontSize="xs">
                     Code: {activeMatchSummary.joinCode}
+                  </Badge>
+                </WrapItem>
+              )}
+              {activeMatchSummary.aiDepth != null && (
+                <WrapItem>
+                  <Badge colorScheme="pink" fontSize="xs">
+                    Depth {activeMatchSummary.aiDepth}
                   </Badge>
                 </WrapItem>
               )}
