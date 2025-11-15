@@ -131,6 +131,12 @@ serve(async (req) => {
     resolvedStartingRole = Math.random() < 0.5 ? 'creator' : 'opponent';
   }
   const playerZeroRole = resolvedStartingRole;
+  const startingPlayerIndex = playerZeroRole === 'creator' ? 0 : 1;
+
+  const initialMetadata: { playerZeroRole: typeof playerZeroRole; aiDepth?: number } = { playerZeroRole };
+  if (opponentType === 'ai' && typeof aiDepth === 'number') {
+    initialMetadata.aiDepth = aiDepth;
+  }
 
   const clockInitialSeconds = hasClock ? Math.max(0, Math.round(initialMinutes * 60)) : 0;
   const clockIncrementSeconds = hasClock ? Math.max(0, Math.round(incrementSeconds)) : 0;
@@ -200,7 +206,7 @@ serve(async (req) => {
 
   const joinCode = opponentType === 'human' && visibility === 'private' ? generateJoinCode() : null;
 
-  const { snapshot } = SantoriniEngine.createInitial(0, { playerZeroRole });
+  const { snapshot } = SantoriniEngine.createInitial(startingPlayerIndex, initialMetadata);
   console.log('Creating match with starting role:', playerZeroRole, 'from option:', startingPlayerOption);
 
   const insertPayload = {
@@ -213,7 +219,6 @@ serve(async (req) => {
     clock_increment_seconds: clockIncrementSeconds,
     initial_state: snapshot,
     is_ai_match: opponentType === 'ai',
-    ai_depth: aiDepth,
     ...(opponentType === 'ai' ? { status: 'in_progress' as const } : {}),
   };
 
@@ -224,7 +229,7 @@ serve(async (req) => {
     .single();
 
   if (insertError || !match) {
-    const postgresError = insertError as { code?: string; message?: string } | null;
+    const postgresError = insertError as { code?: string; message?: string; details?: string } | null;
     if (postgresError?.code === '23505') {
       const { data: activeMatch } = await supabase
         .from('matches')
@@ -244,7 +249,15 @@ serve(async (req) => {
       );
     }
     console.error('Failed to create match', insertError);
-    return jsonResponse({ error: 'Failed to create match' }, { status: 500 });
+    return jsonResponse(
+      {
+        error: 'Failed to create match',
+        code: postgresError?.code ?? 'CREATE_MATCH_FAILED',
+        hint: postgresError?.message ?? undefined,
+        details: postgresError?.details ?? undefined,
+      },
+      { status: 500 },
+    );
   }
 
   let enrichedMatch = match;

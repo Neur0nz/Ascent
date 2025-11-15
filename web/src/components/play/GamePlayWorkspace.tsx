@@ -69,6 +69,7 @@ import OnlineBoardSection from '@components/play/OnlineBoardSection';
 import ConnectionIndicator from '@components/play/ConnectionIndicator';
 import { MatchChatPanel } from '@components/play/MatchChatPanel';
 import type { SantoriniMoveAction, MatchStatus, PlayerProfile, EnginePreference } from '@/types/match';
+import { getMatchAiDepth } from '@/utils/matchAiDepth';
 import { useSurfaceTokens } from '@/theme/useSurfaceTokens';
 import { EMOJIS } from '@components/EmojiPicker';
 import { deriveStartingRole } from '@/utils/matchStartingRole';
@@ -144,7 +145,7 @@ function ActiveMatchContent({
   const [leaveBusy, setLeaveBusy] = useBoolean();
   const lobbyMatch = match ?? null;
   const isAiMatch = Boolean(lobbyMatch?.is_ai_match);
-  const aiDepth = lobbyMatch?.ai_depth ?? null;
+  const aiDepth = getMatchAiDepth(lobbyMatch);
   const normalizedAiDepth = aiDepth && Number.isFinite(aiDepth) ? aiDepth : 200;
   const { cardBg, cardBorder, mutedText, strongText, accentHeading, panelBg } = useSurfaceTokens();
   // Ensure connectionStates has a default value
@@ -1309,7 +1310,7 @@ function CompletedMatchSummary({
               </Badge>
             )}
             {match.is_ai_match && (
-              <Badge colorScheme="pink">AI depth {match.ai_depth ?? 200}</Badge>
+              <Badge colorScheme="pink">AI depth {getMatchAiDepth(match) ?? 200}</Badge>
             )}
           </HStack>
           <HStack spacing={3} flexWrap="wrap">

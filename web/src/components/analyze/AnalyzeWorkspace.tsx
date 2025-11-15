@@ -57,6 +57,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { SantoriniEngine, type SantoriniSnapshot } from '@/lib/santoriniEngine';
 import { useSantorini } from '@hooks/useSantorini';
 import type { MatchMoveRecord, MatchRecord, SantoriniMoveAction, PlayerProfile, SantoriniStateSnapshot } from '@/types/match';
+import { getMatchAiDepth } from '@/utils/matchAiDepth';
 import type { EvaluationSeriesPoint } from '@/types/evaluation';
 import type { SupabaseAuthState } from '@hooks/useSupabaseAuth';
 import type { LobbyMatch } from '@hooks/useMatchLobby';
@@ -99,7 +100,8 @@ const DEFAULT_CUSTOM_DEPTH = 800;
 
 function describeMatch(match: LobbyMatch, profile: PlayerProfile | null) {
   if (match.is_ai_match) {
-    const depthLabel = match.ai_depth ? ` (depth ${match.ai_depth})` : '';
+    const depth = getMatchAiDepth(match);
+    const depthLabel = depth ? ` (depth ${depth})` : '';
     return `You vs AI${depthLabel}`;
   }
   const isCreator = profile ? match.creator_id === profile.id : false;

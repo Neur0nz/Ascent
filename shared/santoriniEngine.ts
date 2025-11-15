@@ -21,6 +21,7 @@ export type PlayerRoleLabel = 'creator' | 'opponent';
 
 export interface SantoriniMetadata {
   playerZeroRole?: PlayerRoleLabel;
+  aiDepth?: number;
 }
 
 const DIRECTIONS: Array<[number, number]> = [
