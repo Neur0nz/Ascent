@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import type { FunctionInvokeOptions } from '@supabase/supabase-js';
 import { getMatchAiDepth, getPlayerZeroRole, getRoleForMoveIndex, isAiMatch } from '@/utils/matchAiDepth';
+import { isSantoriniMoveAction } from '@/utils/matchActions';
 
 type SupabaseClientType = NonNullable<typeof supabase>;
 
@@ -311,10 +312,6 @@ function normalizeAction(action: unknown): MatchAction {
     return action as MatchAction;
   }
   return { kind: 'unknown' } as MatchAction;
-}
-
-function isSantoriniMoveAction(action: MatchAction | null | undefined): action is SantoriniMoveAction {
-  return Boolean(action && (action as SantoriniMoveAction).kind === 'santorini.move');
 }
 
 function upsertMatch(list: LobbyMatch[], match: LobbyMatch): LobbyMatch[] {

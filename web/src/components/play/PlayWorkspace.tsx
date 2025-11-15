@@ -71,16 +71,13 @@ import MyMatchesPanel from './MyMatchesPanel';
 import { useSurfaceTokens } from '@/theme/useSurfaceTokens';
 import { deriveStartingRole } from '@/utils/matchStartingRole';
 import { getOppositeRole, getPlayerZeroRole, isAiMatch } from '@/utils/matchAiDepth';
+import { isSantoriniMoveAction } from '@/utils/matchActions';
 
 const ALLOW_ONLINE_AI_MATCHES = false;
 
 function formatDate(value: string) {
   return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
-
-const isSantoriniMoveAction = (action: MatchAction | null | undefined): action is SantoriniMoveAction => {
-  return Boolean(action && (action as SantoriniMoveAction).kind === 'santorini.move');
-};
 
 function MatchCreationModal({
   isOpen,

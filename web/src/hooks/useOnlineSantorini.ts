@@ -6,6 +6,7 @@ import type { LobbyMatch } from './useMatchLobby';
 import type { MatchAction, MatchMoveRecord, SantoriniMoveAction } from '@/types/match';
 import { computeSynchronizedClock, deriveInitialClocks, getIncrementMs, type ClockState } from './clockUtils';
 import { isAiMatch, getPlayerZeroRole, getOppositeRole } from '@/utils/matchAiDepth';
+import { isSantoriniMoveAction } from '@/utils/matchActions';
 import { useToast } from '@chakra-ui/react';
 
 export interface UseOnlineSantoriniOptions {
@@ -72,10 +73,6 @@ const isRoleTurn = (
   }
   return resolveActiveRole(engine, playerZeroRole) === role;
 };
-
-function isSantoriniMoveAction(action: MatchAction | null | undefined): action is SantoriniMoveAction {
-  return Boolean(action && (action as SantoriniMoveAction).kind === 'santorini.move');
-}
 
 const getLastSantoriniMove = (records: MatchMoveRecord<MatchAction>[]): number | null => {
   for (let index = records.length - 1; index >= 0; index -= 1) {
