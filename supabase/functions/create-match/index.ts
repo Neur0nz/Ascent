@@ -186,20 +186,20 @@ serve(async (req) => {
   } else {
     const { data: existingAiMatches, error: aiCheckError } = await supabase
       .from('matches')
-      .select('id')
+      .select('id, opponent_id, status')
       .eq('creator_id', profile.id)
-      .eq('is_ai_match', true)
       .in('status', ['in_progress'])
-      .limit(1);
+      .limit(10);
     if (aiCheckError) {
       console.error('Failed to check for existing AI matches', aiCheckError);
       return jsonResponse({ error: 'Failed to check for existing matches' }, { status: 500 });
     }
-    if (existingAiMatches && existingAiMatches.length > 0) {
+    const activeAiMatch = existingAiMatches?.find((match) => match.opponent_id === AI_PLAYER_ID);
+    if (activeAiMatch) {
       return jsonResponse({
         error: 'Finish your current AI game before starting another one.',
         code: 'ACTIVE_AI_GAME_EXISTS',
-        activeMatchId: existingAiMatches[0].id,
+        activeMatchId: activeAiMatch.id,
       }, { status: 409 });
     }
   }
@@ -218,7 +218,6 @@ serve(async (req) => {
     clock_initial_seconds: clockInitialSeconds,
     clock_increment_seconds: clockIncrementSeconds,
     initial_state: snapshot,
-    is_ai_match: opponentType === 'ai',
     ...(opponentType === 'ai' ? { status: 'in_progress' as const } : {}),
   };
 

@@ -69,7 +69,7 @@ import OnlineBoardSection from '@components/play/OnlineBoardSection';
 import ConnectionIndicator from '@components/play/ConnectionIndicator';
 import { MatchChatPanel } from '@components/play/MatchChatPanel';
 import type { SantoriniMoveAction, MatchStatus, PlayerProfile, EnginePreference } from '@/types/match';
-import { getMatchAiDepth } from '@/utils/matchAiDepth';
+import { getMatchAiDepth, isAiMatch as detectAiMatch } from '@/utils/matchAiDepth';
 import { useSurfaceTokens } from '@/theme/useSurfaceTokens';
 import { EMOJIS } from '@components/EmojiPicker';
 import { deriveStartingRole } from '@/utils/matchStartingRole';
@@ -144,7 +144,7 @@ function ActiveMatchContent({
   const toast = useToast();
   const [leaveBusy, setLeaveBusy] = useBoolean();
   const lobbyMatch = match ?? null;
-  const isAiMatch = Boolean(lobbyMatch?.is_ai_match);
+  const isAiMatch = detectAiMatch(lobbyMatch);
   const aiDepth = getMatchAiDepth(lobbyMatch);
   const normalizedAiDepth = aiDepth && Number.isFinite(aiDepth) ? aiDepth : 200;
   const { cardBg, cardBorder, mutedText, strongText, accentHeading, panelBg } = useSurfaceTokens();
@@ -365,7 +365,7 @@ function ActiveMatchContent({
       autoUndoKeyRef.current = null;
     }
   }, [undoState]);
-  const fallbackOpponentName = lobbyMatch?.is_ai_match ? 'Santorini AI' : 'Player 2';
+  const fallbackOpponentName = isAiMatch ? 'Santorini AI' : 'Player 2';
   const creatorBaseName = lobbyMatch?.creator?.display_name ?? 'Player 1';
   const opponentBaseName = lobbyMatch?.opponent?.display_name ?? fallbackOpponentName;
   const creatorDisplayName = formatNameWithRating(lobbyMatch?.creator, creatorBaseName);
@@ -1309,7 +1309,7 @@ function CompletedMatchSummary({
                 {Math.round(match.clock_initial_seconds / 60)}+{match.clock_increment_seconds}
               </Badge>
             )}
-            {match.is_ai_match && (
+            {isAiMatch(match) && (
               <Badge colorScheme="pink">AI depth {getMatchAiDepth(match) ?? 200}</Badge>
             )}
           </HStack>
@@ -1832,7 +1832,7 @@ function GamePlayWorkspace({
     const playerZeroRole = match.initial_state?.metadata?.playerZeroRole === 'opponent' ? 'opponent' : 'creator';
     const greenRole = playerZeroRole;
     const redRole = playerZeroRole === 'creator' ? 'opponent' : 'creator';
-    const fallbackOpponentName = match.is_ai_match ? 'Santorini AI' : 'Opponent';
+    const fallbackOpponentName = isAiMatch(match) ? 'Santorini AI' : 'Opponent';
     const creatorFallback = playerZeroRole === 'creator' ? 'Player 1 (Green)' : 'Player 1 (Red)';
     const opponentFallback = playerZeroRole === 'opponent' ? 'Player 2 (Green)' : 'Player 2 (Red)';
     const creatorLabel = formatNameWithRating(match.creator, match.creator?.display_name ?? creatorFallback);

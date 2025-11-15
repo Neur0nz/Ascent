@@ -5,6 +5,7 @@ import { createBoardViewFromSnapshot, createEmptyMask, type BoardCell } from '@g
 import type { LobbyMatch } from './useMatchLobby';
 import type { MatchAction, MatchMoveRecord, SantoriniMoveAction } from '@/types/match';
 import { computeSynchronizedClock, deriveInitialClocks, getIncrementMs, type ClockState } from './clockUtils';
+import { isAiMatch } from '@/utils/matchAiDepth';
 import { useToast } from '@chakra-ui/react';
 
 export interface UseOnlineSantoriniOptions {
@@ -152,6 +153,7 @@ function computeSelectable(
 export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
   const { match, moves, role, onSubmitMove, onGameComplete } = options;
   const matchId = match?.id ?? null;
+  const matchIsAi = useMemo(() => isAiMatch(match), [match]);
   const toast = useToast();
   const playerZeroRole = useMemo(
     () => getPlayerZeroRole(match?.initial_state ?? null),
@@ -1074,7 +1076,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
 
   const moveHistory = useMemo(() => {
     const creatorName = match?.creator?.display_name ?? 'Creator';
-    const opponentName = match?.opponent?.display_name ?? (match?.is_ai_match ? 'Santorini AI' : 'Opponent');
+    const opponentName = match?.opponent?.display_name ?? (matchIsAi ? 'Santorini AI' : 'Opponent');
     const greenRole = playerZeroRole;
     return moves
       .filter((move) => isSantoriniMoveAction(move.action))
@@ -1090,7 +1092,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
           description: `${index + 1}. ${actorName} (${colorLabel}) played ${moveDescriptor || 'action'}`,
         };
       });
-  }, [match?.creator?.display_name, match?.is_ai_match, match?.opponent?.display_name, moves, playerZeroRole]);
+  }, [match?.creator?.display_name, match?.opponent?.display_name, moves, playerZeroRole, matchIsAi]);
 
   return {
     board,

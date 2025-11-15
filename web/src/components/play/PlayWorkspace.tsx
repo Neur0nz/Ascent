@@ -70,6 +70,7 @@ import type { SantoriniMoveAction, MatchStatus, EnginePreference, MatchAction } 
 import MyMatchesPanel from './MyMatchesPanel';
 import { useSurfaceTokens } from '@/theme/useSurfaceTokens';
 import { deriveStartingRole } from '@/utils/matchStartingRole';
+import { isAiMatch } from '@/utils/matchAiDepth';
 
 function formatDate(value: string) {
   return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -634,8 +635,9 @@ function ActiveMatchContent({
     onGameComplete: handleGameComplete,
   });
   const creatorName = lobbyMatch?.creator?.display_name ?? 'Creator';
+  const aiMatch = isAiMatch(lobbyMatch);
   const opponentName = lobbyMatch?.opponent?.display_name
-    ?? (lobbyMatch?.is_ai_match ? 'Santorini AI' : 'Waiting for opponent');
+    ?? (aiMatch ? 'Santorini AI' : 'Waiting for opponent');
   const playerZeroRole = lobbyMatch?.initial_state?.metadata?.playerZeroRole === 'opponent' ? 'opponent' : 'creator';
   const greenRole = playerZeroRole;
   const redRole = playerZeroRole === 'creator' ? 'opponent' : 'creator';

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import type { FunctionInvokeOptions } from '@supabase/supabase-js';
-import { getMatchAiDepth } from '@/utils/matchAiDepth';
+import { getMatchAiDepth, isAiMatch } from '@/utils/matchAiDepth';
 
 type SupabaseClientType = NonNullable<typeof supabase>;
 
@@ -2253,7 +2253,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
 
       const hasClock = (currentMatch.clock_initial_seconds ?? 0) > 0;
       const clockInitialMinutes = hasClock ? Math.round((currentMatch.clock_initial_seconds ?? 0) / 60) : 0;
-      const opponentType: MatchOpponentType = currentMatch.is_ai_match ? 'ai' : 'human';
+      const opponentType: MatchOpponentType = isAiMatch(currentMatch) ? 'ai' : 'human';
       const baseAiDepth = getMatchAiDepth(currentMatch);
       const aiDepth =
         opponentType === 'ai'
