@@ -37,55 +37,73 @@ import EvaluationJobToasts from '@components/analyze/EvaluationJobToasts';
 
 const TAB_STORAGE_KEY = 'santorini:lastTab';
 
+/**
+ * Normalizes a tab key by resolving aliases.
+ * This allows for flexible URLs, e.g., mapping 'analyze' to 'analysis'.
+ * @param value The raw tab key from a URL hash or storage.
+ * @returns The normalized AppTab or the original value if no alias is found.
+ */
+const TAB_ALIASES: Record<string, AppTab> = {
+  analyze: 'analysis',
+  // Future aliases can be added here, e.g., 'board': 'practice'
+};
+
 function normalizeTabKey(value: string | null): AppTab | null {
   if (!value) return null;
-  if (value === 'analyze') {
-    return 'analysis';
-  }
-  return value as AppTab;
+  return TAB_ALIASES[value] || (value as AppTab);
 }
 
+/**
+ * Determines the initial tab for the application, updating the URL hash as a side effect.
+ * The priority for determining the tab is:
+ * 1. A valid tab name from the URL hash (`#tabname`).
+ * 2. A valid tab name from localStorage (`santorini:lastTab`).
+ * 3. The default tab, 'lobby'.
+ *
+ * The function ensures the URL hash is synchronized with the resolved tab.
+ * @param tabOrder A read-only array of available tab keys.
+ * @returns The resolved application tab.
+ */
 function resolveInitialTab(tabOrder: readonly AppTab[]): AppTab {
   if (typeof window === 'undefined') {
-    return 'lobby';
+    return 'lobby'; // Default for server-side rendering
   }
 
   const { hash, pathname, search } = window.location;
+  const defaultTab: AppTab = 'lobby';
+
+  // Helper to update the URL hash without triggering a page reload.
+  const updateHash = (newTab: AppTab) => {
+    try {
+      const newHash = `#${newTab}`;
+      if (window.location.hash !== newHash) {
+        window.history.replaceState(null, '', `${pathname}${search}${newHash}`);
+      }
+    } catch (error) {
+      console.error(`Failed to update URL hash to #${newTab}`, error);
+    }
+  };
+
+  // 1. Check URL hash for a valid tab. This is the highest priority.
   const hashTab = normalizeTabKey(hash.slice(1));
   if (hashTab && tabOrder.includes(hashTab)) {
     return hashTab;
   }
 
-  if (hash && (!hashTab || !tabOrder.includes(hashTab))) {
-    try {
-      window.history.replaceState(null, '', `${pathname}${search}#lobby`);
-    } catch (error) {
-      console.error('Failed to reset to default tab hash', error);
-    }
-  }
-
+  // 2. If hash is invalid or missing, check localStorage for the last used tab.
   try {
     const storedTab = normalizeTabKey(window.localStorage.getItem(TAB_STORAGE_KEY));
     if (storedTab && tabOrder.includes(storedTab)) {
-      const targetUrl = `${pathname}${search}#${storedTab}`;
-      if (`#${storedTab}` !== hash) {
-        window.history.replaceState(null, '', targetUrl);
-      }
+      updateHash(storedTab); // Sync URL hash with the stored tab
       return storedTab;
     }
   } catch (error) {
     console.error('Failed to restore last active tab', error);
   }
 
-  if (!hash) {
-    try {
-      window.history.replaceState(null, '', `${pathname}${search}#lobby`);
-    } catch (error) {
-      console.error('Failed to set default tab hash', error);
-    }
-  }
-
-  return 'lobby';
+  // 3. As a fallback, use the default tab and update the URL.
+  updateHash(defaultTab);
+  return defaultTab;
 }
 
 function PracticeTabContent({ onShowHistory }: { onShowHistory: () => void }) {
