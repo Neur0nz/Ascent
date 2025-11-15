@@ -349,20 +349,40 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
   }, [practiceMode]);
 
   const updateSelectable = useCallback(() => {
-    const placement = getPlacementContext();
-    if (buttonsRef.current.setupMode || placement.phase === 'placement') {
-      const snapshot = engineRef.current.snapshot;
+    const uiPlacement = getPlacementContext();
+    const snapshot = engineRef.current.snapshot;
+    const validMoves = engineRef.current.getValidMoves();
+
+    if (buttonsRef.current.setupMode || uiPlacement.phase === 'placement') {
       const cells = Array.from({ length: GAME_CONSTANTS.BOARD_SIZE }, (_, y) =>
         Array.from({ length: GAME_CONSTANTS.BOARD_SIZE }, (_, x) => snapshot.board[y][x][0] === 0),
       );
       setSelectable(cells);
+      setCancelSelectable(createEmptySelectable());
       return;
     }
-    const snapshot = engineRef.current.snapshot;
-    const validMoves = engineRef.current.getValidMoves();
+
+    let isHumanTurn = true;
+    const currentPlayer = snapshot.player;
+    if (practiceMode === 'P0') {
+      isHumanTurn = currentPlayer === 0;
+    } else if (practiceMode === 'P1') {
+      isHumanTurn = currentPlayer === 1;
+    } else if (practiceMode === 'AI') {
+      isHumanTurn = false;
+    } else if (practiceMode === 'Human') {
+      isHumanTurn = true;
+    }
+
+    if (!isHumanTurn) {
+      setSelectable(createEmptySelectable());
+      setCancelSelectable(createEmptySelectable());
+      return;
+    }
+
     const nextSelectable = moveSelectorRef.current.computeSelectable(snapshot.board, validMoves, snapshot.player);
     setSelectable(nextSelectable);
-  }, [getPlacementContext]);
+  }, [getPlacementContext, practiceMode]);
 
   // Helper to sync TypeScript engine state to UI and Python engine
   const syncEngineToUi = useCallback(() => {

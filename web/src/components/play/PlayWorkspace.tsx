@@ -72,6 +72,8 @@ import { useSurfaceTokens } from '@/theme/useSurfaceTokens';
 import { deriveStartingRole } from '@/utils/matchStartingRole';
 import { getOppositeRole, getPlayerZeroRole, isAiMatch } from '@/utils/matchAiDepth';
 
+const ALLOW_ONLINE_AI_MATCHES = false;
+
 function formatDate(value: string) {
   return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
@@ -107,11 +109,15 @@ function MatchCreationModal({
   const { mutedText } = useSurfaceTokens();
 
   useEffect(() => {
+    if (!ALLOW_ONLINE_AI_MATCHES && opponentType === 'ai') {
+      setOpponentType('human');
+      return;
+    }
     if (isAiMatch) {
       setRated(false);
       setHasClock(false);
     }
-  }, [isAiMatch]);
+  }, [isAiMatch, opponentType]);
 
   const handleSubmit = async () => {
     if (submitting) return;
@@ -171,11 +177,27 @@ function MatchCreationModal({
             <RadioGroup value={opponentType} onChange={(value) => setOpponentType(value as MatchOpponentType)}>
               <HStack spacing={4}>
                 <Radio value="human">Real player</Radio>
-                <Radio value="ai">Santorini AI</Radio>
+                <Tooltip
+                  label="Online AI matches are temporarily unavailable. Use the Practice tab for AI opponents."
+                  hasArrow
+                  isDisabled={ALLOW_ONLINE_AI_MATCHES}
+                >
+                  <Radio value="ai" isDisabled={!ALLOW_ONLINE_AI_MATCHES}>
+                    Santorini AI
+                  </Radio>
+                </Tooltip>
               </HStack>
             </RadioGroup>
           </FormControl>
-          {isAiMatch && (
+          {!ALLOW_ONLINE_AI_MATCHES && (
+            <Alert status="warning" borderRadius="md">
+              <AlertIcon />
+              <Text fontSize="sm">
+                Online AI opponents are under maintenance. Please use the Practice tab to play against the AI locally.
+              </Text>
+            </Alert>
+          )}
+          {ALLOW_ONLINE_AI_MATCHES && isAiMatch && (
             <Alert status="info" borderRadius="md">
               <AlertIcon />
               <Text fontSize="sm">AI matches are unrated, have no clock, and let you pick the engine depth.</Text>

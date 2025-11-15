@@ -170,17 +170,27 @@ export class SantoriniEngine {
     const levels = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0));
     const round = 0;
     const baseState: InternalBoardState = { workers, levels, round };
-    const player = startingPlayer === 1 ? 1 : 0;
+    let resolvedMetadata = metadata ? { ...metadata } : undefined;
+    let initialPlayer: 0 | 1 = startingPlayer === 1 ? 1 : 0;
+    const metadataRole = resolvedMetadata?.playerZeroRole;
+    if (metadataRole === 'creator') {
+      initialPlayer = 0;
+    } else if (metadataRole === 'opponent') {
+      initialPlayer = 1;
+    } else {
+      const defaultRole: PlayerRoleLabel = initialPlayer === 1 ? 'opponent' : 'creator';
+      resolvedMetadata = { ...(resolvedMetadata ?? {}), playerZeroRole: defaultRole };
+    }
     const engine = new SantoriniEngine(
       baseState,
-      player,
+      initialPlayer,
       Array(ACTION_SIZE).fill(false),
       [0, 0],
-      player,
-      metadata,
+      initialPlayer,
+      resolvedMetadata,
     );
     // BUG FIX: Compute valid moves for the ACTUAL starting player, not always player 0
-    const placementPlayer = engine.getNextPlacement()?.player ?? 0;
+    const placementPlayer = engine.getNextPlacement()?.player ?? initialPlayer;
     engine.validMoves = engine.computeValidMoves(placementPlayer);
     engine.gameEnded = engine.computeGameEnded(placementPlayer);
     engine.history = [];
@@ -192,7 +202,7 @@ export class SantoriniEngine {
       throw new Error('Unsupported snapshot version');
     }
     const board = unpackBoard(snapshot.board);
-    const player = Number(snapshot.player) || 0;
+    const playerIndex = Number(snapshot.player) === 1 ? 1 : 0;
     const validMoves = Array.isArray(snapshot.validMoves)
       ? snapshot.validMoves.map((value) => Boolean(value))
       : Array(ACTION_SIZE).fill(false);
@@ -200,13 +210,29 @@ export class SantoriniEngine {
       Array.isArray(snapshot.gameEnded) ? Number(snapshot.gameEnded[0]) || 0 : 0,
       Array.isArray(snapshot.gameEnded) ? Number(snapshot.gameEnded[1]) || 0 : 0,
     ];
-    const sanitizedPlayer = player === 1 ? 1 : 0;
-    const metadata = snapshot && typeof snapshot.metadata === 'object'
+    let metadata = snapshot && typeof snapshot.metadata === 'object'
       ? { ...snapshot.metadata }
       : undefined;
-    const engine = new SantoriniEngine(board, player, validMoves, gameEnded, sanitizedPlayer, metadata);
+    let initialPlayer: 0 | 1 | null = null;
+    if (metadata?.playerZeroRole === 'opponent') {
+      initialPlayer = 1;
+    } else if (metadata?.playerZeroRole === 'creator') {
+      initialPlayer = 0;
+    } else if (Array.isArray(snapshot.history) && snapshot.history.length > 0) {
+      const firstEntry = snapshot.history[0] as { player?: number } | null;
+      const entryPlayer = typeof firstEntry?.player === 'number' ? firstEntry.player : 0;
+      initialPlayer = entryPlayer === 1 ? 1 : 0;
+    }
+    if (initialPlayer === null) {
+      initialPlayer = playerIndex;
+    }
+    const inferredRole: PlayerRoleLabel = initialPlayer === 1 ? 'opponent' : 'creator';
+    if (!metadata || metadata.playerZeroRole !== inferredRole) {
+      metadata = { ...(metadata ?? {}), playerZeroRole: inferredRole };
+    }
+    const engine = new SantoriniEngine(board, playerIndex, validMoves, gameEnded, initialPlayer, metadata);
     // BUG FIX: During placement, compute valid moves for the player who should place, not currentPlayer
-    const placementPlayer = engine.getNextPlacement()?.player ?? player;
+    const placementPlayer = engine.getNextPlacement()?.player ?? playerIndex;
     engine.validMoves = engine.computeValidMoves(placementPlayer);
     engine.gameEnded = engine.computeGameEnded(placementPlayer);
     const historyEntries: HistoryEntry[] = [];

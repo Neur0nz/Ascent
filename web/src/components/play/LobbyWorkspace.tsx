@@ -61,6 +61,8 @@ import { PENDING_JOIN_STORAGE_KEY, consumeAutoOpenCreateFlag } from '@/utils/lob
 import { useBrowserNotifications } from '@hooks/useBrowserNotifications';
 import { usePushSubscription } from '@hooks/usePushSubscription';
 
+const ALLOW_ONLINE_AI_MATCHES = false;
+
 function formatDate(value: string) {
   return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
@@ -430,11 +432,15 @@ function MatchCreationModal({
   const { mutedText } = useSurfaceTokens();
 
   useEffect(() => {
+    if (!ALLOW_ONLINE_AI_MATCHES && opponentType === 'ai') {
+      setOpponentType('human');
+      return;
+    }
     if (isAiMatch) {
       setRated(false);
       setHasClock(false);
     }
-  }, [isAiMatch]);
+  }, [isAiMatch, opponentType]);
 
   const handleSubmit = async () => {
     try {
@@ -472,11 +478,27 @@ function MatchCreationModal({
             <RadioGroup value={opponentType} onChange={(value) => setOpponentType(value as MatchOpponentType)}>
               <HStack spacing={4}>
                 <Radio value="human">Real player</Radio>
-                <Radio value="ai">Santorini AI</Radio>
+                <Tooltip
+                  label="Online AI matches are temporarily offline. Visit the Practice tab for AI opponents."
+                  hasArrow
+                  isDisabled={ALLOW_ONLINE_AI_MATCHES}
+                >
+                  <Radio value="ai" isDisabled={!ALLOW_ONLINE_AI_MATCHES}>
+                    Santorini AI
+                  </Radio>
+                </Tooltip>
               </HStack>
             </RadioGroup>
           </FormControl>
-          {isAiMatch && (
+          {!ALLOW_ONLINE_AI_MATCHES && (
+            <Alert status="warning" borderRadius="md">
+              <AlertIcon />
+              <Text fontSize="sm">
+                AI opponents for online matches are disabled while we fix some issues. Try the Practice tab for AI play.
+              </Text>
+            </Alert>
+          )}
+          {ALLOW_ONLINE_AI_MATCHES && isAiMatch && (
             <Alert status="info" borderRadius="md">
               <AlertIcon />
               <Text fontSize="sm">AI matches are unrated, have no clock, and let you pick the search depth.</Text>
