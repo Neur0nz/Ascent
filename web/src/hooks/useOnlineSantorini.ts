@@ -6,6 +6,7 @@ import type { LobbyMatch } from './useMatchLobby';
 import type { MatchAction, MatchMoveRecord, SantoriniMoveAction } from '@/types/match';
 import { computeSynchronizedClock, deriveInitialClocks, getIncrementMs, type ClockState } from './clockUtils';
 import { isAiMatch, getPlayerZeroRole, getOppositeRole } from '@/utils/matchAiDepth';
+import { createCancelMaskFromSelector } from '@/utils/moveSelectorMasks';
 import { isSantoriniMoveAction } from '@/utils/matchActions';
 import { useToast } from '@chakra-ui/react';
 
@@ -218,20 +219,9 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
           newEngine.getPlacementContext(),
         )
       : createEmptyMask();
-    const newCancelSelectable = (() => {
-      if (!myTurn) return createEmptyMask();
-      const mask = createEmptyMask();
-      const selector = moveSelectorRef.current;
-      const stage = selector.getStage();
-      const workerSelection = selector.getSelectedWorker();
-      const moveSelection = selector.getMoveDestination();
-      if (stage === 1 && workerSelection) {
-        mask[workerSelection.y][workerSelection.x] = true;
-      } else if (stage === 2 && moveSelection) {
-        mask[moveSelection.y][moveSelection.x] = true;
-      }
-      return mask;
-    })();
+    const newCancelSelectable = myTurn
+      ? createCancelMaskFromSelector(moveSelectorRef.current)
+      : createEmptyMask();
     
     // Batch all state updates together to prevent intermediate renders
     setBoard(newBoard);
@@ -943,15 +933,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
           engine.getPlacementContext(),
         );
         setSelectable(nextSelectable);
-        const cancelMask = createEmptyMask();
-        const workerSelection = moveSelector.getSelectedWorker();
-        const moveSelection = moveSelector.getMoveDestination();
-        if (updatedStage === 1 && workerSelection) {
-          cancelMask[workerSelection.y][workerSelection.x] = true;
-        } else if (updatedStage === 2 && moveSelection) {
-          cancelMask[moveSelection.y][moveSelection.x] = true;
-        }
-        setCancelSelectable(cancelMask);
+        setCancelSelectable(createCancelMaskFromSelector(moveSelector));
         
         // Check if move is complete
         const action = moveSelector.getAction();

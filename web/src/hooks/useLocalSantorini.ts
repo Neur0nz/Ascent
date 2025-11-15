@@ -3,6 +3,7 @@ import { SantoriniEngine, type SantoriniSnapshot, type PlacementContext } from '
 import { TypeScriptMoveSelector } from '@/lib/moveSelectorTS';
 import { useToast } from '@chakra-ui/react';
 import { createBoardViewFromSnapshot, createEmptyMask, type BoardCell } from '@game/boardView';
+import { createCancelMaskFromSelector } from '@/utils/moveSelectorMasks';
 
 /**
  * TypeScript-based LOCAL Santorini hook (human vs human, no AI)
@@ -72,22 +73,7 @@ export function useLocalSantorini() {
       moveSelectorRef.current,
       newEngine.getPlacementContext()
     );
-    const cancelMask = createEmptyMask();
-    const selector = moveSelectorRef.current;
-    const stage = selector.getStage();
-    const workerSelection = selector.getSelectedWorker();
-    const moveSelection = selector.getMoveDestination();
-    if (stage === 1 && workerSelection) {
-      const { y, x } = workerSelection;
-      if (y >= 0 && y < 5 && x >= 0 && x < 5) {
-        cancelMask[y][x] = true;
-      }
-    } else if (stage === 2 && moveSelection) {
-      const { y, x } = moveSelection;
-      if (y >= 0 && y < 5 && x >= 0 && x < 5) {
-        cancelMask[y][x] = true;
-      }
-    }
+    const cancelMask = createCancelMaskFromSelector(moveSelectorRef.current);
     
     // Batch all state updates together
     setBoard(newBoard);
@@ -183,16 +169,7 @@ export function useLocalSantorini() {
       setSelectable(
         computeSelectable(validMoves, engine.snapshot, moveSelector, engine.getPlacementContext()),
       );
-      const cancelMask = createEmptyMask();
-      const stage = moveSelector.getStage();
-      const workerSelection = moveSelector.getSelectedWorker();
-      const moveSelection = moveSelector.getMoveDestination();
-      if (stage === 1 && workerSelection) {
-        cancelMask[workerSelection.y][workerSelection.x] = true;
-      } else if (stage === 2 && moveSelection) {
-        cancelMask[moveSelection.y][moveSelection.x] = true;
-      }
-      setCancelSelectable(cancelMask);
+      setCancelSelectable(createCancelMaskFromSelector(moveSelector));
       
       // Check if move is complete
       const action = moveSelector.getAction();
