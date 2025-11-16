@@ -25,6 +25,7 @@ export default defineConfig(({ mode }) => {
           description:
             'Play Santorini online, practice against an AlphaZero-style AI, and review matches with built-in analysis tools.',
           start_url: env.VITE_PUBLIC_BASE_PATH ?? '/',
+          scope: env.VITE_PUBLIC_BASE_PATH ?? '/',
           display: 'standalone',
           background_color: '#0f172a',
           theme_color: '#0f172a',
