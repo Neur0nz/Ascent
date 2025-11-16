@@ -589,7 +589,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     [prepareAnalysisWorker],
   );
 
-  const evaluatePosition = useCallback(async (overrides?: EvaluationOverrides): Promise<EvaluationState | null> => {
+  const evaluatePosition = useCallback(async (overrides?: EvaluationOverrides, includeTopMoves = false): Promise<EvaluationState | null> => {
     const balancedEvaluation: EvaluationState = { value: 0, advantage: 'Balanced', label: '0.00' };
     const evalDepth = overrides?.evaluationDepth ?? evaluationDepthOverride;
     const optionsDepth = overrides?.optionsDepth ?? optionsDepthOverride ?? evalDepth;
@@ -676,8 +676,10 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         }
       }
 
-      const baseMoves = await safeListMoves(10, optionsDepth ?? null, client);
-      nextTopMoves = normalizeTopMoves(baseMoves);
+      if (includeTopMoves) {
+        const baseMoves = await safeListMoves(10, optionsDepth ?? null, client);
+        nextTopMoves = normalizeTopMoves(baseMoves);
+      }
 
       if (requestId === evaluationRequestIdRef.current) {
         setEvaluationStatus({
@@ -728,26 +730,14 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     }
     setCalcOptionsBusy(true);
     try {
-      const requestVersion = wasmStateVersionRef.current;
-      const depth = optionsDepthOverride ?? evaluationDepthOverride ?? null;
-      const client = await prepareAnalysisWorker();
-      if (!client) {
-        setTopMoves([]);
-        return;
-      }
-      const result = await safeListMoves(6, depth ?? null, client);
-      if (requestVersion !== wasmStateVersionRef.current) {
-        setTopMoves([]);
-        return;
-      }
-      setTopMoves(normalizeTopMoves(result));
+      await evaluatePosition(undefined, true);
     } catch (error) {
       console.error('Failed to calculate options:', error);
       setTopMoves([]);
     } finally {
       setCalcOptionsBusy(false);
     }
-  }, [evaluationDepthOverride, evaluationEnabled, getPlacementContext, isPlacementPhase, optionsDepthOverride, prepareAnalysisWorker, safeListMoves]);
+  }, [evaluationEnabled, evaluatePosition, getPlacementContext, isPlacementPhase]);
 
   const syncUi = useCallback(async (loadingState = false) => {
     // TypeScript engine is source of truth - sync UI from it
@@ -1251,7 +1241,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
   const updateEvaluationDepth = useCallback(
     (depth: number | null) => {
       setEvaluationDepthOverride(depth);
-      evaluatePosition({ evaluationDepth: depth }).catch((error) => {
+      evaluatePosition({ evaluationDepth: depth }, false).catch((error) => {
         console.error('Failed to refresh evaluation with updated depth:', error);
       });
     },
