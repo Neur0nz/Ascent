@@ -20,12 +20,12 @@
     "@emotion/styled": "^11.11.5",
     "@supabase/supabase-js": "^2.76.1",
     "framer-motion": "^11.0.25",
+    "html-to-image": "^1.11.13",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-icons": "^5.5.0",
     "recharts": "^2.8.0",
-    "supabase": "^2.54.11",
-    "html-to-image": "^1.11.11"
+    "supabase": "^2.54.11"
   },
   "devDependencies": {
     "@types/node": "^20.11.19",

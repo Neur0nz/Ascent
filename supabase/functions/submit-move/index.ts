@@ -76,10 +76,16 @@ function getPlayerZeroRole(metadata?: SantoriniStateSnapshot['metadata']): Playe
   return metadata?.playerZeroRole === 'opponent' ? 'opponent' : 'creator';
 }
 
+function getStartingPlayerIndex(metadata?: SantoriniStateSnapshot['metadata']): 0 | 1 {
+  const zeroRole = getPlayerZeroRole(metadata);
+  return zeroRole === 'creator' ? 0 : 1;
+}
+
 function mapPlayerIndexToRole(index: number, metadata?: SantoriniStateSnapshot['metadata']): PlayerRole {
   const sanitizedIndex: 0 | 1 = index === 1 ? 1 : 0;
   const zeroRole = getPlayerZeroRole(metadata);
-  if (sanitizedIndex === 0) {
+  const startingIndex = getStartingPlayerIndex(metadata);
+  if (sanitizedIndex === startingIndex) {
     return zeroRole;
   }
   return zeroRole === 'creator' ? 'opponent' : 'creator';
@@ -87,7 +93,11 @@ function mapPlayerIndexToRole(index: number, metadata?: SantoriniStateSnapshot['
 
 function roleToPlayerIndex(role: PlayerRole, metadata?: SantoriniStateSnapshot['metadata']): 0 | 1 {
   const zeroRole = getPlayerZeroRole(metadata);
-  return role === zeroRole ? 0 : 1;
+  const startingIndex = getStartingPlayerIndex(metadata);
+  if (role === zeroRole) {
+    return startingIndex;
+  }
+  return startingIndex === 0 ? 1 : 0;
 }
 
 interface CachedTokenEntry {
