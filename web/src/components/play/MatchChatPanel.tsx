@@ -26,14 +26,19 @@ import {
   useRef,
   useState,
 } from 'react';
-import type { MatchChatAuthor, MatchChatMessage } from '@hooks/useMatchChat';
+import type { MatchChatAuthor, MatchChatMessage, MatchChatReaction } from '@hooks/useMatchChat';
 import { FaThumbsUp } from 'react-icons/fa';
+import { motion } from 'framer-motion';
+
+const MotionBox = motion(Box);
 
 interface MatchChatPanelProps {
   matchId: string | null;
   messages: MatchChatMessage[];
+  reactions: MatchChatReaction[];
   status: 'idle' | 'loading' | 'ready';
   onSend: (text: string) => Promise<void>;
+  onReact: (messageId: string, emoji: string) => Promise<void>;
   canSend: boolean;
   currentUserId: string | null;
   isReadOnly?: boolean;
@@ -53,8 +58,10 @@ const formatTimestamp = (value: number): string => {
 export function MatchChatPanel({
   matchId,
   messages,
+  reactions,
   status,
   onSend,
+  onReact,
   canSend,
   currentUserId,
   isReadOnly = false,
@@ -65,9 +72,6 @@ export function MatchChatPanel({
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [messageReactions, setMessageReactions] = useState<Record<string, { emoji: string; count: number }>>(
-    {},
-  );
   const listRef = useRef<HTMLDivElement | null>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -161,9 +165,21 @@ export function MatchChatPanel({
     };
   }, []);
 
-  useEffect(() => {
-    setMessageReactions({});
-  }, [matchId]);
+  const aggregatedReactions = useMemo(() => {
+    const counts: Record<string, { emoji: string; count: number; authors: MatchChatAuthor[] }> = {};
+    for (const reaction of reactions) {
+      if (!counts[reaction.messageId]) {
+        counts[reaction.messageId] = {
+          emoji: reaction.emoji,
+          count: 0,
+          authors: [],
+        };
+      }
+      counts[reaction.messageId].count += 1;
+      counts[reaction.messageId].authors.push(reaction.author);
+    }
+    return counts;
+  }, [reactions]);
 
   useEffect(() => {
     const latest = messages[messages.length - 1];
@@ -258,20 +274,9 @@ export function MatchChatPanel({
       if (!currentUserId || isReadOnly) {
         return;
       }
-      setMessageReactions((prev) => {
-        const next = { ...prev };
-        if (next[messageId]) {
-          delete next[messageId];
-        } else {
-          next[messageId] = {
-            emoji: '👍',
-            count: 1,
-          };
-        }
-        return next;
-      });
+      void onReact(messageId, '👍');
     },
-    [currentUserId, isReadOnly],
+    [currentUserId, isReadOnly, onReact],
   );
 
   return (
@@ -302,7 +307,11 @@ export function MatchChatPanel({
               <Stack spacing={3}>
                 {messages.map((message) => {
                   const isSelf = currentUserId && message.author.id && currentUserId === message.author.id;
-                  const reaction = messageReactions[message.id];
+                  const reaction = aggregatedReactions[message.id];
+                  const tooltipLabel =
+                    reaction && reaction.authors.length > 0
+                      ? `Reacted by ${reaction.authors.map((a) => a.name).join(', ')}`
+                      : undefined;
                   return (
                     <Flex key={message.id} justify={isSelf ? 'flex-end' : 'flex-start'}>
                       <Box
@@ -328,24 +337,32 @@ export function MatchChatPanel({
                           {message.text}
                         </Text>
                         {reaction ? (
-                          <HStack
-                            spacing={1}
-                            mt={2}
-                            px={2}
-                            py={1}
-                            borderRadius="full"
-                            bg={reactionBg}
-                            borderWidth="1px"
-                            borderColor={reactionBorder}
-                            align="center"
-                            justify="center"
-                            maxW="120px"
-                          >
-                            <Icon as={FaThumbsUp} boxSize="4" color={reactionTextColor} />
-                            <Text fontSize="xs" fontWeight="semibold" color={reactionTextColor}>
-                              {reaction.count}
-                            </Text>
-                          </HStack>
+                          <Tooltip label={tooltipLabel} placement="top" hasArrow>
+                            <MotionBox
+                              initial={{ scale: 0.5, opacity: 0 }}
+                              animate={{ scale: 1, opacity: 1 }}
+                              transition={{ duration: 0.2 }}
+                            >
+                              <HStack
+                                spacing={1}
+                                mt={2}
+                                px={2}
+                                py={1}
+                                borderRadius="full"
+                                bg={reactionBg}
+                                borderWidth="1px"
+                                borderColor={reactionBorder}
+                                align="center"
+                                justify="center"
+                                maxW="120px"
+                              >
+                                <Icon as={FaThumbsUp} boxSize="4" color={reactionTextColor} />
+                                <Text fontSize="xs" fontWeight="semibold" color={reactionTextColor}>
+                                  {reaction.count}
+                                </Text>
+                              </HStack>
+                            </MotionBox>
+                          </Tooltip>
                         ) : null}
                         {message.pending ? (
                           <HStack spacing={1} mt={1}>
