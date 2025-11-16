@@ -10,6 +10,10 @@ export default defineConfig(({ mode }) => {
   const isDev = mode === 'development';
   const isTest = mode === 'test';
 
+  const basePath = env.VITE_PUBLIC_BASE_PATH ?? '/';
+  const normalizedBase =
+    basePath === '/' ? '/' : basePath.endsWith('/') ? basePath : `${basePath}/`;
+
   return {
     plugins: [
       react(),
@@ -24,26 +28,26 @@ export default defineConfig(({ mode }) => {
           short_name: env.VITE_APP_TITLE ?? 'Ascent',
           description:
             'Play Santorini online, practice against an AlphaZero-style AI, and review matches with built-in analysis tools.',
-          start_url: env.VITE_PUBLIC_BASE_PATH ?? '/',
-          scope: env.VITE_PUBLIC_BASE_PATH ?? '/',
+          start_url: normalizedBase,
+          scope: normalizedBase,
           display: 'standalone',
           background_color: '#0f172a',
           theme_color: '#0f172a',
           icons: [
             {
-              src: '/favicon.svg',
+              src: `${normalizedBase.replace(/\/$/, '')}/favicon.svg`,
               sizes: 'any',
               type: 'image/svg+xml',
               purpose: 'any maskable',
             },
             {
-              src: '/icons/icon-192x192.png',
+              src: `${normalizedBase.replace(/\/$/, '')}/icons/icon-192x192.png`,
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any maskable',
             },
             {
-              src: '/icons/icon-512x512.png',
+              src: `${normalizedBase.replace(/\/$/, '')}/icons/icon-512x512.png`,
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any maskable',
