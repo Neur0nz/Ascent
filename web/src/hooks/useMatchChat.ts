@@ -32,6 +32,7 @@ export interface MatchChatReaction {
   messageId: string;
   author: MatchChatAuthor;
   emoji: string;
+  removed?: boolean;
 }
 
 export interface MatchChatAdapter {
@@ -56,7 +57,7 @@ export interface UseMatchChatReturn {
   reactions: MatchChatReaction[];
   status: 'idle' | 'loading' | 'ready';
   sendMessage: (text: string) => Promise<void>;
-  sendReaction: (messageId: string, emoji: string) => Promise<void>;
+  sendReaction: (messageId: string, emoji: string, removed?: boolean) => Promise<void>;
   canSend: boolean;
   clearHistory: () => Promise<void>;
   typingUsers: MatchChatAuthor[];
@@ -440,7 +441,18 @@ const createRealtimeMatchChatAdapter = (client: SupabaseClient): MatchChatAdapte
       callback(entry.messages);
       return () => {
         storageUnsubscribe?.();
-        entry.listeners.delete(callback);
+       entry.listeners.delete(callback);
+        cleanupChannel(matchId);
+      };
+    },
+    subscribeReactions(matchId, callback) {
+      const entry = ensureChannel(matchId);
+      if (!entry) {
+        return () => {};
+      }
+      entry.reactionListeners.add(callback);
+      return () => {
+        entry.reactionListeners.delete(callback);
         cleanupChannel(matchId);
       };
     },
@@ -616,12 +628,12 @@ export const useMatchChat = ({ matchId, author, adapter }: UseMatchChatOptions):
   );
 
   const sendReaction = useCallback(
-    async (messageId: string, emoji: string) => {
+    async (messageId: string, emoji: string, removed = false) => {
       if (!matchId || !activeAdapter || !author || !activeAdapter.broadcastReaction) {
         return;
       }
       try {
-        await activeAdapter.broadcastReaction(matchId, { messageId, author, emoji });
+        await activeAdapter.broadcastReaction(matchId, { messageId, author, emoji, removed });
       } catch (error) {
         console.warn('useMatchChat: failed to send reaction', error);
         throw error;

@@ -38,7 +38,7 @@ interface MatchChatPanelProps {
   reactions: MatchChatReaction[];
   status: 'idle' | 'loading' | 'ready';
   onSend: (text: string) => Promise<void>;
-  onReact: (messageId: string, emoji: string) => Promise<void>;
+  onReact: (messageId: string, emoji: string, removed?: boolean) => Promise<void>;
   canSend: boolean;
   currentUserId: string | null;
   isReadOnly?: boolean;
@@ -166,19 +166,43 @@ export function MatchChatPanel({
   }, []);
 
   const aggregatedReactions = useMemo(() => {
-    const counts: Record<string, { emoji: string; count: number; authors: MatchChatAuthor[] }> = {};
+    const entries: Record<
+      string,
+      {
+        emoji: string;
+        authorsMap: Map<string, MatchChatAuthor>;
+        authors(): MatchChatAuthor[];
+      }
+    > = {};
     for (const reaction of reactions) {
-      if (!counts[reaction.messageId]) {
-        counts[reaction.messageId] = {
+      const key = reaction.messageId;
+      if (!entries[key]) {
+        entries[key] = {
           emoji: reaction.emoji,
-          count: 0,
-          authors: [],
+          authorsMap: new Map(),
+          authors() {
+            return Array.from(this.authorsMap.values());
+          },
         };
       }
-      counts[reaction.messageId].count += 1;
-      counts[reaction.messageId].authors.push(reaction.author);
+      const authorKey =
+        (reaction.author.id && `id:${reaction.author.id}`) ||
+        (reaction.author.name && `name:${reaction.author.name}`) ||
+        `idx:${entries[key].authorsMap.size}`;
+      if (reaction.removed) {
+        entries[key].authorsMap.delete(authorKey);
+      } else {
+        entries[key].authorsMap.set(authorKey, reaction.author);
+      }
     }
-    return counts;
+    const normalized: Record<string, { emoji: string; authors: MatchChatAuthor[] }> = {};
+    for (const messageId of Object.keys(entries)) {
+      normalized[messageId] = {
+        emoji: entries[messageId].emoji,
+        authors: entries[messageId].authors(),
+      };
+    }
+    return normalized;
   }, [reactions]);
 
   useEffect(() => {
@@ -274,9 +298,19 @@ export function MatchChatPanel({
       if (!currentUserId || isReadOnly) {
         return;
       }
-      void onReact(messageId, '👍');
+      const reaction = aggregatedReactions[messageId];
+      const hasReacted = Boolean(
+        reaction &&
+          reaction.authors.some((author) => {
+            return (
+              (currentUserId && author.id === currentUserId) ||
+              (!author.id && author.name && currentUserId === author.name)
+            );
+          }),
+      );
+      void onReact(messageId, '👍', hasReacted);
     },
-    [currentUserId, isReadOnly, onReact],
+    [aggregatedReactions, currentUserId, isReadOnly, onReact],
   );
 
   return (
@@ -358,7 +392,7 @@ export function MatchChatPanel({
                               >
                                 <Icon as={FaThumbsUp} boxSize="4" color={reactionTextColor} />
                                 <Text fontSize="xs" fontWeight="semibold" color={reactionTextColor}>
-                                  {reaction.count}
+                                  {reaction.authors.length}
                                 </Text>
                               </HStack>
                             </MotionBox>
@@ -405,17 +439,6 @@ export function MatchChatPanel({
                   ) : null}
                 </Box>
                 <HStack spacing={2}>
-                  {onClearHistory ? (
-                    <Tooltip label="Clear your copy of the chat history for this match">
-                      <IconButton
-                        size="sm"
-                        aria-label="Clear chat history"
-                        icon={<SmallCloseIcon />}
-                        variant="ghost"
-                        onClick={handleClear}
-                      />
-                    </Tooltip>
-                  ) : null}
                   <Button
                     type="submit"
                     colorScheme="teal"
