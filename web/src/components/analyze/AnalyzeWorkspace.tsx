@@ -51,6 +51,7 @@ import {
 } from 'recharts';
 import type { TooltipProps } from 'recharts';
 import { ChevronLeftIcon, ChevronRightIcon, ArrowBackIcon, ArrowForwardIcon } from '@chakra-ui/icons';
+import { MdShare } from 'react-icons/md';
 import GameBoard from '@components/GameBoard';
 import EvaluationPanel from '@components/EvaluationPanel';
 import { supabase } from '@/lib/supabaseClient';
@@ -96,6 +97,116 @@ const formatMoveLabel = (action: SantoriniMoveAction | null | undefined): string
   return `Move ${moveText}`;
 };
 
+interface EvaluationGraphExportOptions {
+  data: Array<{ evaluation: number }>;
+  domain: [number, number];
+  backgroundColor: string;
+  axisColor: string;
+  gridColor: string;
+  referenceColor: string;
+  lineColor: string;
+  label?: string;
+  width?: number;
+  height?: number;
+}
+
+const clampValue = (value: number, domain: [number, number]): number =>
+  Math.max(domain[0], Math.min(domain[1], value));
+
+const createEvaluationGraphBlob = async (options: EvaluationGraphExportOptions): Promise<Blob> => {
+  if (typeof document === 'undefined') {
+    throw new Error('Document is not available');
+  }
+  const {
+    data,
+    domain,
+    backgroundColor,
+    axisColor,
+    gridColor,
+    referenceColor,
+    lineColor,
+    label = 'Evaluation graph',
+    width = 960,
+    height = 520,
+  } = options;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Unable to create canvas context');
+  }
+  ctx.fillStyle = backgroundColor;
+  ctx.fillRect(0, 0, width, height);
+  const margin = { top: 36, right: 32, bottom: 60, left: 56 };
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const range = domain[1] - domain[0] || 1;
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = gridColor;
+  ctx.beginPath();
+  for (let i = 0; i <= 4; i += 1) {
+    const y = margin.top + (plotHeight * (i / 4));
+    ctx.moveTo(margin.left, y);
+    ctx.lineTo(margin.left + plotWidth, y);
+  }
+  ctx.stroke();
+  const zeroY = margin.top + plotHeight * (1 - (clampValue(0, domain) - domain[0]) / range);
+  ctx.strokeStyle = referenceColor;
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(margin.left, zeroY);
+  ctx.lineTo(margin.left + plotWidth, zeroY);
+  ctx.stroke();
+  ctx.strokeStyle = axisColor;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(margin.left, margin.top);
+  ctx.lineTo(margin.left, margin.top + plotHeight);
+  ctx.lineTo(margin.left + plotWidth, margin.top + plotHeight);
+  ctx.stroke();
+  if (data.length > 0) {
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    data.forEach((point, index) => {
+      const x = margin.left + (plotWidth * (index / Math.max(1, data.length - 1)));
+      const value = clampValue(point.evaluation, domain);
+      const normalized = (value - domain[0]) / range;
+      const y = margin.top + plotHeight * (1 - normalized);
+      if (index === 0) {
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+    });
+    ctx.stroke();
+  }
+  ctx.fillStyle = axisColor;
+  ctx.font = '600 20px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(label, width / 2, margin.top - 12);
+  ctx.font = '500 16px system-ui, sans-serif';
+  ctx.fillText('Evaluation graph', width / 2, height - 16);
+  ctx.fillStyle = referenceColor;
+  ctx.font = '600 24px system-ui, sans-serif';
+  ctx.fillText('Santorini', width / 2, height - 40);
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          reject(new Error('Failed to export evaluation graph'));
+          return;
+        }
+        resolve(blob);
+      },
+      'image/png',
+      1,
+    );
+  });
+};
 const DEFAULT_CUSTOM_DEPTH = 800;
 
 function describeMatch(match: LobbyMatch, profile: PlayerProfile | null) {
@@ -146,6 +257,7 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
   const [customDepth, setCustomDepth] = useState<number>(DEFAULT_CUSTOM_DEPTH);
   const [depthError, setDepthError] = useState<string | null>(null);
   const [confirmingEvalDepth, setConfirmingEvalDepth] = useState(false);
+  const [sharingGraph, setSharingGraph] = useState(false);
   const activeEvaluationJob = useMemo(() => {
     if (!loaded) {
       return null;
@@ -624,6 +736,8 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
   const chartAxisColor = useColorModeValue('#1A202C', 'rgba(255,255,255,0.92)');
   const chartReferenceColor = useColorModeValue('rgba(49, 130, 206, 0.8)', 'rgba(144, 205, 244, 0.9)');
   const tooltipBg = useColorModeValue('#FFFFFF', '#1F2933');
+  const graphBackground = useColorModeValue('#f8fafc', '#020617');
+  const shareGraphEnabled = !evaluationLoading && evaluationChartData.length > 0;
 
   const renderEvaluationTooltip = useCallback(
     ({ active, payload }: TooltipProps<number, string>) => {
@@ -676,6 +790,77 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
     },
     [cardBorder, chartAxisColor, evaluationLineColor, mutedText, tooltipBg],
   );
+
+  const handleShareEvaluationGraph = useCallback(async () => {
+    if (!shareGraphEnabled) {
+      return;
+    }
+    setSharingGraph(true);
+    try {
+      const blob = await createEvaluationGraphBlob({
+        data: evaluationChartData,
+        domain: evaluationDomain,
+        backgroundColor: graphBackground,
+        axisColor: chartAxisColor,
+        gridColor: chartGridColor,
+        referenceColor: chartReferenceColor,
+        lineColor: evaluationLineColor,
+        label: 'Evaluation graph',
+        width: 960,
+        height: 520,
+      });
+      const fileName = `santorini-evaluation-${Date.now()}.png`;
+      const file = new File([blob], fileName, { type: 'image/png' });
+      const shareTarget =
+        typeof navigator !== 'undefined'
+          ? (navigator as Navigator & { canShare?: (data: unknown) => boolean })
+          : null;
+      if (shareTarget?.canShare?.({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: 'Santorini evaluation graph',
+          text: 'Santorini evaluation graph',
+        });
+      } else if (typeof document !== 'undefined') {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+        toast({
+          status: 'success',
+          title: 'Evaluation graph exported',
+          description: 'Saved as a PNG for sharing.',
+          duration: 3000,
+          isClosable: true,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to share evaluation graph', error);
+      toast({
+        status: 'error',
+        title: 'Unable to share evaluation graph',
+        description: 'Please try again.',
+        duration: 3000,
+        isClosable: true,
+      });
+    } finally {
+      setSharingGraph(false);
+    }
+  }, [
+    chartAxisColor,
+    chartGridColor,
+    chartReferenceColor,
+    evaluationChartData,
+    evaluationDomain,
+    evaluationLineColor,
+    graphBackground,
+    shareGraphEnabled,
+    toast,
+  ]);
 
   const handleChartClick = useCallback(
     (state: { activePayload?: Array<{ payload?: { moveIndex?: number } }> } | undefined) => {
@@ -1057,10 +1242,24 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
           </Card>
 
           {(evaluationLoading || (evaluationSeries && evaluationSeries.length > 0)) && (
-            <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder}>
-              <CardHeader>
+          <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder}>
+            <CardHeader>
+              <Flex align="center" justify="space-between" gap={3}>
                 <Heading size="sm">Evaluation graph</Heading>
-              </CardHeader>
+                {shareGraphEnabled ? (
+                  <IconButton
+                    size="sm"
+                    variant="ghost"
+                    aria-label="Share evaluation graph"
+                    icon={<MdShare />}
+                    onClick={handleShareEvaluationGraph}
+                    isLoading={sharingGraph}
+                    isDisabled={sharingGraph}
+                    title="Export and share evaluation graph"
+                  />
+                ) : null}
+              </Flex>
+            </CardHeader>
               <CardBody>
                 {evaluationLoading && (!evaluationSeries || evaluationSeries.length === 0) ? (
                   <Center py={8}>
