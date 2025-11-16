@@ -57,6 +57,14 @@ const components = {
   },
 };
 
-const theme = extendTheme({ config, colors, fonts, components });
+const styles = {
+  global: {
+    '*': {
+      '-webkit-tap-highlight-color': 'transparent',
+    },
+  },
+};
+
+const theme = extendTheme({ config, colors, fonts, components, styles });
 
 export default theme;
