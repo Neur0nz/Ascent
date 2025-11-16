@@ -58,8 +58,8 @@ import EvaluationPanel from '@components/EvaluationPanel';
 import { supabase } from '@/lib/supabaseClient';
 import { SantoriniEngine, type SantoriniSnapshot } from '@/lib/santoriniEngine';
 import { useSantorini } from '@hooks/useSantorini';
-import type { MatchMoveRecord, MatchRecord, SantoriniMoveAction, PlayerProfile, SantoriniStateSnapshot } from '@/types/match';
-import { getMatchAiDepth, isAiMatch } from '@/utils/matchAiDepth';
+import type { MatchMoveRecord, MatchRecord, MatchRole, SantoriniMoveAction, PlayerProfile, SantoriniStateSnapshot } from '@/types/match';
+import { getMatchAiDepth, getOppositeRole, getPlayerZeroRole, isAiMatch } from '@/utils/matchAiDepth';
 import type { EvaluationSeriesPoint } from '@/types/evaluation';
 import type { SupabaseAuthState } from '@hooks/useSupabaseAuth';
 import type { LobbyMatch } from '@hooks/useMatchLobby';
@@ -103,6 +103,8 @@ const clampValue = (value: number, domain: [number, number]): number =>
   Math.max(domain[0], Math.min(domain[1], value));
 
 const DEFAULT_CUSTOM_DEPTH = 800;
+
+const describeRoleName = (role: MatchRole): string => (role === 'creator' ? 'Creator' : 'Opponent');
 
 function describeMatch(match: LobbyMatch, profile: PlayerProfile | null) {
   if (isAiMatch(match)) {
@@ -177,6 +179,13 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
     activeEvaluationJob && activeEvaluationJob.totalPositions > 0
       ? `${activeEvaluationJob.evaluatedCount}/${activeEvaluationJob.totalPositions} positions evaluated`
       : null;
+  const playerZeroRole = useMemo(
+    () => getPlayerZeroRole(loaded?.match ?? null),
+    [loaded],
+  );
+  const oppositeStartRole = getOppositeRole(playerZeroRole);
+  const greenDescriptor = `Green (starting player – ${describeRoleName(playerZeroRole)})`;
+  const redDescriptor = `Red (other player – ${describeRoleName(oppositeStartRole)})`;
 
   // Initialize AI engine on mount
   useEffect(() => {
@@ -603,17 +612,23 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
     if (!evaluationSeries) {
       return [];
     }
+    const formatRoleLabel = (role: MatchRole) => {
+      const descriptor = role === playerZeroRole ? 'starting player' : 'other player';
+      const colorLabel = role === playerZeroRole ? 'Green' : 'Red';
+      return `${colorLabel} (${descriptor} – ${describeRoleName(role)})`;
+    };
+
     return evaluationSeries.map((point) => ({
       ...point,
       moveLabel: point.moveIndex === -1 ? 'Start' : `${point.moveNumber}`,
       playerLabel:
-        point.player === 'creator'
-          ? 'Creator (Green)'
-          : point.player === 'opponent'
-            ? 'Opponent (Red)'
+        point.player === playerZeroRole
+          ? formatRoleLabel(playerZeroRole)
+          : point.player === oppositeStartRole
+            ? formatRoleLabel(oppositeStartRole)
             : 'Initial position',
     }));
-  }, [evaluationSeries]);
+  }, [evaluationSeries, playerZeroRole, oppositeStartRole]);
 
   const evaluationDomain: [number, number] = [-1, 1];
 
@@ -1201,7 +1216,7 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
                       Evaluation depth: {evaluationDepthUsed ?? 'AI default'}
                     </Text>
                     <Text fontSize="xs" color={mutedText}>
-                      Positive values indicate an advantage for Green (creator). Negative values favour Red (opponent).
+                      Positive values indicate an advantage for {greenDescriptor}. Negative values favour {redDescriptor}.
                     </Text>
                   </Stack>
                 )}
