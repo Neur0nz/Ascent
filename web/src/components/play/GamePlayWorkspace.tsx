@@ -66,7 +66,6 @@ import { usePushSubscription } from '@hooks/usePushSubscription';
 import { useMatchVisibilityReporter } from '@hooks/useMatchVisibilityReporter';
 import { useMatchChat } from '@hooks/useMatchChat';
 import OnlineBoardSection from '@components/play/OnlineBoardSection';
-import ConnectionIndicator from '@components/play/ConnectionIndicator';
 import { MatchChatPanel } from '@components/play/MatchChatPanel';
 import type { SantoriniMoveAction, MatchStatus, PlayerProfile, EnginePreference } from '@/types/match';
 import { getMatchAiDepth, getOppositeRole, getPlayerZeroRole, isAiMatch as detectAiMatch } from '@/utils/matchAiDepth';
@@ -1085,7 +1084,6 @@ function ActiveMatchContent({
             accentColor={accentHeading}
             profile={lobbyMatch?.creator}
             alignment="flex-start"
-            connectionState={creatorConnection}
             reactions={creatorReactions}
             showEmojiPicker={Boolean(canSendEmoji && role === 'creator')}
             onSendEmoji={onSendEmoji}
@@ -1102,7 +1100,6 @@ function ActiveMatchContent({
             accentColor={accentHeading}
             profile={lobbyMatch?.opponent}
             alignment="flex-end"
-            connectionState={opponentConnection}
             reactions={opponentReactions}
             showEmojiPicker={Boolean(canSendEmoji && role === 'opponent')}
             onSendEmoji={onSendEmoji}
@@ -1332,7 +1329,6 @@ interface PlayerClockCardProps {
   accentColor: string;
   profile: PlayerProfile | null | undefined;
   alignment: 'flex-start' | 'flex-end';
-  connectionState?: PlayerConnectionState | null;
   reactions?: EmojiReaction[];
   showEmojiPicker?: boolean;
   onSendEmoji?: (emoji: string) => void;
@@ -1350,7 +1346,6 @@ function PlayerClockCard({
   accentColor,
   profile,
   alignment,
-  connectionState,
   reactions,
   showEmojiPicker,
   onSendEmoji,
@@ -1508,15 +1503,6 @@ function PlayerClockCard({
       <Text fontSize={labelFontSize ?? 'sm'} fontWeight="semibold" color={mutedText} noOfLines={1}>
         {label}
       </Text>
-      {connectionState && (
-        <ConnectionIndicator
-          status={connectionState.status}
-          lastSeen={connectionState.lastSeen}
-          isSelf={connectionState.isSelf}
-          activity={connectionState.activity}
-          size="xs"
-        />
-      )}
     </HStack>
   );
 

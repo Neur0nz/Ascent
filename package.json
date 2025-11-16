@@ -1,5 +1,6 @@
 {
   "devDependencies": {
-    "supabase": "^2.54.11"
+    "supabase": "^2.54.11",
+    "vite-plugin-pwa": "^1.1.0"
   }
 }

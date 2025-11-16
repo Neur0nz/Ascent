@@ -103,6 +103,9 @@ npm run dev
 # Build for production
 npm run build
 
+# Build for production without compiling the Rust/WASM bundle
+npm run build:no-rust
+
 # Preview production build
 npm run preview
 

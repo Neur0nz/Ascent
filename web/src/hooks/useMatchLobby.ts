@@ -465,7 +465,17 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         }
       }
       return limited;
-  });
+    });
+
+    if (emojiTimeoutsRef.current[reaction.id]) {
+      clearTimeout(emojiTimeoutsRef.current[reaction.id]!);
+    }
+
+    const timeout = setTimeout(() => {
+      removeEmojiReaction(reaction.id);
+    }, 2500);
+    emojiTimeoutsRef.current[reaction.id] = timeout;
+  }, [removeEmojiReaction]);
 
   const enterOnlineMatchState = useCallback(
     (match: LobbyMatch, joinCode: string | null) => {
@@ -481,16 +491,6 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
     },
     [setState],
   );
-
-    if (emojiTimeoutsRef.current[reaction.id]) {
-      clearTimeout(emojiTimeoutsRef.current[reaction.id]!);
-    }
-
-    const timeout = setTimeout(() => {
-      removeEmojiReaction(reaction.id);
-    }, 2500);
-    emojiTimeoutsRef.current[reaction.id] = timeout;
-  }, [removeEmojiReaction]);
 
   const clearEmojiReactions = useCallback(() => {
     Object.values(emojiTimeoutsRef.current).forEach((timeout) => {

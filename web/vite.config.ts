@@ -1,6 +1,7 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 import * as path from 'node:path';
+import { VitePWA } from 'vite-plugin-pwa';
 import { wasmWatchPlugin } from './vite-plugin-wasm-watch';
 
 export default defineConfig(({ mode }) => {
@@ -12,6 +13,37 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       react(),
+      VitePWA({
+        srcDir: 'src',
+        filename: 'service-worker.ts',
+        strategies: 'injectManifest',
+        registerType: 'autoUpdate',
+        injectRegister: 'auto',
+        manifest: {
+          name: env.VITE_APP_TITLE ?? 'Ascent',
+          short_name: env.VITE_APP_TITLE ?? 'Ascent',
+          description:
+            'Play Santorini online, practice against an AlphaZero-style AI, and review matches with built-in analysis tools.',
+          start_url: env.VITE_PUBLIC_BASE_PATH ?? '/',
+          display: 'standalone',
+          background_color: '#0f172a',
+          theme_color: '#0f172a',
+          icons: [
+            {
+              src: '/favicon.svg',
+              sizes: 'any',
+              type: 'image/svg+xml',
+              purpose: 'any maskable',
+            },
+          ],
+        },
+        injectManifest: {
+          globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
+        },
+        workbox: {
+          cleanupOutdatedCaches: true,
+        },
+      }),
       ...(isDev ? [wasmWatchPlugin()] : []),
     ],
     envDir,

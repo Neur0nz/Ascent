@@ -6,6 +6,7 @@ import {
   CardBody,
   Flex,
   HStack,
+  Icon,
   IconButton,
   Spinner,
   Stack,
@@ -26,6 +27,7 @@ import {
   useState,
 } from 'react';
 import type { MatchChatAuthor, MatchChatMessage } from '@hooks/useMatchChat';
+import { FaThumbsUp } from 'react-icons/fa';
 
 interface MatchChatPanelProps {
   matchId: string | null;
@@ -63,6 +65,9 @@ export function MatchChatPanel({
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [messageReactions, setMessageReactions] = useState<Record<string, { emoji: string; count: number }>>(
+    {},
+  );
   const listRef = useRef<HTMLDivElement | null>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -77,6 +82,9 @@ export function MatchChatPanel({
   const helperColor = useColorModeValue('gray.600', 'gray.300');
   const bubbleShadow = useColorModeValue('md', 'sm');
   const listBg = useColorModeValue('white', 'blackAlpha.200');
+  const reactionBg = useColorModeValue('whiteAlpha.900', 'blackAlpha.400');
+  const reactionBorder = useColorModeValue('gray.200', 'whiteAlpha.300');
+  const reactionTextColor = useColorModeValue('gray.800', 'gray.100');
 
   const disableInput = !canSend || isReadOnly || status === 'idle';
   const placeholder = useMemo(() => {
@@ -152,6 +160,10 @@ export function MatchChatPanel({
       observer.disconnect();
     };
   }, []);
+
+  useEffect(() => {
+    setMessageReactions({});
+  }, [matchId]);
 
   useEffect(() => {
     const latest = messages[messages.length - 1];
@@ -241,6 +253,27 @@ export function MatchChatPanel({
     await onClearHistory();
   };
 
+  const handleReactToMessage = useCallback(
+    (messageId: string) => {
+      if (!currentUserId || isReadOnly) {
+        return;
+      }
+      setMessageReactions((prev) => {
+        const next = { ...prev };
+        if (next[messageId]) {
+          delete next[messageId];
+        } else {
+          next[messageId] = {
+            emoji: '👍',
+            count: 1,
+          };
+        }
+        return next;
+      });
+    },
+    [currentUserId, isReadOnly],
+  );
+
   return (
     <Card ref={cardRef} w="100%">
       <CardBody px={3} py={2}>
@@ -269,6 +302,7 @@ export function MatchChatPanel({
               <Stack spacing={3}>
                 {messages.map((message) => {
                   const isSelf = currentUserId && message.author.id && currentUserId === message.author.id;
+                  const reaction = messageReactions[message.id];
                   return (
                     <Flex key={message.id} justify={isSelf ? 'flex-end' : 'flex-start'}>
                       <Box
@@ -278,6 +312,9 @@ export function MatchChatPanel({
                         px={3}
                         py={2}
                         boxShadow={bubbleShadow}
+                        onDoubleClick={() => handleReactToMessage(message.id)}
+                        cursor={currentUserId && !isReadOnly ? 'pointer' : undefined}
+                        role={currentUserId && !isReadOnly ? 'button' : undefined}
                       >
                         <HStack spacing={2} justify="space-between" align="baseline">
                           <Text fontSize="xs" fontWeight="semibold">
@@ -290,6 +327,26 @@ export function MatchChatPanel({
                         <Text fontSize="sm" whiteSpace="pre-wrap">
                           {message.text}
                         </Text>
+                        {reaction ? (
+                          <HStack
+                            spacing={1}
+                            mt={2}
+                            px={2}
+                            py={1}
+                            borderRadius="full"
+                            bg={reactionBg}
+                            borderWidth="1px"
+                            borderColor={reactionBorder}
+                            align="center"
+                            justify="center"
+                            maxW="120px"
+                          >
+                            <Icon as={FaThumbsUp} boxSize="4" color={reactionTextColor} />
+                            <Text fontSize="xs" fontWeight="semibold" color={reactionTextColor}>
+                              {reaction.count}
+                            </Text>
+                          </HStack>
+                        ) : null}
                         {message.pending ? (
                           <HStack spacing={1} mt={1}>
                             <Spinner size="xs" />

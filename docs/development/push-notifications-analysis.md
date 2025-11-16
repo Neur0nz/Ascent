@@ -11,7 +11,7 @@ The push notification system uses the **Web Push API** with **VAPID (Voluntary A
 
 ### Components
 
-#### 1. Service Worker (`web/public/notification-sw.js`)
+#### 1. Service Worker (`web/src/service-worker.ts`, emitted as `/service-worker.js` via Vite PWA)
 - Handles incoming push events
 - Shows notifications with proper formatting
 - Implements smart suppression logic (doesn't show notifications if user is already viewing the match)
@@ -235,4 +235,3 @@ The current implementation is **solid and follows best practices** for Web Push 
 **For Android-specific issues and fixes, see:** [Android Push & Presence Analysis](./android-push-and-presence-analysis.md)
 
 The implementation is production-ready with the recommended improvements above.
-

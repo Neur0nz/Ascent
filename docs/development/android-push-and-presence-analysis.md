@@ -21,7 +21,7 @@ Based on your experience with missed notifications on Android, here are the like
 **Impact**: Notifications won't be delivered if the service worker is terminated.
 
 #### 2. **Notification Suppression Logic May Be Too Aggressive**
-**Issue**: The `shouldSuppressNotification` function in `notification-sw.js` checks if the user is viewing the match. On Android, this check might incorrectly suppress notifications even when the browser is backgrounded.
+**Issue**: The `shouldSuppressNotification` function in `web/src/service-worker.ts` (compiled to `/service-worker.js` via the PWA build) checks if the user is viewing the match. On Android, this check might incorrectly suppress notifications even when the browser is backgrounded.
 
 **Current Logic**:
 ```javascript
@@ -53,7 +53,7 @@ const shouldSuppressNotification = async (matchId) => {
 
 #### 1. **Improve Service Worker Reliability**
 ```javascript
-// In notification-sw.js - Add background sync or periodic sync
+// In web/src/service-worker.ts - Add background sync or periodic sync
 self.addEventListener('sync', (event) => {
   if (event.tag === 'background-sync') {
     event.waitUntil(doBackgroundWork());
@@ -386,4 +386,3 @@ channel
 3. Wait for 'sync' event before initial presence state
 
 Both implementations are solid but have room for improvement, especially for Android reliability.
-

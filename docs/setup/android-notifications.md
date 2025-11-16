@@ -1,7 +1,7 @@
 # Android Notification Research
 
 ## Current State
-- The web client now registers a notification service worker (`notification-sw.js`) and subscribes to Web Push whenever the browser permission is granted.
+- The web client registers the Vite PWA service worker (`/service-worker.js`, built from `web/src/service-worker.ts`) and subscribes to Web Push whenever the browser permission is granted.
 - Push subscriptions are stored in `public.web_push_subscriptions` and associated with the authenticated player profile.
 - The `submit-move` edge function sends Web Push alerts to the opponent when a move is validated server-side.
 
