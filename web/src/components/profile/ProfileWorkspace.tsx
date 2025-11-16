@@ -43,6 +43,8 @@ import {
   useColorModeValue,
   useDisclosure,
   useToast,
+  VStack,
+  Divider,
 } from '@chakra-ui/react';
 import GoogleIcon from '@components/auth/GoogleIcon';
 import type { SupabaseAuthState } from '@hooks/useSupabaseAuth';
@@ -80,7 +82,11 @@ function clamp(value: number, min: number, max: number): number {
   return value;
 }
 
-function calculateCropMetrics(image: { width: number; height: number }, containerSize: number, zoomValue: number): CropMetrics {
+function calculateCropMetrics(
+  image: { width: number; height: number },
+  containerSize: number,
+  zoomValue: number
+): CropMetrics {
   const minSide = Math.min(image.width, image.height);
   const coverScale = containerSize / minSide;
   const zoomedScale = coverScale * zoomValue;
@@ -103,6 +109,12 @@ interface ProfileWorkspaceProps {
   auth: SupabaseAuthState;
 }
 
+interface PendingSettings {
+  displayName: string;
+  enginePreference: EnginePreference;
+  showCoordinateLabels: boolean;
+}
+
 function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
   const {
     profile,
@@ -118,18 +130,14 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
     updateCoordinatePreference,
     refreshProfile,
   } = auth;
-  const [savingName, setSavingName] = useBoolean(false);
   const [startingGoogle, setStartingGoogle] = useBoolean(false);
   const [signingOut, setSigningOut] = useBoolean(false);
   const [retrying, setRetrying] = useBoolean(false);
   const [savingAvatar, setSavingAvatar] = useBoolean(false);
-  const [savingEnginePreference, setSavingEnginePreference] = useBoolean(false);
-  const [savingCoordinatePreference, setSavingCoordinatePreference] = useBoolean(false);
-  const [displayNameValue, setDisplayNameValue] = useState('');
+  const [isSaving, setIsSaving] = useBoolean(false);
+  const [pendingSettings, setPendingSettings] = useState<PendingSettings | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
-  const [enginePreference, setEnginePreference] = useState<EnginePreference>('python');
-  const [showCoordinateLabels, setShowCoordinateLabels] = useState(true);
   const { isOpen: isCropOpen, onOpen: openCrop, onClose: closeCrop } = useDisclosure();
   const [cropImageUrl, setCropImageUrl] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -149,25 +157,24 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
   const googleHoverBg = useColorModeValue('gray.100', 'whiteAlpha.300');
   const googleActiveBg = useColorModeValue('gray.200', 'whiteAlpha.200');
   const cropModalBg = useColorModeValue('gray.100', 'gray.900');
-  const { cardBg, cardBorder, mutedText, helperText, accentHeading } = useSurfaceTokens();
+  const { cardBg, cardBorder, mutedText, helperText } = useSurfaceTokens();
 
-  useEffect(() => {
+  const resetPendingSettings = useCallback(() => {
     if (profile) {
-      setDisplayNameValue(profile.display_name);
+      setPendingSettings({
+        displayName: profile.display_name,
+        enginePreference: profile.engine_preference ?? 'python',
+        showCoordinateLabels: profile.show_coordinate_labels ?? true,
+      });
       setNameError(null);
     } else {
-      setDisplayNameValue('');
-      setNameError(null);
+      setPendingSettings(null);
     }
   }, [profile]);
 
   useEffect(() => {
-    setEnginePreference(profile?.engine_preference ?? 'python');
-  }, [profile?.engine_preference]);
-
-  useEffect(() => {
-    setShowCoordinateLabels(profile?.show_coordinate_labels ?? true);
-  }, [profile?.show_coordinate_labels]);
+    resetPendingSettings();
+  }, [resetPendingSettings]);
 
   useEffect(() => {
     setAvatarPreview(null);
@@ -189,6 +196,16 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
     };
   }, [cropImageUrl]);
 
+  const hasPendingChanges = useMemo(() => {
+    if (!profile || !pendingSettings) {
+      return false;
+    }
+    const nameChanged = pendingSettings.displayName.trim() !== profile.display_name;
+    const engineChanged = pendingSettings.enginePreference !== (profile.engine_preference ?? 'python');
+    const coordsChanged = pendingSettings.showCoordinateLabels !== (profile.show_coordinate_labels ?? true);
+    return nameChanged || engineChanged || coordsChanged;
+  }, [profile, pendingSettings]);
+
   const handleGoogleSignIn = async () => {
     try {
       setStartingGoogle.on();
@@ -207,80 +224,58 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
 
   const handleGenerateName = () => {
     const suggestion = generateDisplayName(session?.user.email ?? profile?.display_name);
-    setDisplayNameValue(suggestion);
+    if (pendingSettings) {
+      setPendingSettings({ ...pendingSettings, displayName: suggestion });
+    }
     setNameError(null);
   };
 
-  const handleSaveName = async () => {
-    const validationError = validateDisplayName(displayNameValue);
+  const handleSaveChanges = async () => {
+    if (!profile || !pendingSettings) {
+      return;
+    }
+
+    const validationError = validateDisplayName(pendingSettings.displayName);
     if (validationError) {
       setNameError(validationError);
       return;
     }
 
-    setSavingName.on();
+    setIsSaving.on();
+    let changesSucceeded = 0;
+    let changesAttempted = 0;
+
     try {
-      await updateDisplayName(displayNameValue);
-      toast({ title: 'Display name updated', status: 'success' });
+      if (pendingSettings.displayName.trim() !== profile.display_name) {
+        changesAttempted++;
+        await updateDisplayName(pendingSettings.displayName);
+        changesSucceeded++;
+      }
+
+      if (pendingSettings.enginePreference !== (profile.engine_preference ?? 'python')) {
+        changesAttempted++;
+        await updateEnginePreference(pendingSettings.enginePreference);
+        changesSucceeded++;
+      }
+
+      if (pendingSettings.showCoordinateLabels !== (profile.show_coordinate_labels ?? true)) {
+        changesAttempted++;
+        await updateCoordinatePreference(pendingSettings.showCoordinateLabels);
+        changesSucceeded++;
+      }
+
+      if (changesSucceeded > 0) {
+        toast({
+          title: 'Settings updated',
+          status: 'success',
+          description: `Successfully saved ${changesSucceeded} of ${changesAttempted} changes.`,
+        });
+      }
     } catch (updateError) {
-      const message = updateError instanceof Error ? updateError.message : 'Unable to update display name.';
-      setNameError(message);
+      const message = updateError instanceof Error ? updateError.message : 'An unexpected error occurred.';
       toast({ title: 'Update failed', status: 'error', description: message });
     } finally {
-      setSavingName.off();
-    }
-  };
-
-  const handleSaveEnginePreference = async () => {
-    if (!profile || enginePreference === profile.engine_preference) {
-      return;
-    }
-    setSavingEnginePreference.on();
-    try {
-      await updateEnginePreference(enginePreference);
-      toast({
-        title: 'Engine preference updated',
-        status: 'success',
-        description: 'Changes apply the next time the practice board loads.',
-      });
-    } catch (updateError) {
-      const description =
-        updateError instanceof Error ? updateError.message : 'Unable to update engine preference.';
-      toast({
-        title: 'Update failed',
-        status: 'error',
-        description,
-      });
-      setEnginePreference(profile.engine_preference);
-    } finally {
-      setSavingEnginePreference.off();
-    }
-  };
-
-  const handleSaveCoordinatePreference = async () => {
-    if (!profile || showCoordinateLabels === profile.show_coordinate_labels) {
-      return;
-    }
-    setSavingCoordinatePreference.on();
-    try {
-      await updateCoordinatePreference(showCoordinateLabels);
-      toast({
-        title: 'Board preference updated',
-        status: 'success',
-        description: showCoordinateLabels
-          ? 'Coordinates will appear on the board edges.'
-          : 'Coordinates will stay hidden until you re-enable them.',
-      });
-    } catch (updateError) {
-      const description = updateError instanceof Error ? updateError.message : 'Unable to update board preference.';
-      toast({
-        title: 'Update failed',
-        status: 'error',
-        description,
-      });
-      setShowCoordinateLabels(profile.show_coordinate_labels);
-    } finally {
-      setSavingCoordinatePreference.off();
+      setIsSaving.off();
     }
   };
 
@@ -557,7 +552,11 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
     const cropSize = containerSize / zoomedScale;
 
     if (!Number.isFinite(cropSize) || cropSize <= 0) {
-      toast({ title: 'Crop unavailable', status: 'error', description: 'Unable to determine crop area for this image.' });
+      toast({
+        title: 'Crop unavailable',
+        status: 'error',
+        description: 'Unable to determine crop area for this image.',
+      });
       return;
     }
 
@@ -619,7 +618,8 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
         <Box>
           <AlertTitle>Supabase not configured</AlertTitle>
           <AlertDescription>
-            Online play and authentication are disabled. Follow the setup guide in `docs/setup/supabase.md` to configure Supabase before signing in.
+            Online play and authentication are disabled. Follow the setup guide in `docs/setup/supabase.md` to
+            configure Supabase before signing in.
           </AlertDescription>
         </Box>
       </Alert>
@@ -648,7 +648,7 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
     );
   }
 
-  if (!profile) {
+  if (!profile || !pendingSettings) {
     return (
       <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder} w="100%">
         <CardBody as={Stack} spacing={6} align="center" textAlign="center" py={{ base: 8, md: 10 }}>
@@ -690,208 +690,160 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
     );
   }
 
-  const displayNameChanged = Boolean(profile && displayNameValue.trim() !== profile.display_name);
-  const enginePreferenceChanged = Boolean(profile && enginePreference !== profile.engine_preference);
-  const coordinatePreferenceChanged = Boolean(profile && showCoordinateLabels !== profile.show_coordinate_labels);
-  const avatarSrc = avatarPreview
-    ?? profile?.avatar_url
-    ?? (typeof session?.user.user_metadata?.avatar_url === 'string' ? session.user.user_metadata.avatar_url : undefined);
+  const avatarSrc =
+    avatarPreview ??
+    profile?.avatar_url ??
+    (typeof session?.user.user_metadata?.avatar_url === 'string' ? session.user.user_metadata.avatar_url : undefined);
 
   return (
     <>
       <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder} w="100%">
-        <CardBody as={Stack} spacing={6}>
-        <Flex
-          justify="space-between"
-          align={{ base: 'stretch', md: 'center' }}
-          direction={{ base: 'column', md: 'row' }}
-          gap={{ base: 4, md: 6 }}
-        >
-          <HStack spacing={4} align="center">
-            <Box position="relative">
-              <Avatar size="lg" name={profile.display_name} src={avatarSrc} opacity={savingAvatar ? 0.6 : 1} />
-              {savingAvatar && (
-                <Center position="absolute" inset={0}>
-                  <Spinner size="sm" />
-                </Center>
-              )}
-            </Box>
-            <Box>
-              <Heading size="sm">{profile.display_name}</Heading>
-              {session?.user.email && (
+        <CardBody as={VStack} spacing={6} align="stretch">
+          <Flex
+            justify="space-between"
+            align={{ base: 'stretch', md: 'center' }}
+            direction={{ base: 'column', md: 'row' }}
+            gap={{ base: 5, md: 6 }}
+          >
+            <HStack spacing={4} align="center">
+              <Box position="relative">
+                <Avatar size="lg" name={profile.display_name} src={avatarSrc} opacity={savingAvatar ? 0.6 : 1} />
+                {savingAvatar && (
+                  <Center position="absolute" inset={0}>
+                    <Spinner size="sm" />
+                  </Center>
+                )}
+              </Box>
+              <Box>
+                <Heading size="sm">{profile.display_name}</Heading>
+                {session?.user.email && (
+                  <Text fontSize="sm" color={mutedText}>
+                    {session.user.email}
+                  </Text>
+                )}
                 <Text fontSize="sm" color={mutedText}>
-                  {session.user.email}
+                  Connected via Google
                 </Text>
-              )}
-              <Text fontSize="sm" color={mutedText}>
-                Connected with Google
-              </Text>
-              <HStack spacing={3} mt={3} align="center">
-                <Button
-                  size="xs"
-                  variant="outline"
-                  onClick={handleChooseAvatar}
-                  isLoading={savingAvatar}
-                  isDisabled={savingAvatar || isCropOpen}
-                >
-                  Change photo
-                </Button>
-                <Text fontSize="xs" color={mutedText}>
-                  PNG, JPG, or WEBP up to 2MB
-                </Text>
-              </HStack>
-              <HStack spacing={2} mt={3} flexWrap="wrap">
-                <Badge colorScheme="teal" variant="subtle" px={2} py={1} borderRadius="md">
-                  Rating: {profile.rating}
-                </Badge>
-                <Badge colorScheme="green" variant="subtle" px={2} py={1} borderRadius="md">
-                  Games: {profile.games_played}
-                </Badge>
-              </HStack>
-            </Box>
-          </HStack>
-          <Input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            display="none"
-            onChange={handleAvatarFile}
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            alignSelf={{ base: 'flex-start', md: 'auto' }}
-            onClick={handleSignOut}
-            isLoading={signingOut}
-            isDisabled={signingOut}
-          >
-            Sign out
-          </Button>
-        </Flex>
-        <Stack spacing={3}>
-          <FormControl isInvalid={Boolean(nameError)}>
-            <FormLabel>Display name</FormLabel>
-            <Input
-              value={displayNameValue}
-              onChange={(event) => {
-                const next = event.target.value;
-                setDisplayNameValue(next);
-                setNameError(validateDisplayName(next));
-              }}
-              placeholder="Choose how other players see you"
-            />
-            {nameError ? (
-              <FormErrorMessage>{nameError}</FormErrorMessage>
-            ) : (
-              <FormHelperText color={helperText}>Your public username. Shareable across matches.</FormHelperText>
-            )}
-          </FormControl>
-          <HStack spacing={3} align="flex-start">
-            <Button colorScheme="teal" onClick={handleSaveName} isDisabled={!displayNameChanged} isLoading={savingName}>
-              Save
-            </Button>
-            <Button variant="outline" onClick={handleGenerateName} isDisabled={savingName}>
-              Generate suggestion
-            </Button>
-          </HStack>
-        </Stack>
-        <Stack spacing={2}>
-          <Heading size="sm" color={accentHeading}>
-            Account security
-          </Heading>
-          <Text fontSize="sm" color={mutedText}>
-            You&rsquo;re signed in with Google. If you revoke access, you&rsquo;ll need to reconnect to play online and keep your rating in
-            sync across devices.
-          </Text>
-        </Stack>
-      </CardBody>
-      </Card>
-      <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder} w="100%" mt={{ base: 6, md: 8 }}>
-        <CardBody as={Stack} spacing={5}>
-          <Stack spacing={1}>
-            <Heading size="sm" color={accentHeading}>
-              AI engine preference
-            </Heading>
-            <Text fontSize="sm" color={mutedText}>
-              Practice and analysis use the Python engine by default. Switch to the experimental Rust build if you want to
-              try the latest work-in-progress.
-            </Text>
-          </Stack>
-          <FormControl>
-            <FormLabel>Practice AI runtime</FormLabel>
-            <RadioGroup
-              value={enginePreference}
-              onChange={(next) => setEnginePreference(next === 'rust' ? 'rust' : 'python')}
+              </Box>
+            </HStack>
+            <Button
+              variant="outline"
+              size="sm"
+              alignSelf={{ base: 'flex-start', md: 'auto' }}
+              onClick={handleSignOut}
+              isLoading={signingOut}
+              isDisabled={signingOut}
             >
-              <Stack direction={{ base: 'column', md: 'row' }} spacing={6}>
-                <Radio value="python">
-                  <Stack spacing={0} align="flex-start">
-                    <Text fontWeight="medium">Python (Pyodide)</Text>
-                    <Text fontSize="xs" color={mutedText}>
-                      Stable baseline that mirrors the original AI.
-                    </Text>
-                  </Stack>
-                </Radio>
-                <Radio value="rust">
-                  <Stack spacing={0} align="flex-start">
-                    <Text fontWeight="medium">Rust / WASM</Text>
-                    <Text fontSize="xs" color={mutedText}>
-                      Faster but currently experimental and may be unstable.
-                    </Text>
-                  </Stack>
-                </Radio>
-              </Stack>
-            </RadioGroup>
-            <FormHelperText color={helperText}>
-              Preference syncs across devices and applies the next time Practice or Analysis loads.
-            </FormHelperText>
-          </FormControl>
-          <Button
-            alignSelf="flex-start"
-            colorScheme="teal"
-            onClick={handleSaveEnginePreference}
-            isDisabled={!enginePreferenceChanged || savingEnginePreference}
-            isLoading={savingEnginePreference}
-          >
-            Save preference
-          </Button>
-        </CardBody>
-      </Card>
-      <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder} w="100%" mt={{ base: 6, md: 8 }}>
-        <CardBody as={Stack} spacing={5}>
-          <Stack spacing={1}>
-            <Heading size="sm" color={accentHeading}>
-              Board coordinates
-            </Heading>
-            <Text fontSize="sm" color={mutedText}>
-              Show file and rank letters on the Santorini board so it&rsquo;s easier to describe moves to your opponent.
-            </Text>
-          </Stack>
-          <FormControl display="flex" alignItems="center">
-            <FormLabel htmlFor="coordinate-labels-toggle" mb="0">
-              Show coordinate overlays
-            </FormLabel>
-            <Switch
-              id="coordinate-labels-toggle"
-              isChecked={showCoordinateLabels}
-              onChange={(event) => setShowCoordinateLabels(event.target.checked)}
+              Sign out
+            </Button>
+          </Flex>
+
+          <VStack spacing={2} align="stretch">
+            <HStack spacing={3} align="center">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleChooseAvatar}
+                isLoading={savingAvatar}
+                isDisabled={savingAvatar || isCropOpen}
+              >
+                Change photo
+              </Button>
+              <Text fontSize="xs" color={mutedText}>
+                PNG, JPG, or WEBP up to 2MB
+              </Text>
+            </HStack>
+            <Input ref={fileInputRef} type="file" accept="image/*" display="none" onChange={handleAvatarFile} />
+          </VStack>
+          <Divider />
+          <VStack as="form" spacing={5} align="stretch" onSubmit={(e) => e.preventDefault()}>
+            <FormControl isInvalid={Boolean(nameError)}>
+              <FormLabel>Display name</FormLabel>
+              <HStack>
+                <Input
+                  value={pendingSettings.displayName}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    setPendingSettings({ ...pendingSettings, displayName: next });
+                    setNameError(validateDisplayName(next));
+                  }}
+                  placeholder="Choose how other players see you"
+                />
+                <Button variant="outline" onClick={handleGenerateName} isDisabled={isSaving} aria-label="Suggest name">
+                  Suggest
+                </Button>
+              </HStack>
+              {nameError ? (
+                <FormErrorMessage>{nameError}</FormErrorMessage>
+              ) : (
+                <FormHelperText color={helperText}>Your public username. Shareable across matches.</FormHelperText>
+              )}
+            </FormControl>
+            <FormControl>
+              <FormLabel>AI engine preference</FormLabel>
+              <RadioGroup
+                value={pendingSettings.enginePreference}
+                onChange={(next) =>
+                  setPendingSettings({
+                    ...pendingSettings,
+                    enginePreference: next === 'rust' ? 'rust' : 'python',
+                  })
+                }
+              >
+                <Stack direction={{ base: 'column', md: 'row' }} spacing={6}>
+                  <Radio value="python">
+                    <Box>
+                      <Text fontWeight="medium">Python (Pyodide)</Text>
+                      <Text fontSize="xs" color={mutedText}>
+                        Stable baseline that mirrors the original AI.
+                      </Text>
+                    </Box>
+                  </Radio>
+                  <Radio value="rust">
+                    <Box>
+                      <Text fontWeight="medium">Rust / WASM</Text>
+                      <Text fontSize="xs" color={mutedText}>
+                        Faster but currently experimental.
+                      </Text>
+                    </Box>
+                  </Radio>
+                </Stack>
+              </RadioGroup>
+              <FormHelperText color={helperText}>
+                Applies the next time you load Practice or Analysis mode.
+              </FormHelperText>
+            </FormControl>
+            <FormControl display="flex" alignItems="center" justifyContent="space-between">
+              <FormLabel htmlFor="coordinate-labels-toggle" mb="0">
+                Show board coordinates
+              </FormLabel>
+              <Switch
+                id="coordinate-labels-toggle"
+                isChecked={pendingSettings.showCoordinateLabels}
+                onChange={(event) =>
+                  setPendingSettings({ ...pendingSettings, showCoordinateLabels: event.target.checked })
+                }
+                colorScheme="teal"
+              />
+            </FormControl>
+          </VStack>
+          <Divider />
+          <HStack>
+            <Button
               colorScheme="teal"
-            />
-          </FormControl>
-          <Text fontSize="xs" color={mutedText}>
-            This preference syncs across devices and updates any board you view once saved.
-          </Text>
-          <Button
-            alignSelf="flex-start"
-            colorScheme="teal"
-            onClick={handleSaveCoordinatePreference}
-            isDisabled={!coordinatePreferenceChanged || savingCoordinatePreference}
-            isLoading={savingCoordinatePreference}
-          >
-            Save board setting
-          </Button>
+              onClick={handleSaveChanges}
+              isDisabled={!hasPendingChanges || isSaving}
+              isLoading={isSaving}
+            >
+              Save Changes
+            </Button>
+            <Button variant="outline" onClick={resetPendingSettings} isDisabled={!hasPendingChanges || isSaving}>
+              Cancel
+            </Button>
+          </HStack>
         </CardBody>
       </Card>
+
       <Modal isOpen={isCropOpen} onClose={handleCancelCrop} size="lg" isCentered>
         <ModalOverlay />
         <ModalContent>
