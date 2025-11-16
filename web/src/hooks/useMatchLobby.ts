@@ -465,7 +465,22 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         }
       }
       return limited;
-    });
+  });
+
+  const enterOnlineMatchState = useCallback(
+    (match: LobbyMatch, joinCode: string | null) => {
+      setState((prev) => ({
+        ...prev,
+        sessionMode: 'online',
+        activeMatchId: match.id,
+        activeMatch: match,
+        moves: [],
+        joinCode,
+        myMatches: upsertMatch(prev.myMatches, match),
+      }));
+    },
+    [setState],
+  );
 
     if (emojiTimeoutsRef.current[reaction.id]) {
       clearTimeout(emojiTimeoutsRef.current[reaction.id]!);
@@ -1821,19 +1836,11 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
       if (record.creator) mergePlayers([record.creator]);
       const enriched = attachProfiles(record) ?? { ...record, creator: profile, opponent: null };
       const joinCode = record.private_join_code ?? null;
-      setState((prev) => ({
-        ...prev,
-        sessionMode: 'online',
-        activeMatchId: enriched.id,
-        activeMatch: enriched,
-        joinCode,
-        moves: [],
-        myMatches: upsertMatch(prev.myMatches, enriched),
-      }));
+      enterOnlineMatchState(enriched, joinCode);
       void ensurePlayersLoaded([record.creator_id, record.opponent_id ?? undefined]);
       return enriched;
     },
-    [attachProfiles, ensurePlayersLoaded, mergePlayers, onlineEnabled, profile],
+    [attachProfiles, ensurePlayersLoaded, enterOnlineMatchState, mergePlayers, onlineEnabled, profile],
   );
 
   const joinMatch = useCallback(
@@ -1928,19 +1935,11 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         creator: hydratedTarget.creator,
         opponent: profile,
       };
-      setState((prev) => ({
-        ...prev,
-        activeMatchId: enriched.id,
-        activeMatch: enriched,
-        sessionMode: 'online',
-        joinCode: targetMatch.private_join_code,
-        moves: [],
-        myMatches: upsertMatch(prev.myMatches, enriched),
-      }));
+      enterOnlineMatchState(enriched, targetMatch.private_join_code ?? null);
       void ensurePlayersLoaded([joined.creator_id, joined.opponent_id ?? undefined]);
       return enriched;
     },
-    [attachProfiles, ensurePlayersLoaded, mergePlayers, onlineEnabled, profile],
+    [attachProfiles, ensurePlayersLoaded, enterOnlineMatchState, mergePlayers, onlineEnabled, profile],
   );
 
   const leaveMatch = useCallback(
@@ -2112,6 +2111,25 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
       const channel = channelRef.current || client.channel(`match-${match.id}`);
       const actingPlayerId = movePayload.by === 'creator' ? match.creator_id : match.opponent_id;
       const broadcastPlayerId = actingPlayerId ?? profile.id;
+      const actionPayload: SantoriniMoveAction = {
+        kind: movePayload.kind,
+        move: movePayload.move,
+        by: movePayload.by,
+        clocks: movePayload.clocks,
+      };
+
+      const sendRejectionBroadcast = (errorMessage: string, failureLabel: string) => {
+        channel
+          .send({
+            type: 'broadcast',
+            event: 'move-rejected',
+            payload: {
+              move_index: moveIndex,
+              error: errorMessage,
+            },
+          })
+          .catch((broadcastError) => console.error(failureLabel, broadcastError));
+      };
 
       try {
         await channel.send({
@@ -2120,12 +2138,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
           payload: {
             move_index: moveIndex,
             player_id: broadcastPlayerId,
-            action: {
-              kind: movePayload.kind,
-              move: movePayload.move,
-              by: movePayload.by,
-              clocks: movePayload.clocks,
-            },
+            action: actionPayload,
           },
         });
         
@@ -2144,12 +2157,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         body: {
           matchId: match.id,
           moveIndex,
-          action: {
-            kind: movePayload.kind,
-            move: movePayload.move,
-            by: movePayload.by,
-            clocks: movePayload.clocks,
-          },
+          action: actionPayload,
         },
       })
         .then(({ error }) => {
@@ -2159,14 +2167,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
             console.error(`❌ Move rejected by server after ${validationElapsed.toFixed(0)}ms!`, error);
             
             // Broadcast rejection so all clients can revert
-            channel.send({
-              type: 'broadcast',
-              event: 'move-rejected',
-              payload: {
-                move_index: moveIndex,
-                error: error.message || 'Move validation failed',
-              },
-            }).catch((e) => console.error('Failed to broadcast rejection', e));
+            sendRejectionBroadcast(error.message || 'Move validation failed', 'Failed to broadcast rejection');
             
             return;
           }
@@ -2175,6 +2176,9 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         })
         .catch((err) => {
           console.error('Validation request failed', err);
+          const rejectionMessage =
+            err instanceof Error ? err.message : 'Move validation request failed';
+          sendRejectionBroadcast(rejectionMessage, 'Failed to broadcast rejection after validation failure');
           // The optimistic move will be replaced by DB confirmation
           // or will stay if server is down (eventual consistency)
         });
@@ -2305,19 +2309,11 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         });
       }
 
-      setState((prev) => ({
-        ...prev,
-        sessionMode: 'online',
-        activeMatchId: enriched.id,
-        activeMatch: enriched,
-        moves: [],
-        joinCode: record.private_join_code,
-        myMatches: upsertMatch(prev.myMatches, enriched),
-      }));
+      enterOnlineMatchState(enriched, record.private_join_code ?? null);
       void ensurePlayersLoaded([record.creator_id, record.opponent_id ?? undefined]);
       return enriched;
     },
-    [attachProfiles, ensurePlayersLoaded, mergePlayers, onlineEnabled, profile, state.activeMatch],
+    [attachProfiles, ensurePlayersLoaded, enterOnlineMatchState, mergePlayers, onlineEnabled, profile, state.activeMatch],
   );
 
   const dismissRematch = useCallback((matchId: string) => {

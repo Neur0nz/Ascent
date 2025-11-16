@@ -7,6 +7,7 @@ export default defineConfig(({ mode }) => {
   const envDir = path.resolve(__dirname);
   const env = loadEnv(mode, envDir, '');
   const isDev = mode === 'development';
+  const isTest = mode === 'test';
 
   return {
     plugins: [
@@ -28,7 +29,7 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: Number(env.VITE_DEV_PORT ?? 5174),
-      host: true,
+      host: isTest ? '127.0.0.1' : true,
       fs: {
         allow: [path.resolve(__dirname), path.resolve(__dirname, '..')]
       }
@@ -58,6 +59,14 @@ export default defineConfig(({ mode }) => {
           }
         }
       }
-    }
+    },
+    test: {
+      globals: true,
+      environment: 'jsdom',
+      server: {
+        host: '127.0.0.1',
+        port: 0,
+      },
+    },
   };
 });
