@@ -28,10 +28,18 @@ export interface MatchTypingPayload {
   isTyping: boolean;
 }
 
+export interface MatchChatReaction {
+  messageId: string;
+  author: MatchChatAuthor;
+  emoji: string;
+}
+
 export interface MatchChatAdapter {
   loadHistory(matchId: string): Promise<MatchChatMessage[]>;
   persistMessage(matchId: string, draft: MatchChatDraft): Promise<MatchChatMessage>;
+  broadcastReaction?(matchId: string, reaction: MatchChatReaction): Promise<void>;
   subscribe?(matchId: string, callback: (messages: MatchChatMessage[]) => void): () => void;
+  subscribeReactions?(matchId: string, callback: (reactions: MatchChatReaction[]) => void): () => void;
   subscribeTyping?(matchId: string, callback: (authors: MatchChatAuthor[]) => void): () => void;
   broadcastTyping?(matchId: string, payload: MatchTypingPayload): Promise<void>;
   clear?(matchId: string): Promise<void>;
@@ -45,8 +53,10 @@ export interface UseMatchChatOptions {
 
 export interface UseMatchChatReturn {
   messages: MatchChatMessage[];
+  reactions: MatchChatReaction[];
   status: 'idle' | 'loading' | 'ready';
   sendMessage: (text: string) => Promise<void>;
+  sendReaction: (messageId: string, emoji: string) => Promise<void>;
   canSend: boolean;
   clearHistory: () => Promise<void>;
   typingUsers: MatchChatAuthor[];
@@ -58,6 +68,7 @@ const MAX_SAVED_MESSAGES = 200;
 const CHAT_CHANNEL_PREFIX = 'match-chat-';
 const CHAT_EVENT_NAME = 'chat-message';
 const CHAT_TYPING_EVENT_NAME = 'chat-typing';
+const CHAT_REACTION_EVENT_NAME = 'chat-reaction';
 
 const sortMessages = (messages: MatchChatMessage[]): MatchChatMessage[] =>
   [...messages].sort((a, b) => {
@@ -261,9 +272,36 @@ interface ChatChannelEntry {
   channel: RealtimeChannel;
   listeners: Set<(messages: MatchChatMessage[]) => void>;
   typingListeners: Set<(authors: MatchChatAuthor[]) => void>;
+  reactionListeners: Set<(reactions: MatchChatReaction[]) => void>;
   messages: MatchChatMessage[];
   typingState: Map<string, MatchChatAuthor>;
 }
+
+const deserializeReactionPayload = (payload: unknown): MatchChatReaction | null => {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+  const raw = payload as Record<string, unknown>;
+  const messageId = typeof raw.messageId === 'string' ? raw.messageId : null;
+  const emoji = typeof raw.emoji === 'string' ? raw.emoji : null;
+  if (!messageId || !emoji) {
+    return null;
+  }
+  const authorPayload = (raw.author ?? {}) as Record<string, unknown>;
+  const author: MatchChatAuthor = {
+    id: typeof authorPayload.id === 'string' ? authorPayload.id : null,
+    name: typeof authorPayload.name === 'string' ? authorPayload.name : 'Player',
+    avatarUrl:
+      authorPayload.avatar_url == null || typeof authorPayload.avatar_url === 'string'
+        ? ((authorPayload.avatar_url as string | null | undefined) ?? null)
+        : null,
+  };
+  return {
+    messageId,
+    author,
+    emoji,
+  };
+};
 
 const createRealtimeMatchChatAdapter = (client: SupabaseClient): MatchChatAdapter => {
   const channelEntries = new Map<string, ChatChannelEntry>();
@@ -284,6 +322,7 @@ const createRealtimeMatchChatAdapter = (client: SupabaseClient): MatchChatAdapte
       channel,
       listeners: new Set(),
       typingListeners: new Set(),
+      reactionListeners: new Set(),
       messages: sortMessages(readFromStorage(matchId)),
       typingState: new Map(),
     };
@@ -316,6 +355,18 @@ const createRealtimeMatchChatAdapter = (client: SupabaseClient): MatchChatAdapte
         const typingAuthors = Array.from(entry.typingState.values());
         entry.typingListeners.forEach((listener) => listener(typingAuthors));
       })
+      .on('broadcast', { event: CHAT_REACTION_EVENT_NAME }, (payload: { payload: unknown } | null) => {
+        if (!entry) {
+          return;
+        }
+        const reaction = deserializeReactionPayload(payload?.payload);
+        if (!reaction) {
+          return;
+        }
+        // Reactions are ephemeral and not persisted, just broadcasted.
+        // The UI will be responsible for aggregating them.
+        entry.reactionListeners.forEach((listener) => listener([reaction]));
+      })
       .subscribe((status) => {
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           console.warn('useMatchChat: chat channel issue', { matchId, status });
@@ -326,10 +377,10 @@ const createRealtimeMatchChatAdapter = (client: SupabaseClient): MatchChatAdapte
   };
 
   const cleanupChannel = (matchId: string) => {
-  const entry = channelEntries.get(matchId);
-  if (!entry || entry.listeners.size > 0 || entry.typingListeners.size > 0) {
-    return;
-  }
+    const entry = channelEntries.get(matchId);
+    if (!entry || entry.listeners.size > 0 || entry.typingListeners.size > 0 || entry.reactionListeners.size > 0) {
+      return;
+    }
     try {
       void entry.channel.unsubscribe();
     } catch (error) {
@@ -358,6 +409,21 @@ const createRealtimeMatchChatAdapter = (client: SupabaseClient): MatchChatAdapte
         }
       }
       return saved;
+    },
+    async broadcastReaction(matchId, reaction) {
+      const entry = ensureChannel(matchId);
+      if (!entry) {
+        return;
+      }
+      try {
+        await entry.channel.send({
+          type: 'broadcast',
+          event: CHAT_REACTION_EVENT_NAME,
+          payload: reaction,
+        });
+      } catch (error) {
+        console.warn('useMatchChat: failed to broadcast reaction', error);
+      }
     },
     subscribe(matchId, callback) {
       const entry = ensureChannel(matchId);
@@ -447,11 +513,13 @@ const useSharedAdapter = (adapter?: MatchChatAdapter | null): MatchChatAdapter |
 export const useMatchChat = ({ matchId, author, adapter }: UseMatchChatOptions): UseMatchChatReturn => {
   const activeAdapter = useSharedAdapter(adapter);
   const [messages, setMessages] = useState<MatchChatMessage[]>([]);
+  const [reactions, setReactions] = useState<MatchChatReaction[]>([]);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready'>('idle');
   const [typingUsers, setTypingUsers] = useState<MatchChatAuthor[]>([]);
 
   useEffect(() => {
     if (!matchId || !activeAdapter) {
+      setReactions([]);
       setMessages([]);
       setStatus('idle');
       return;
@@ -496,6 +564,21 @@ export const useMatchChat = ({ matchId, author, adapter }: UseMatchChatOptions):
     };
   }, [activeAdapter, matchId]);
 
+  useEffect(() => {
+    if (!matchId || !activeAdapter || !activeAdapter.subscribeReactions) {
+      setReactions([]);
+      return;
+    }
+    const unsubscribe = activeAdapter.subscribeReactions(matchId, (incoming) => {
+      // For now, we'll just append reactions. The UI can aggregate them.
+      // A more robust solution might involve acks or a more complex state.
+      setReactions((current) => [...current, ...incoming]);
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [activeAdapter, matchId]);
+
   const sendMessage = useCallback(
     async (text: string) => {
       if (!matchId || !activeAdapter || !author) {
@@ -532,6 +615,21 @@ export const useMatchChat = ({ matchId, author, adapter }: UseMatchChatOptions):
     [activeAdapter, author, matchId],
   );
 
+  const sendReaction = useCallback(
+    async (messageId: string, emoji: string) => {
+      if (!matchId || !activeAdapter || !author || !activeAdapter.broadcastReaction) {
+        return;
+      }
+      try {
+        await activeAdapter.broadcastReaction(matchId, { messageId, author, emoji });
+      } catch (error) {
+        console.warn('useMatchChat: failed to send reaction', error);
+        throw error;
+      }
+    },
+    [activeAdapter, author, matchId],
+  );
+
   const clearHistory = useCallback(async () => {
     if (!matchId || !activeAdapter || !activeAdapter.clear) {
       return;
@@ -557,8 +655,10 @@ export const useMatchChat = ({ matchId, author, adapter }: UseMatchChatOptions):
 
   return {
     messages,
+    reactions,
     status,
     sendMessage,
+    sendReaction,
     clearHistory,
     canSend: Boolean(matchId && author && activeAdapter),
     typingUsers,

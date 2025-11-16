@@ -558,8 +558,10 @@ function ActiveMatchContent({
   }, [myProfile, profileId]);
   const {
     messages: chatMessages,
+    reactions: chatReactions,
     status: chatStatus,
     sendMessage: sendChatMessage,
+    sendReaction: sendChatReaction,
     canSend: canSendChat,
     clearHistory: clearChatHistory,
     typingUsers: chatTypingUsers,
@@ -1179,8 +1181,10 @@ function ActiveMatchContent({
             <MatchChatPanel
               matchId={lobbyMatch.id}
               messages={chatMessages}
+              reactions={chatReactions}
               status={chatStatus}
               onSend={sendChatMessage}
+              onReact={sendChatReaction}
               canSend={canSendChat}
               currentUserId={chatViewerId}
               typingUsers={chatTypingUsers}
