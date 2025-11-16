@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toPng } from 'html-to-image';
 import {
   Badge,
   Box,
@@ -97,123 +98,10 @@ const formatMoveLabel = (action: SantoriniMoveAction | null | undefined): string
   return `Move ${moveText}`;
 };
 
-interface EvaluationGraphExportOptions {
-  data: Array<{ evaluation: number }>;
-  domain: [number, number];
-  backgroundColor: string;
-  axisColor: string;
-  gridColor: string;
-  referenceColor: string;
-  lineColor: string;
-  label?: string;
-  width?: number;
-  height?: number;
-}
 
 const clampValue = (value: number, domain: [number, number]): number =>
   Math.max(domain[0], Math.min(domain[1], value));
 
-const createEvaluationGraphBlob = async (options: EvaluationGraphExportOptions): Promise<Blob> => {
-  if (typeof document === 'undefined') {
-    throw new Error('Document is not available');
-  }
-  const {
-    data,
-    domain,
-    backgroundColor,
-    axisColor,
-    gridColor,
-    referenceColor,
-    lineColor,
-    label = 'Evaluation graph',
-    width = 960,
-    height = 520,
-  } = options;
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    throw new Error('Unable to create canvas context');
-  }
-  ctx.fillStyle = backgroundColor;
-  ctx.fillRect(0, 0, width, height);
-  const margin = { top: 40, right: 32, bottom: 56, left: 64 };
-  const plotWidth = width - margin.left - margin.right;
-  const plotHeight = height - margin.top - margin.bottom;
-  const range = domain[1] - domain[0] || 1;
-
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = gridColor;
-  for (let i = 0; i <= 4; i += 1) {
-    const y = margin.top + (plotHeight * (i / 4));
-    ctx.beginPath();
-    ctx.moveTo(margin.left, y);
-    ctx.lineTo(margin.left + plotWidth, y);
-    ctx.stroke();
-  }
-
-  const zeroNormalized = (0 - domain[0]) / range;
-  const zeroY = margin.top + plotHeight * (1 - zeroNormalized);
-  ctx.strokeStyle = referenceColor;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(margin.left, zeroY);
-  ctx.lineTo(margin.left + plotWidth, zeroY);
-  ctx.stroke();
-
-  ctx.strokeStyle = axisColor;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(margin.left, margin.top);
-  ctx.lineTo(margin.left, margin.top + plotHeight);
-  ctx.lineTo(margin.left + plotWidth, margin.top + plotHeight);
-  ctx.stroke();
-
-  if (data.length) {
-    ctx.strokeStyle = lineColor;
-    ctx.lineWidth = 3;
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    data.forEach((point, index) => {
-      const x = margin.left + (plotWidth * (index / Math.max(1, data.length - 1)));
-      const normalized = (clampValue(point.evaluation, domain) - domain[0]) / range;
-      const y = margin.top + plotHeight * (1 - normalized);
-      if (index === 0) {
-        ctx.moveTo(x, y);
-      } else {
-        ctx.lineTo(x, y);
-      }
-      ctx.beginPath();
-      ctx.arc(x, y, 4, 0, Math.PI * 2);
-      ctx.fillStyle = backgroundColor;
-      ctx.fill();
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(x, y, 2.5, 0, Math.PI * 2);
-      ctx.fillStyle = lineColor;
-      ctx.fill();
-      ctx.beginPath();
-    });
-  }
-
-  ctx.fillStyle = axisColor;
-  ctx.font = '600 20px system-ui, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText(label, width / 2, margin.top - 18);
-  ctx.font = '500 16px system-ui, sans-serif';
-  ctx.fillText('Evaluation graph', width / 2, height - 20);
-  return new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (!blob) {
-        reject(new Error('Failed to export evaluation graph'));
-        return;
-      }
-      resolve(blob);
-    }, 'image/png');
-  });
-};
 const DEFAULT_CUSTOM_DEPTH = 800;
 
 function describeMatch(match: LobbyMatch, profile: PlayerProfile | null) {
@@ -265,6 +153,7 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
   const [depthError, setDepthError] = useState<string | null>(null);
   const [confirmingEvalDepth, setConfirmingEvalDepth] = useState(false);
   const [sharingGraph, setSharingGraph] = useState(false);
+  const evaluationGraphCardRef = useRef<HTMLDivElement>(null);
   const activeEvaluationJob = useMemo(() => {
     if (!loaded) {
       return null;
@@ -799,23 +688,17 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
   );
 
   const handleShareEvaluationGraph = useCallback(async () => {
-    if (!shareGraphEnabled) {
+    if (!shareGraphEnabled || !evaluationGraphCardRef.current) {
       return;
     }
     setSharingGraph(true);
     try {
-      const blob = await createEvaluationGraphBlob({
-        data: evaluationChartData,
-        domain: evaluationDomain,
+      const dataUrl = await toPng(evaluationGraphCardRef.current, {
+        cacheBust: true,
         backgroundColor: graphBackground,
-        axisColor: chartAxisColor,
-        gridColor: chartGridColor,
-        referenceColor: chartReferenceColor,
-        lineColor: evaluationLineColor,
-        label: 'Evaluation graph',
-        width: 960,
-        height: 520,
       });
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
       const fileName = `santorini-evaluation-${Date.now()}.png`;
       const file = new File([blob], fileName, { type: 'image/png' });
       const shareTarget =
@@ -857,17 +740,7 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
     } finally {
       setSharingGraph(false);
     }
-  }, [
-    chartAxisColor,
-    chartGridColor,
-    chartReferenceColor,
-    evaluationChartData,
-    evaluationDomain,
-    evaluationLineColor,
-    graphBackground,
-    shareGraphEnabled,
-    toast,
-  ]);
+  }, [graphBackground, shareGraphEnabled, toast]);
 
   const handleChartClick = useCallback(
     (state: { activePayload?: Array<{ payload?: { moveIndex?: number } }> } | undefined) => {
@@ -1249,7 +1122,7 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
           </Card>
 
           {(evaluationLoading || (evaluationSeries && evaluationSeries.length > 0)) && (
-          <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder}>
+          <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder} ref={evaluationGraphCardRef}>
             <CardHeader>
               <Flex align="center" justify="space-between" gap={3}>
                 <Heading size="sm">Evaluation graph</Heading>
