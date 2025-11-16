@@ -138,26 +138,30 @@ const createEvaluationGraphBlob = async (options: EvaluationGraphExportOptions):
   }
   ctx.fillStyle = backgroundColor;
   ctx.fillRect(0, 0, width, height);
-  const margin = { top: 36, right: 32, bottom: 60, left: 56 };
+  const margin = { top: 40, right: 32, bottom: 56, left: 64 };
   const plotWidth = width - margin.left - margin.right;
   const plotHeight = height - margin.top - margin.bottom;
   const range = domain[1] - domain[0] || 1;
+
   ctx.lineWidth = 1;
   ctx.strokeStyle = gridColor;
-  ctx.beginPath();
   for (let i = 0; i <= 4; i += 1) {
     const y = margin.top + (plotHeight * (i / 4));
+    ctx.beginPath();
     ctx.moveTo(margin.left, y);
     ctx.lineTo(margin.left + plotWidth, y);
+    ctx.stroke();
   }
-  ctx.stroke();
-  const zeroY = margin.top + plotHeight * (1 - (clampValue(0, domain) - domain[0]) / range);
+
+  const zeroNormalized = (0 - domain[0]) / range;
+  const zeroY = margin.top + plotHeight * (1 - zeroNormalized);
   ctx.strokeStyle = referenceColor;
-  ctx.lineWidth = 1.2;
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(margin.left, zeroY);
   ctx.lineTo(margin.left + plotWidth, zeroY);
   ctx.stroke();
+
   ctx.strokeStyle = axisColor;
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -165,7 +169,8 @@ const createEvaluationGraphBlob = async (options: EvaluationGraphExportOptions):
   ctx.lineTo(margin.left, margin.top + plotHeight);
   ctx.lineTo(margin.left + plotWidth, margin.top + plotHeight);
   ctx.stroke();
-  if (data.length > 0) {
+
+  if (data.length) {
     ctx.strokeStyle = lineColor;
     ctx.lineWidth = 3;
     ctx.lineJoin = 'round';
@@ -173,38 +178,40 @@ const createEvaluationGraphBlob = async (options: EvaluationGraphExportOptions):
     ctx.beginPath();
     data.forEach((point, index) => {
       const x = margin.left + (plotWidth * (index / Math.max(1, data.length - 1)));
-      const value = clampValue(point.evaluation, domain);
-      const normalized = (value - domain[0]) / range;
+      const normalized = (clampValue(point.evaluation, domain) - domain[0]) / range;
       const y = margin.top + plotHeight * (1 - normalized);
       if (index === 0) {
         ctx.moveTo(x, y);
       } else {
         ctx.lineTo(x, y);
       }
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = backgroundColor;
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = lineColor;
+      ctx.fill();
+      ctx.beginPath();
     });
-    ctx.stroke();
   }
+
   ctx.fillStyle = axisColor;
   ctx.font = '600 20px system-ui, sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText(label, width / 2, margin.top - 12);
+  ctx.fillText(label, width / 2, margin.top - 18);
   ctx.font = '500 16px system-ui, sans-serif';
-  ctx.fillText('Evaluation graph', width / 2, height - 16);
-  ctx.fillStyle = referenceColor;
-  ctx.font = '600 24px system-ui, sans-serif';
-  ctx.fillText('Santorini', width / 2, height - 40);
+  ctx.fillText('Evaluation graph', width / 2, height - 20);
   return new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => {
-        if (!blob) {
-          reject(new Error('Failed to export evaluation graph'));
-          return;
-        }
-        resolve(blob);
-      },
-      'image/png',
-      1,
-    );
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error('Failed to export evaluation graph'));
+        return;
+      }
+      resolve(blob);
+    }, 'image/png');
   });
 };
 const DEFAULT_CUSTOM_DEPTH = 800;
