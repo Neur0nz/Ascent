@@ -25,6 +25,15 @@ const FOCUSABLE_CLIENT_TYPES = ['window'];
 const PUSH_SUBSCRIPTION_CHANGED_EVENT = 'santorini:push-subscription-changed';
 const clientMatchState = new Map<string, { matchId: string; visible: boolean; focused: boolean; timestamp: number }>();
 
+const resolveAssetUrl = (path: string): string => {
+  const normalized = path.startsWith('/') ? path.slice(1) : path;
+  const base = self.registration?.scope ?? self.location.origin;
+  return new URL(normalized, base).href;
+};
+
+const DEFAULT_NOTIFICATION_ICON = resolveAssetUrl('icons/notification-icon.png');
+const DEFAULT_NOTIFICATION_BADGE = resolveAssetUrl('icons/notification-badge.png');
+
 const normalizeMatchId = (value: unknown): string | null => {
   if (typeof value !== 'string') {
     return null;
@@ -198,8 +207,12 @@ self.addEventListener('push', (event: PushEvent) => {
       const body = typeof payloadData.body === 'string' ? payloadData.body : '';
       const tag = typeof payloadData.tag === 'string' ? payloadData.tag : undefined;
       const data = isRecord(payloadData.data) ? payloadData.data : undefined;
-      const icon = typeof payloadData.icon === 'string' ? payloadData.icon : undefined;
-      const badge = typeof payloadData.badge === 'string' ? payloadData.badge : undefined;
+      const icon = typeof payloadData.icon === 'string' && payloadData.icon.length > 0
+        ? payloadData.icon
+        : DEFAULT_NOTIFICATION_ICON;
+      const badge = typeof payloadData.badge === 'string' && payloadData.badge.length > 0
+        ? payloadData.badge
+        : DEFAULT_NOTIFICATION_BADGE;
       const vibrate =
         Array.isArray(payloadData.vibrate) && payloadData.vibrate.every((value) => typeof value === 'number')
           ? (payloadData.vibrate as number[])

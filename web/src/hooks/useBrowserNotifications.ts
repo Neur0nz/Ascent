@@ -115,6 +115,23 @@ export function useBrowserNotifications(): UseBrowserNotificationsResult {
         baseOptions.tag = tag;
       }
 
+      const resolveAssetUrl = (assetPath: string): string => {
+        if (typeof window === 'undefined') {
+          return assetPath;
+        }
+        const base = import.meta.env.BASE_URL ?? '/';
+        const baseUrl = new URL(base, window.location.origin);
+        const normalized = assetPath.startsWith('/') ? assetPath.slice(1) : assetPath;
+        return new URL(normalized, baseUrl).href;
+      };
+
+      if (!baseOptions.icon) {
+        baseOptions.icon = resolveAssetUrl('/icons/notification-icon.png');
+      }
+      if (!baseOptions.badge) {
+        baseOptions.badge = resolveAssetUrl('/icons/notification-badge.png');
+      }
+
       const focusUrl =
         typeof window !== 'undefined'
           ? baseOptions?.data?.focusUrl ?? window.location.href

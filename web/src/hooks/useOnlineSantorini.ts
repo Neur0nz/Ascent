@@ -5,7 +5,8 @@ import { createBoardViewFromSnapshot, createEmptyMask, type BoardCell } from '@g
 import type { LobbyMatch } from './useMatchLobby';
 import type { MatchAction, MatchMoveRecord, SantoriniMoveAction } from '@/types/match';
 import { computeSynchronizedClock, deriveInitialClocks, getIncrementMs, type ClockState } from './clockUtils';
-import { isAiMatch, getPlayerZeroRole, getOppositeRole } from '@/utils/matchAiDepth';
+import { isAiMatch, getPlayerZeroRole } from '@/utils/matchAiDepth';
+import { mapPlayerIndexToRole } from '@/utils/playerRoleMapping';
 import { createCancelMaskFromSelector } from '@/utils/moveSelectorMasks';
 import { isSantoriniMoveAction } from '@/utils/matchActions';
 import { useToast } from '@chakra-ui/react';
@@ -42,17 +43,6 @@ const toMoveArray = (move: number | number[] | null | undefined): number[] => {
   return typeof move === 'number' && Number.isInteger(move) && move >= 0 ? [move] : [];
 };
 
-const mapPlayerIndexToRole = (
-  playerIndex: number,
-  playerZeroRole: 'creator' | 'opponent',
-): 'creator' | 'opponent' => {
-  // Player 0 is always the starting player, their role is defined by playerZeroRole
-  if (playerIndex === 0) {
-    return playerZeroRole;
-  }
-  // Player 1 is the other player
-  return getOppositeRole(playerZeroRole);
-};
 
 const resolveActiveRole = (
   engine: SantoriniEngine,
@@ -197,6 +187,10 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
   const nextLocalMoveIndexRef = useRef<number>(0);
   const [pendingMoveVersion, setPendingMoveVersion] = useState(0); // Trigger submission effect
   const gameCompletedRef = useRef<string | null>(null);
+  const timeoutClaimRef = useRef<{ matchId: string | null; winnerRole: 'creator' | 'opponent' | null }>({
+    matchId: null,
+    winnerRole: null,
+  });
   const submissionLockRef = useRef<boolean>(false);
   const syncInProgressRef = useRef<boolean>(false); // Prevent moves during sync
   const processingMoveRef = useRef<boolean>(false); // Prevent rapid clicks
@@ -304,6 +298,10 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
     setClockEnabled(match.clock_initial_seconds ? match.clock_initial_seconds > 0 : false);
     previousMatchRef.current = next;
   }, [match?.id, match?.clock_initial_seconds, match?.status, match, resetMatch, setSyncInProgress]);
+
+  useEffect(() => {
+    timeoutClaimRef.current = { matchId: null, winnerRole: null };
+  }, [match?.id]);
 
   // State synchronization effect - import snapshots and replay moves
   useEffect(() => {
@@ -469,15 +467,13 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       const myTurn = isRoleTurn(newEngine, role, playerZeroRole);
       updateEngineState(newEngine, myTurn);
       
-      // Update clock states from all moves (only process last clock update for speed)
-      setClock(deriveInitialClocks(match));
-      for (let i = moves.length - 1; i >= 0; i--) {
-        const action = moves[i].action;
-        if (isSantoriniMoveAction(action) && action.clocks) {
-          setClock({ creatorMs: action.clocks.creatorMs, opponentMs: action.clocks.opponentMs });
-          break; // Found most recent clock, stop
-        }
-      }
+      const syncedClock = computeSynchronizedClock(
+        match,
+        moves,
+        resolveActiveRole(newEngine, playerZeroRole),
+        Date.now(),
+      );
+      setClock(syncedClock);
       
       lastSyncedStateRef.current = { 
         matchId: match.id, 
@@ -616,6 +612,49 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!clockEnabled || !match || match.status !== 'in_progress' || !placementComplete) {
+      const activeMatchId = match?.id ?? null;
+      if (timeoutClaimRef.current.matchId && timeoutClaimRef.current.matchId !== activeMatchId) {
+        timeoutClaimRef.current = { matchId: null, winnerRole: null };
+      }
+      return;
+    }
+    if (!currentTurn) {
+      return;
+    }
+    const activeMs = currentTurn === 'creator' ? clock.creatorMs : clock.opponentMs;
+    if (activeMs > 0) {
+      if (timeoutClaimRef.current.matchId === match.id) {
+        timeoutClaimRef.current = { matchId: null, winnerRole: null };
+      }
+      return;
+    }
+    if (!match.creator_id || !match.opponent_id) {
+      return;
+    }
+    const winnerRole = currentTurn === 'creator' ? 'opponent' : 'creator';
+    const alreadyClaimed =
+      timeoutClaimRef.current.matchId === match.id && timeoutClaimRef.current.winnerRole === winnerRole;
+    if (alreadyClaimed) {
+      return;
+    }
+    timeoutClaimRef.current = { matchId: match.id, winnerRole };
+    gameCompletedRef.current = match.id;
+    const winnerId = winnerRole === 'creator' ? match.creator_id : match.opponent_id;
+    if (!winnerId) {
+      return;
+    }
+    const iWon = winnerRole === role;
+    toast({
+      title: iWon ? 'Win on time' : 'Time forfeited',
+      description: iWon ? 'Your opponent ran out of time.' : 'You ran out of time.',
+      status: iWon ? 'success' : 'error',
+      duration: 5000,
+    });
+    onGameComplete?.(winnerId);
+  }, [clock.creatorMs, clock.opponentMs, clockEnabled, currentTurn, match, onGameComplete, placementComplete, role, toast]);
 
   // Move submission effect
   useEffect(() => {
