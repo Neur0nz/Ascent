@@ -42,18 +42,15 @@ const toMoveArray = (move: number | number[] | null | undefined): number[] => {
   return typeof move === 'number' && Number.isInteger(move) && move >= 0 ? [move] : [];
 };
 
-const getStartingPlayerIndex = (playerZeroRole: 'creator' | 'opponent'): 0 | 1 =>
-  playerZeroRole === 'creator' ? 0 : 1;
-
 const mapPlayerIndexToRole = (
   playerIndex: number,
   playerZeroRole: 'creator' | 'opponent',
 ): 'creator' | 'opponent' => {
-  const sanitized: 0 | 1 = playerIndex === 1 ? 1 : 0;
-  const startingIndex = getStartingPlayerIndex(playerZeroRole);
-  if (sanitized === startingIndex) {
+  // Player 0 is always the starting player, their role is defined by playerZeroRole
+  if (playerIndex === 0) {
     return playerZeroRole;
   }
+  // Player 1 is the other player
   return getOppositeRole(playerZeroRole);
 };
 
