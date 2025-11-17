@@ -74,6 +74,8 @@ import { getOppositeRole, getPlayerZeroRole, isAiMatch } from '@/utils/matchAiDe
 import { isSantoriniMoveAction } from '@/utils/matchActions';
 
 const ALLOW_ONLINE_AI_MATCHES = false;
+const isActiveMatchError = (code?: string | null) =>
+  code === 'ACTIVE_GAME_EXISTS' || code === 'ACTIVE_AI_GAME_EXISTS';
 
 function formatDate(value: string) {
   return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -1209,7 +1211,7 @@ function PlayWorkspace({ auth }: { auth: SupabaseAuthState }) {
       setJoiningCode('');
       onJoinClose();
     } catch (error: any) {
-      if (error.code === 'ACTIVE_GAME_EXISTS') {
+      if (isActiveMatchError(error.code)) {
         toast({
           title: 'Active game exists',
           description: error.message,

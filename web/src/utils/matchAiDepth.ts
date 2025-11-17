@@ -20,8 +20,11 @@ export const getMatchAiDepth = (match?: MatchLike): number | null => {
 
 export const isAiMatch = (match?: MatchLike): boolean => {
   if (!match) return false;
-  if (typeof match.is_ai_match === 'boolean') {
-    return match.is_ai_match;
+  if (match.is_ai_match === true) {
+    return true;
+  }
+  if (typeof match.ai_depth === 'number') {
+    return true;
   }
   const metadataDepth = match.initial_state?.metadata?.aiDepth;
   if (typeof metadataDepth === 'number') {

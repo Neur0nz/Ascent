@@ -1820,9 +1820,10 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         console.error('Failed to create match', error);
         // Check if it's an active game conflict
         const errorData = (error as any).context?.body;
-        if (errorData?.code === 'ACTIVE_GAME_EXISTS') {
+        const errorCode = errorData?.code;
+        if (errorCode === 'ACTIVE_GAME_EXISTS' || errorCode === 'ACTIVE_AI_GAME_EXISTS') {
           const err = new Error(errorData.error);
-          (err as any).code = 'ACTIVE_GAME_EXISTS';
+          (err as any).code = errorCode;
           (err as any).activeMatchId = errorData.activeMatchId;
           throw err;
         }

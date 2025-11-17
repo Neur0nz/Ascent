@@ -75,6 +75,7 @@ We have access to generic MCP services plus a memory graph (`mcp-neo4j-agent-mem
 - Write commit subjects in imperative mood (“Add match lobby timeout”).
 - Document testing evidence in PR descriptions (commands run, screenshots for UI changes).
 - Flag migrations, env-variable additions, or manual deployment steps in both PRs and any new docs you touch.
+- After finishing work, commit locally with a message that clearly describes everything you added or changed.
 
 ## When In Doubt
 - Prefer asking clarifying questions over guessing.

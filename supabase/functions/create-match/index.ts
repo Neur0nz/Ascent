@@ -264,6 +264,8 @@ async function ensureAiProfile(client: ReturnType<typeof createClient>) {
     clock_increment_seconds: clockIncrementSeconds,
     initial_state: snapshot,
     ...(opponentType === 'ai' ? { status: 'in_progress' as const } : {}),
+    is_ai_match: opponentType === 'ai',
+    ai_depth: opponentType === 'ai' ? aiDepth : null,
   };
 
   const { data: match, error: insertError } = await supabase

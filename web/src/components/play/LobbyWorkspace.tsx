@@ -49,6 +49,7 @@ import {
   useClipboard,
   useColorModeValue,
 } from '@chakra-ui/react';
+import type { TagProps } from '@chakra-ui/react';
 import { motion } from 'framer-motion';
 import { AddIcon, ArrowForwardIcon, RepeatIcon, SearchIcon, StarIcon } from '@chakra-ui/icons';
 import type { SupabaseAuthState } from '@hooks/useSupabaseAuth';
@@ -63,9 +64,12 @@ import { useBrowserNotifications } from '@hooks/useBrowserNotifications';
 import { usePushSubscription } from '@hooks/usePushSubscription';
 
 const ALLOW_ONLINE_AI_MATCHES = false;
+const isActiveMatchError = (code?: string | null) =>
+  code === 'ACTIVE_GAME_EXISTS' || code === 'ACTIVE_AI_GAME_EXISTS';
 const MotionCard = motion(Card);
 const MotionButton = motion(Button);
-const MotionTag = motion(Tag);
+type MotionTagProps = TagProps & { type?: 'button' | 'submit' | 'reset' };
+const MotionTag = motion<MotionTagProps>(Tag);
 const heroEntrance = {
   initial: { opacity: 0, y: 14 },
   animate: { opacity: 1, y: 0 },
@@ -1080,7 +1084,7 @@ function LobbyWorkspace({
           return;
         }
 
-        if (error?.code === 'ACTIVE_GAME_EXISTS') {
+        if (isActiveMatchError(error?.code)) {
           toast({
             title: 'Active game exists',
             description: error.message,
@@ -1199,7 +1203,7 @@ function LobbyWorkspace({
       promptNotificationPermission();
     } catch (error: any) {
       // Re-throw to be caught by the modal's error handling
-      if (error.code === 'ACTIVE_GAME_EXISTS') {
+      if (isActiveMatchError(error.code)) {
         toast({
           title: 'Active game exists',
           description: error.message,
@@ -1227,7 +1231,7 @@ function LobbyWorkspace({
       // Navigate to Play tab after joining match
       onNavigateToPlay();
     } catch (error: any) {
-      if (error.code === 'ACTIVE_GAME_EXISTS') {
+      if (isActiveMatchError(error.code)) {
         toast({
           title: 'Active game exists',
           description: error.message,
@@ -1264,7 +1268,7 @@ function LobbyWorkspace({
       });
       setInlineNotice({ status: 'success', message: 'Casual game posted to the lobby. Waiting for an opponent to join…' });
     } catch (error: any) {
-      if (error?.code === 'ACTIVE_GAME_EXISTS') {
+      if (isActiveMatchError(error?.code)) {
         return;
       }
       setInlineNotice({
