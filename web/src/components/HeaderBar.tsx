@@ -15,7 +15,9 @@ import {
   useColorModeValue,
 } from '@chakra-ui/react';
 import { MoonIcon, SunIcon } from '@chakra-ui/icons';
+import { LayoutGroup, motion } from 'framer-motion';
 import AuthJourney from '@components/auth/AuthJourney';
+import { useSurfaceTokens } from '@/theme/useSurfaceTokens';
 import type { SupabaseAuthState } from '@hooks/useSupabaseAuth';
 
 export type AppTab = 'lobby' | 'play' | 'leaderboard' | 'practice' | 'analysis' | 'profile';
@@ -38,8 +40,6 @@ export const NAV_TABS: ReadonlyArray<{ key: AppTab; label: string; helper: strin
 
 function HeaderBar({ activeTab, actions, auth, onNavigateToProfile }: HeaderBarProps) {
   const { colorMode, toggleColorMode } = useColorMode();
-  const bg = useColorModeValue('white', 'gray.850');
-  const borderColor = useColorModeValue('gray.200', 'whiteAlpha.200');
   const headingColor = useColorModeValue('gray.900', 'white');
   const descriptionColor = useColorModeValue('gray.600', 'whiteAlpha.700');
   const helperMuted = useColorModeValue('gray.500', 'whiteAlpha.600');
@@ -48,6 +48,8 @@ function HeaderBar({ activeTab, actions, auth, onNavigateToProfile }: HeaderBarP
   const tabSelected = useColorModeValue('teal.50', 'teal.900');
   const tabSelectedColor = useColorModeValue('teal.800', 'teal.100');
   const tabHelperColor = useColorModeValue('gray.500', 'whiteAlpha.600');
+  const { headerGradient, headerBorder, headerAccent } = useSurfaceTokens();
+  const MotionBox = motion(Box);
 
   const activeTabDetails = useMemo(() => NAV_TABS.find((tab) => tab.key === activeTab), [activeTab]);
 
@@ -55,9 +57,9 @@ function HeaderBar({ activeTab, actions, auth, onNavigateToProfile }: HeaderBarP
     <Box
       as="header"
       role="banner"
-      bg={bg}
+      bgGradient={headerGradient}
       borderBottomWidth="1px"
-      borderColor={borderColor}
+      borderColor={headerBorder}
       px={{ base: 3, md: 8 }}
       py={{ base: 4, md: 5 }}
       boxShadow={{ base: 'sm', md: 'none' }}
@@ -106,64 +108,79 @@ function HeaderBar({ activeTab, actions, auth, onNavigateToProfile }: HeaderBarP
           align={{ base: 'stretch', md: 'center' }}
           gap={{ base: 3, md: 4 }}
         >
-          <TabList
-            as="nav"
-            aria-label="Main navigation"
-            display="flex"
-            flexWrap="wrap"
-            gap={{ base: 1, md: 2 }}
-            borderBottom="none"
-            justifyContent={{ base: 'center', md: 'flex-start' }}
-            w="100%"
-            sx={{ 
-              button: { 
-                fontWeight: 'semibold',
-                // Enhanced focus visible state
-                '&:focus-visible': {
-                  outline: '2px solid',
-                  outlineColor: 'teal.500',
-                  outlineOffset: '2px',
-                }
-              } 
-            }}
-          >
-            {NAV_TABS.map((tab) => {
-              const hidden = tab.key === 'profile';
-              return (
-                <Tab
-                  key={tab.key}
-                  aria-label={`${tab.label}: ${tab.helper}`}
-                  aria-current={activeTab === tab.key ? 'page' : undefined}
-                  px={{ base: 3, md: 4 }}
-                  py={{ base: 2, md: 3 }}
-                  borderRadius="lg"
-                  bg={tabBg}
-                  color={descriptionColor}
-                  transition="all 0.15s ease-in-out"
-                  _hover={{ bg: tabHover, color: headingColor, transform: 'translateY(-1px)' }}
-                  _selected={{
-                    bg: tabSelected,
-                    color: tabSelectedColor,
-                    boxShadow: 'md',
-                    transform: 'translateY(-1px)',
-                  }}
-                  _focusVisible={{
+          <LayoutGroup>
+            <TabList
+              as="nav"
+              aria-label="Main navigation"
+              display="flex"
+              flexWrap="wrap"
+              gap={{ base: 1, md: 2 }}
+              borderBottom="none"
+              justifyContent={{ base: 'center', md: 'flex-start' }}
+              w="100%"
+              sx={{ 
+                button: { 
+                  fontWeight: 'semibold',
+                  '&:focus-visible': {
                     outline: '2px solid',
                     outlineColor: 'teal.500',
                     outlineOffset: '2px',
-                  }}
-                  display={hidden ? 'none' : undefined}
-                >
-                  <VStack spacing={0} align="flex-start">
-                    <Text fontWeight="semibold">{tab.label}</Text>
-                    <Text fontSize="xs" color={tabHelperColor}>
-                      {tab.helper}
-                    </Text>
-                  </VStack>
-                </Tab>
-              );
-            })}
-          </TabList>
+                  }
+                } 
+              }}
+            >
+              {NAV_TABS.map((tab) => {
+                const hidden = tab.key === 'profile';
+                return (
+                  <Tab
+                    key={tab.key}
+                    aria-label={`${tab.label}: ${tab.helper}`}
+                    aria-current={activeTab === tab.key ? 'page' : undefined}
+                    px={{ base: 3, md: 4 }}
+                    py={{ base: 2, md: 3 }}
+                    borderRadius="lg"
+                    bg={tabBg}
+                    color={descriptionColor}
+                    transition="all 0.15s ease-in-out"
+                    _hover={{ bg: tabHover, color: headingColor, transform: 'translateY(-1px)' }}
+                    _selected={{
+                      bg: tabSelected,
+                      color: tabSelectedColor,
+                      boxShadow: 'md',
+                      transform: 'translateY(-1px)',
+                    }}
+                    _focusVisible={{
+                      outline: '2px solid',
+                      outlineColor: 'teal.500',
+                      outlineOffset: '2px',
+                    }}
+                    display={hidden ? 'none' : undefined}
+                    position="relative"
+                  >
+                    <VStack spacing={0} align="flex-start">
+                      <Text fontWeight="semibold">{tab.label}</Text>
+                      <Text fontSize="xs" color={tabHelperColor}>
+                        {tab.helper}
+                      </Text>
+                    </VStack>
+                    {activeTab === tab.key && (
+                      <MotionBox
+                        layoutId="tab-indicator"
+                        position="absolute"
+                        insetX={2}
+                        bottom="2px"
+                        height="3px"
+                        borderRadius="full"
+                        bg={headerAccent}
+                        pointerEvents="none"
+                        transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                      />
+                    )}
+                  </Tab>
+                );
+              })}
+            </TabList>
+          </LayoutGroup>
           <Spacer />
           <HStack spacing={3} align="center">
             {actions && <HStack spacing={2} display={{ base: 'none', md: 'flex' }}>{actions}</HStack>}

@@ -49,6 +49,7 @@ import {
   useClipboard,
   useColorModeValue,
 } from '@chakra-ui/react';
+import { motion } from 'framer-motion';
 import { AddIcon, ArrowForwardIcon, RepeatIcon, SearchIcon, StarIcon } from '@chakra-ui/icons';
 import type { SupabaseAuthState } from '@hooks/useSupabaseAuth';
 import type { CreateMatchPayload, LobbyMatch, StartingPlayer, MatchOpponentType } from '@hooks/useMatchLobby';
@@ -62,6 +63,15 @@ import { useBrowserNotifications } from '@hooks/useBrowserNotifications';
 import { usePushSubscription } from '@hooks/usePushSubscription';
 
 const ALLOW_ONLINE_AI_MATCHES = false;
+const MotionCard = motion(Card);
+const MotionButton = motion(Button);
+const MotionTag = motion(Tag);
+const heroEntrance = {
+  initial: { opacity: 0, y: 14 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.45, ease: 'easeOut' },
+};
+const heroButtonSpring = { type: 'spring', stiffness: 280, damping: 28 };
 
 function formatDate(value: string) {
   return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -174,7 +184,14 @@ function LobbyHero({
   ].filter(Boolean) as Array<{ label: string; icon: ElementType; onClick: () => void }>;
 
   return (
-    <Card bgGradient={gradientBg} borderWidth="1px" borderColor={frameBorder} color={bodyColor} shadow="lg">
+    <MotionCard
+      {...heroEntrance}
+      bgGradient={gradientBg}
+      borderWidth="1px"
+      borderColor={frameBorder}
+      color={bodyColor}
+      shadow="lg"
+    >
       <CardBody>
         <Stack spacing={6}>
           <Stack spacing={2}>
@@ -197,7 +214,7 @@ function LobbyHero({
                   hasArrow
                   placement="top"
                 >
-                  <Button
+                  <MotionButton
                     size="lg"
                     colorScheme="teal"
                     rightIcon={<ArrowForwardIcon />}
@@ -205,15 +222,18 @@ function LobbyHero({
                     isLoading={quickMatchLoading}
                     isDisabled={hasActiveGame || quickMatchLoading}
                     w={{ base: '100%', sm: 'auto' }}
-                  whiteSpace="normal"
-                  minH="58px"
-                  textAlign="center"
-                  px={{ base: 4, sm: 6 }}
-                  fontSize="md"
-                  fontWeight="semibold"
-                >
-                  Start quick match
-                </Button>
+                    whiteSpace="normal"
+                    minH="58px"
+                    textAlign="center"
+                    px={{ base: 4, sm: 6 }}
+                    fontSize="md"
+                    fontWeight="semibold"
+                    whileHover={{ y: -2 }}
+                    whileTap={{ scale: 0.96 }}
+                    transition={heroButtonSpring}
+                  >
+                    Start quick match
+                  </MotionButton>
                 </Tooltip>
               </WrapItem>
               <WrapItem>
@@ -223,26 +243,29 @@ function LobbyHero({
                   hasArrow
                   placement="top"
                 >
-                  <Button
+                  <MotionButton
                     size="lg"
                     variant="outline"
                     leftIcon={<AddIcon />}
                     onClick={onOpenCreate}
                     isDisabled={hasActiveGame}
                     w={{ base: '100%', sm: 'auto' }}
-                  whiteSpace="normal"
-                  minH="58px"
-                  textAlign="center"
-                  px={{ base: 4, sm: 6 }}
-                  fontSize="md"
-                  fontWeight="semibold"
-                >
-                  Custom match
-                </Button>
+                    whiteSpace="normal"
+                    minH="58px"
+                    textAlign="center"
+                    px={{ base: 4, sm: 6 }}
+                    fontSize="md"
+                    fontWeight="semibold"
+                    whileHover={{ y: -2 }}
+                    whileTap={{ scale: 0.96 }}
+                    transition={heroButtonSpring}
+                  >
+                    Custom match
+                  </MotionButton>
                 </Tooltip>
               </WrapItem>
               <WrapItem>
-                <Button
+                <MotionButton
                   size="lg"
                   variant="ghost"
                   onClick={onOpenJoin}
@@ -251,16 +274,19 @@ function LobbyHero({
                   height="auto"
                   textAlign="center"
                   px={{ base: 4, sm: 6 }}
+                  whileHover={{ y: -2 }}
+                  whileTap={{ scale: 0.96 }}
+                  transition={heroButtonSpring}
                 >
                   Join by code
-                </Button>
+                </MotionButton>
               </WrapItem>
             </Wrap>
           </Stack>
           {secondaryActions.length > 0 && (
             <Wrap spacing={2} shouldWrapChildren>
               {secondaryActions.map((action) => (
-                <Tag
+                <MotionTag
                   key={action.label}
                   size="lg"
                   variant="subtle"
@@ -278,20 +304,21 @@ function LobbyHero({
                   color={secondaryTagColor}
                   borderColor={secondaryTagBorder}
                   borderWidth="1px"
-                  _hover={{ transform: 'translateY(-1px)', boxShadow: 'md' }}
-                  _active={{ transform: 'translateY(0)' }}
+                  whileHover={{ y: -2 }}
+                  whileTap={{ scale: 0.98 }}
+                  transition={heroButtonSpring}
                 >
                   <Icon as={action.icon} boxSize={4} color={secondaryTagColor} />
                   <Text fontSize="sm" fontWeight="semibold">
                     {action.label}
                   </Text>
-                </Tag>
+                </MotionTag>
               ))}
             </Wrap>
           )}
         </Stack>
       </CardBody>
-    </Card>
+    </MotionCard>
   );
 }
 

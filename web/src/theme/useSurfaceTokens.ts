@@ -8,6 +8,9 @@ export function useSurfaceTokens() {
   const strongText = useColorModeValue('gray.900', 'whiteAlpha.900');
   const accentHeading = useColorModeValue('teal.600', 'teal.200');
   const panelBg = useColorModeValue('gray.50', 'blackAlpha.400');
+  const headerGradient = useColorModeValue('linear(to-r, teal.50, white)', 'linear(to-r, teal.700, gray.900)');
+  const headerBorder = useColorModeValue('gray.200', 'whiteAlpha.200');
+  const headerAccent = useColorModeValue('teal.500', 'teal.300');
 
   return {
     cardBg,
@@ -17,6 +20,9 @@ export function useSurfaceTokens() {
     strongText,
     accentHeading,
     panelBg,
+    headerAccent,
+    headerBorder,
+    headerGradient,
   };
 }
 

@@ -16,6 +16,7 @@ import {
   useColorModeValue,
   useToast,
 } from '@chakra-ui/react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { SearchIcon, TimeIcon } from '@chakra-ui/icons';
 import { SantoriniProvider, useSantorini } from '@hooks/useSantorini';
@@ -105,6 +106,8 @@ function resolveInitialTab(tabOrder: readonly AppTab[]): AppTab {
   updateHash(defaultTab);
   return defaultTab;
 }
+
+const MotionPanel = motion.div;
 
 function PracticeTabContent({ onShowHistory }: { onShowHistory: () => void }) {
   const {
@@ -438,6 +441,12 @@ function App() {
 
   const appBg = useColorModeValue('linear(to-br, gray.50, gray.100)', 'linear(to-br, gray.900, gray.800)');
   const appColor = useColorModeValue('gray.900', 'whiteAlpha.900');
+  const panelMotionProps = {
+    initial: { opacity: 0, y: 12 },
+    animate: { opacity: 1, y: 0 },
+    exit: { opacity: 0, y: -8 },
+    transition: { duration: 0.32, ease: 'easeOut' },
+  };
 
   // Show loading screen during initial authentication
   if (auth.loading) {
@@ -476,49 +485,82 @@ function App() {
             <Container maxW="7xl" flex="1" px={{ base: 3, md: 6 }}>
               <TabPanels flex="1">
                 <TabPanel px={0}>
-                  <LobbyWorkspace
-                    auth={auth}
-                    onNavigateToPlay={() => setActiveTab('play')}
-                    onNavigateToPractice={() => setActiveTab('practice')}
-                    onNavigateToAnalysis={() => setActiveTab('analysis')}
-                    onNavigateToLeaderboard={() => setActiveTab('leaderboard')}
-                  />
+                  <AnimatePresence mode="wait">
+                    {activeTab === 'lobby' && (
+                      <MotionPanel key="panel-lobby" {...panelMotionProps} style={{ width: '100%', height: '100%' }}>
+                        <LobbyWorkspace
+                          auth={auth}
+                          onNavigateToPlay={() => setActiveTab('play')}
+                          onNavigateToPractice={() => setActiveTab('practice')}
+                          onNavigateToAnalysis={() => setActiveTab('analysis')}
+                          onNavigateToLeaderboard={() => setActiveTab('leaderboard')}
+                        />
+                      </MotionPanel>
+                    )}
+                  </AnimatePresence>
                 </TabPanel>
                 <TabPanel px={0}>
-                  <GamePlayWorkspace
-                    auth={auth}
-                    onNavigateToLobby={() => setActiveTab('lobby')}
-                    onNavigateToAnalysis={() => setActiveTab('analysis')}
-                  />
+                  <AnimatePresence mode="wait">
+                    {activeTab === 'play' && (
+                      <MotionPanel key="panel-play" {...panelMotionProps} style={{ width: '100%', height: '100%' }}>
+                        <GamePlayWorkspace
+                          auth={auth}
+                          onNavigateToLobby={() => setActiveTab('lobby')}
+                          onNavigateToAnalysis={() => setActiveTab('analysis')}
+                        />
+                      </MotionPanel>
+                    )}
+                  </AnimatePresence>
                 </TabPanel>
                 <TabPanel px={0}>
-                  <LeaderboardWorkspace
-                    auth={auth}
-                    onNavigateToPlay={() => setActiveTab('play')}
-                  />
+                  <AnimatePresence mode="wait">
+                    {activeTab === 'leaderboard' && (
+                      <MotionPanel key="panel-leaderboard" {...panelMotionProps} style={{ width: '100%', height: '100%' }}>
+                        <LeaderboardWorkspace auth={auth} onNavigateToPlay={() => setActiveTab('play')} />
+                      </MotionPanel>
+                    )}
+                  </AnimatePresence>
                 </TabPanel>
                 <TabPanel px={0}>
-                  <SantoriniProvider enginePreference={auth.profile?.engine_preference ?? 'python'}>
-                    <PracticeTabContent onShowHistory={openHistory} />
-                    <PracticeHistoryModal isOpen={isHistoryOpen} onClose={closeHistory} />
-                  </SantoriniProvider>
+                  <AnimatePresence mode="wait">
+                    {activeTab === 'practice' && (
+                      <MotionPanel key="panel-practice" {...panelMotionProps} style={{ width: '100%', height: '100%' }}>
+                        <SantoriniProvider enginePreference={auth.profile?.engine_preference ?? 'python'}>
+                          <PracticeTabContent onShowHistory={openHistory} />
+                          <PracticeHistoryModal isOpen={isHistoryOpen} onClose={closeHistory} />
+                        </SantoriniProvider>
+                      </MotionPanel>
+                    )}
+                  </AnimatePresence>
                 </TabPanel>
                 <TabPanel px={0}>
-                  <SantoriniProvider
-                    evaluationEnabled={true}
-                    enginePreference={auth.profile?.engine_preference ?? 'python'}
-                    persistState
-                    storageNamespace="analysis"
-                  >
-                    <AnalyzeWorkspace
-                      auth={auth}
-                      pendingJobId={pendingJobId}
-                      onPendingJobConsumed={() => setPendingJobId(null)}
-                    />
-                  </SantoriniProvider>
+                  <AnimatePresence mode="wait">
+                    {activeTab === 'analysis' && (
+                      <MotionPanel key="panel-analysis" {...panelMotionProps} style={{ width: '100%', height: '100%' }}>
+                        <SantoriniProvider
+                          evaluationEnabled={true}
+                          enginePreference={auth.profile?.engine_preference ?? 'python'}
+                          persistState
+                          storageNamespace="analysis"
+                        >
+                          <AnalyzeWorkspace
+                            auth={auth}
+                            pendingJobId={pendingJobId}
+                            onPendingJobConsumed={() => setPendingJobId(null)}
+                          />
+                        </SantoriniProvider>
+                      </MotionPanel>
+                    )}
+                  </AnimatePresence>
                 </TabPanel>
                 <TabPanel px={0}>
-                  <ProfileWorkspace auth={auth} />
+                  <AnimatePresence mode="wait">
+                    {activeTab === 'profile' && (
+                      <MotionPanel key="panel-profile" {...panelMotionProps} style={{ width: '100%', height: '100%' }}>
+                        <ProfileWorkspace auth={auth} />
+                      </MotionPanel>
+                    )}
+                  </AnimatePresence>
                 </TabPanel>
               </TabPanels>
             </Container>
