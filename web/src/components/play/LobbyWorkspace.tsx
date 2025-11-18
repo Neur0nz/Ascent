@@ -1,4 +1,14 @@
-import { ElementType, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ElementType,
+  ReactNode,
+  ButtonHTMLAttributes,
+  forwardRef,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   Alert,
   AlertDescription,
@@ -49,6 +59,7 @@ import {
   useClipboard,
   useColorModeValue,
 } from '@chakra-ui/react';
+import type { TagProps } from '@chakra-ui/react';
 import { motion } from 'framer-motion';
 import { AddIcon, ArrowForwardIcon, RepeatIcon, SearchIcon, StarIcon } from '@chakra-ui/icons';
 import type { SupabaseAuthState } from '@hooks/useSupabaseAuth';
@@ -65,7 +76,11 @@ import { usePushSubscription } from '@hooks/usePushSubscription';
 const ALLOW_ONLINE_AI_MATCHES = false;
 const MotionCard = motion(Card);
 const MotionButton = motion(Button);
-const MotionTag = motion(Tag);
+const MotionTag = motion(
+  forwardRef<HTMLButtonElement, TagProps & ButtonHTMLAttributes<HTMLButtonElement>>((props, ref) => (
+    <Tag ref={ref} {...props} />
+  )),
+);
 const heroEntrance = {
   initial: { opacity: 0, y: 14 },
   animate: { opacity: 1, y: 0 },
@@ -294,6 +309,7 @@ function LobbyHero({
                   py={2}
                   borderRadius="full"
                   as="button"
+                  type="button"
                   onClick={action.onClick}
                   display="inline-flex"
                   alignItems="center"

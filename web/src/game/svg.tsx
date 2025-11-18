@@ -1,4 +1,5 @@
 import { GREEN, RED } from './constants';
+import type { MatchRole } from '@/types/match';
 import { sanitizeSvgMarkup } from '@/utils/sanitizeSvg';
 
 export type CellState = {
@@ -10,13 +11,32 @@ const LEVEL_OPACITIES = [0.24, 0.48, 0.72];
 const LEVEL_STROKE_OPACITY = 0.85;
 const DOME_OPACITY = 0.82;
 
-export function renderCellSvg({ levels, worker }: CellState): string {
+type RenderOptions = {
+  playerZeroRole?: MatchRole;
+  colors?: {
+    green?: string;
+    red?: string;
+  };
+};
+
+export function renderCellSvg({ levels, worker }: CellState, options?: RenderOptions): string {
   const width = 240;
   const height = 240;
   const levelHeight = 40;
   const levelShrinkX = 30;
 
-  const workerFill = worker > 0 ? GREEN : worker < 0 ? RED : undefined;
+  const playerZeroRole = options?.playerZeroRole ?? 'creator';
+  const greenColor = options?.colors?.green ?? GREEN;
+  const redColor = options?.colors?.red ?? RED;
+  const positiveIsGreen = playerZeroRole !== 'opponent';
+  let workerFill: string | undefined;
+  if (worker > 0) {
+    workerFill = positiveIsGreen ? greenColor : redColor;
+  } else if (worker < 0) {
+    workerFill = positiveIsGreen ? redColor : greenColor;
+  } else {
+    workerFill = undefined;
+  }
   const workerStyle = workerFill ? `style=\"fill: ${workerFill};\"` : '';
 
   let svg = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xml:space="preserve">`;

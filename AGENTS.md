@@ -11,28 +11,31 @@ Codex agents should treat this file as the source of truth for how to work insid
 - `rust-wasm/` — Experimental Rust/WASM port; treat as WIP unless the task explicitly targets it.
 
 ## Core Commands
-Run everything from the repo root unless noted.
+Run JavaScript tooling from `web/` (Vite is configured relative to that folder).
 
 ```bash
-# install front-end deps
-cd web && npm install
-
-# dev server (defaults to http://localhost:5174, override via VITE_DEV_PORT)
-npm run dev
-
-# build & preview
-npm run build
+cd web
+npm install                      # one-time deps
+npm run dev                      # http://localhost:5174 by default
+npm run build                    # runs wasm-pack, tsc, then vite build
 npm run preview
-
-# unit & hook tests (Vitest + jsdom)
-npm run test
-npm run test -- --watch TestFile.test.tsx
+npm run test                     # Vitest + jsdom
+npm run test -- --watch Foo.test.tsx
 ```
 
-Prefer file-scoped invocations when touching a single module:
-- Type-check a file: `npx tsc --noEmit path/to/file.tsx`
-- Lint/format via prettier config: `npx prettier --write path/to/file.tsx`
-- Run an individual Vitest file: `npx vitest run path/to/file.test.ts`
+File-scoped helpers (still inside `web/`):
+- Type-check: `npx tsc --noEmit src/components/Foo.tsx`
+- Format: `npx prettier --write src/components/Foo.tsx`
+- Single test file: `npx vitest run src/components/__tests__/Foo.test.tsx`
+
+## Build & CI Notes
+- `npm run build` automatically invokes `npm run build:wasm` via the `prebuild` hook. That script runs `wasm-pack build --target web --release` inside `rust-wasm/` before TypeScript compilation (`tsc`) and `vite build`.
+- Local env needs:
+  1. `wasm-pack` (install with `cargo install wasm-pack`).
+  2. `wasm-bindgen`/`wasm-bindgen-futures` are pulled via Cargo when `wasm-pack` runs.
+  3. `wasm-opt` from Binaryen for the optimization step (e.g., `brew install binaryen` or download from https://github.com/WebAssembly/binaryen/releases).
+- The Rust crate declares `license = "MIT"`. `wasm-pack` requires a `LICENSE` file inside `rust-wasm/`. Copy the root `LICENSE` (or add a symlink) to `rust-wasm/LICENSE` before running builds locally/CI to silence the warning seen in CI logs.
+- When TypeScript build errors point at Chakra components wrapped with `motion()`, prefer `forwardRef` wrappers that expose the original props (e.g., `const MotionTag = motion(forwardRef((props, ref) => <Tag ref={ref} {...props} />));`). This allows passing button props such as `type="button"` without breaking the compile step.
 
 ## Coding Conventions
 - React function components with Chakra UI primitives. Hooks own side effects and cross-cutting state (`useSantorini`, `useOnlineSantorini`, etc.).

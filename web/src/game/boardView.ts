@@ -1,6 +1,8 @@
 import { GAME_CONSTANTS } from './constants';
 import { renderCellSvg } from './svg';
 import type { SantoriniSnapshot } from '@/lib/santoriniEngine';
+import type { MatchRole } from '@/types/match';
+import { getPlayerZeroRoleFromSnapshot } from '@/utils/matchAiDepth';
 
 export type BoardCell = {
   worker: number;
@@ -11,24 +13,28 @@ export type BoardCell = {
 const BOARD_SIZE = GAME_CONSTANTS.BOARD_SIZE;
 const svgCache = new Map<string, string>();
 
-const getCellSvg = (level: number, worker: number): string => {
-  const key = `${level}:${worker}`;
+const getCellSvg = (level: number, worker: number, playerZeroRole: MatchRole): string => {
+  const key = `${level}:${worker}:${playerZeroRole}`;
   const cached = svgCache.get(key);
   if (cached) {
     return cached;
   }
-  const svg = renderCellSvg({ levels: level, worker });
+  const svg = renderCellSvg({ levels: level, worker }, { playerZeroRole });
   svgCache.set(key, svg);
   return svg;
 };
 
-export const createEmptyBoardView = (): BoardCell[][] => {
+export const createEmptyBoardView = (playerZeroRole: MatchRole = 'creator'): BoardCell[][] => {
   return Array.from({ length: BOARD_SIZE }, () =>
-    Array.from({ length: BOARD_SIZE }, () => ({ worker: 0, level: 0, svg: getCellSvg(0, 0) })),
+    Array.from({ length: BOARD_SIZE }, () => ({ worker: 0, level: 0, svg: getCellSvg(0, 0, playerZeroRole) })),
   );
 };
 
-export const createBoardViewFromSnapshot = (snapshot: SantoriniSnapshot): BoardCell[][] => {
+export const createBoardViewFromSnapshot = (
+  snapshot: SantoriniSnapshot,
+  options?: { playerZeroRole?: MatchRole },
+): BoardCell[][] => {
+  const playerZeroRole = options?.playerZeroRole ?? getPlayerZeroRoleFromSnapshot(snapshot);
   return Array.from({ length: BOARD_SIZE }, (_, y) =>
     Array.from({ length: BOARD_SIZE }, (_, x) => {
       const cell = snapshot.board[y][x];
@@ -37,7 +43,7 @@ export const createBoardViewFromSnapshot = (snapshot: SantoriniSnapshot): BoardC
       return {
         worker,
         level,
-        svg: getCellSvg(level, worker),
+        svg: getCellSvg(level, worker, playerZeroRole),
       };
     }),
   );

@@ -612,7 +612,7 @@ function ActiveMatchContent({
     if (undoState.status === 'pending') {
       const requestedByMe = undoState.requestedBy === role;
       return (
-        <Alert status="info" variant="left-accent" borderRadius="md">
+        <Alert status="info" variant="left-accent" borderRadius="md" w="full" maxW="full">
           <AlertIcon />
           <Stack spacing={1} flex="1">
             <AlertTitle fontSize="sm">Undo request pending</AlertTitle>
@@ -632,9 +632,17 @@ function ActiveMatchContent({
         ? `Move #${moveNumber} has been reverted.`
         : 'Your opponent declined the undo request.';
     return (
-      <Alert status={status} variant="left-accent" borderRadius="md">
+      <Alert status={status} variant="left-accent" borderRadius="md" w="full" maxW="full">
         <AlertIcon />
-        <Flex flex="1" align="center" justify="space-between" gap={3} direction={{ base: 'column', md: 'row' }}>
+        <Flex
+          flex="1"
+          align="center"
+          justify="space-between"
+          gap={3}
+          direction={{ base: 'column', md: 'row' }}
+          flexWrap="wrap"
+          w="100%"
+        >
           <Stack spacing={1} flex="1">
             <AlertTitle fontSize="sm">{title}</AlertTitle>
             <AlertDescription fontSize="sm">{description}</AlertDescription>
@@ -771,8 +779,14 @@ function ActiveMatchContent({
   return (
     <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder} w="100%">
       <CardHeader>
-        <Flex justify="space-between" align="center">
-          <Stack spacing={1}>
+        <Flex
+          justify="space-between"
+          align={{ base: 'flex-start', md: 'center' }}
+          direction={{ base: 'column', md: 'row' }}
+          gap={{ base: 4, md: 0 }}
+          w="100%"
+        >
+          <Stack spacing={1} minW={0} w="100%">
             <Heading size="md">Active match</Heading>
             {lobbyMatch && (
               <HStack spacing={2} fontSize="sm" color={mutedText} align="center" flexWrap="wrap">
@@ -804,14 +818,19 @@ function ActiveMatchContent({
               </HStack>
             )}
           </Stack>
-          <HStack spacing={3}>
+          <Flex
+            gap={3}
+            wrap="wrap"
+            justify={{ base: 'flex-start', md: 'flex-end' }}
+            w="100%"
+          >
             {startingRole && startingBadgeLabel && (
               <Badge colorScheme={startingRole === greenRole ? 'green' : 'red'}>
                 {startingBadgeLabel}
               </Badge>
             )}
             {showJoinCode && (
-              <Badge colorScheme="orange" fontSize="0.8rem">
+              <Badge colorScheme="orange" fontSize="0.8rem" wordBreak="break-word">
                 Code: {joinCode}
               </Badge>
             )}
@@ -823,7 +842,7 @@ function ActiveMatchContent({
                 {Math.round(lobbyMatch.clock_initial_seconds / 60)}+{lobbyMatch.clock_increment_seconds}
               </Badge>
             )}
-          </HStack>
+          </Flex>
         </Flex>
       </CardHeader>
       <CardBody>
