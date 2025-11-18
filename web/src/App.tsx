@@ -321,7 +321,9 @@ function MatchLobbySideEffects({
                 boxShadow="lg"
                 borderWidth="1px"
                 borderColor={toastBorder}
-                maxW="sm"
+                maxW="420px"
+                w="min(100vw - 32px, 420px)"
+                mx="auto"
               >
                 <Stack spacing={2}>
                   <Text fontWeight="semibold">Opponent joined!</Text>

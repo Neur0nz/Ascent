@@ -514,6 +514,14 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       lastTickRef.current = null;
       return;
     }
+    const lastMove = moves.length > 0 ? moves[moves.length - 1] : null;
+    const awaitingServerConfirmation =
+      typeof lastMove?.id === 'string' && lastMove.id.startsWith('optimistic-');
+    if (awaitingServerConfirmation) {
+      // Keep using the locally ticking clock until the server confirms the move
+      // to avoid visible jumps after each action.
+      return;
+    }
     const synced = computeSynchronizedClock(match, moves, currentTurn, Date.now());
     setClock(synced);
     lastTickRef.current = performance.now();
@@ -565,6 +573,12 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
     lastTickRef.current = null;
 
     if (!clockEnabled || !match || match.status !== 'in_progress' || !placementComplete) {
+      return;
+    }
+
+    // Double-check engine state so we never start clocks while workers are still being placed.
+    const inPlacementPhase = engineRef.current.getPlacementContext() !== null;
+    if (inPlacementPhase) {
       return;
     }
 

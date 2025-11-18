@@ -297,10 +297,12 @@ const deserializeReactionPayload = (payload: unknown): MatchChatReaction | null 
         ? ((authorPayload.avatar_url as string | null | undefined) ?? null)
         : null,
   };
+  const removed = raw.removed === true;
   return {
     messageId,
     author,
     emoji,
+    removed,
   };
 };
 
