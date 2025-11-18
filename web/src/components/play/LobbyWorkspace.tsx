@@ -294,7 +294,6 @@ function LobbyHero({
                   py={2}
                   borderRadius="full"
                   as="button"
-                  type="button"
                   onClick={action.onClick}
                   display="inline-flex"
                   alignItems="center"
