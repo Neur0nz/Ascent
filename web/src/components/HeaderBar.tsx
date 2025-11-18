@@ -42,12 +42,12 @@ function HeaderBar({ activeTab, actions, auth, onNavigateToProfile }: HeaderBarP
   const { colorMode, toggleColorMode } = useColorMode();
   const headingColor = useColorModeValue('gray.900', 'white');
   const descriptionColor = useColorModeValue('gray.600', 'whiteAlpha.700');
-  const helperMuted = useColorModeValue('gray.500', 'whiteAlpha.600');
+  const helperMuted = useColorModeValue('gray.600', 'whiteAlpha.700');
   const tabBg = useColorModeValue('gray.50', 'whiteAlpha.100');
   const tabHover = useColorModeValue('white', 'whiteAlpha.200');
   const tabSelected = useColorModeValue('teal.50', 'teal.900');
   const tabSelectedColor = useColorModeValue('teal.800', 'teal.100');
-  const tabHelperColor = useColorModeValue('gray.500', 'whiteAlpha.600');
+  const tabHelperColor = useColorModeValue('gray.600', 'whiteAlpha.700');
   const { headerGradient, headerBorder, headerAccent } = useSurfaceTokens();
   const MotionBox = motion(Box);
 

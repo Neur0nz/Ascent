@@ -1764,8 +1764,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
 
       window.addEventListener('focus', handleFocus);
       window.addEventListener('blur', handleBlur);
-      window.addEventListener('pagehide', handlePageHide);
-      window.addEventListener('beforeunload', handlePageHide);
+      window.addEventListener('pagehide', handlePageHide); // keeps BFCache eligibility while capturing unloads
       window.addEventListener('online', handleOnline);
       window.addEventListener('offline', handleOffline);
 
@@ -1773,7 +1772,6 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         window.removeEventListener('focus', handleFocus);
         window.removeEventListener('blur', handleBlur);
         window.removeEventListener('pagehide', handlePageHide);
-        window.removeEventListener('beforeunload', handlePageHide);
         window.removeEventListener('online', handleOnline);
         window.removeEventListener('offline', handleOffline);
       });
@@ -2230,43 +2228,42 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         // Continue anyway - DB confirmation will handle it
       }
 
-      // 2️⃣ VALIDATE IN BACKGROUND - Non-blocking!
+      // 2️⃣ VALIDATE WITH SERVER - keep pending until success
       const validationStart = performance.now();
-      console.log('🔒 Validating move on server (async)...');
-      
-      invokeAuthorizedFunction(client, 'submit-move', {
-        body: {
-          matchId: match.id,
-          moveIndex,
-          action: actionPayload,
-        },
-      })
-        .then(({ error }) => {
-          const validationElapsed = performance.now() - validationStart;
-          
-          if (error) {
-            console.error(`❌ Move rejected by server after ${validationElapsed.toFixed(0)}ms!`, error);
-            
-            // Broadcast rejection so all clients can revert
-            sendRejectionBroadcast(error.message || 'Move validation failed', 'Failed to broadcast rejection');
-            
-            return;
-          }
-          
-          console.log(`✅ Move validated successfully in ${validationElapsed.toFixed(0)}ms`);
-        })
-        .catch((err) => {
-          console.error('Validation request failed', err);
-          const rejectionMessage =
-            err instanceof Error ? err.message : 'Move validation request failed';
-          sendRejectionBroadcast(rejectionMessage, 'Failed to broadcast rejection after validation failure');
-          // The optimistic move will be replaced by DB confirmation
-          // or will stay if server is down (eventual consistency)
+      console.log('🔒 Validating move on server...');
+      let rejectionBroadcasted = false;
+      try {
+        const { error } = await invokeAuthorizedFunction(client, 'submit-move', {
+          body: {
+            matchId: match.id,
+            moveIndex,
+            action: actionPayload,
+          },
         });
-      
-      // Return immediately - don't wait for validation!
-      const totalElapsed = performance.now() - broadcastStart;
-      console.log(`⚡ TOTAL time (user perception): ${totalElapsed.toFixed(0)}ms`);
+
+        const validationElapsed = performance.now() - validationStart;
+
+        if (error) {
+          console.error(`❌ Move rejected by server after ${validationElapsed.toFixed(0)}ms!`, error);
+          const rejectionMessage = typeof error.message === 'string' ? error.message : 'Move validation failed';
+          rejectionBroadcasted = true;
+          sendRejectionBroadcast(rejectionMessage, 'Failed to broadcast rejection');
+          throw new Error(rejectionMessage);
+        }
+
+        console.log(`✅ Move validated successfully in ${validationElapsed.toFixed(0)}ms`);
+      } catch (err) {
+        const validationElapsed = performance.now() - validationStart;
+        if (!rejectionBroadcasted) {
+          console.error(`Validation request failed after ${validationElapsed.toFixed(0)}ms`, err);
+          const rejectionMessage = err instanceof Error ? err.message : 'Move validation request failed';
+          sendRejectionBroadcast(rejectionMessage, 'Failed to broadcast rejection after validation failure');
+        }
+        throw err instanceof Error ? err : new Error('Move validation request failed');
+      } finally {
+        const totalElapsed = performance.now() - broadcastStart;
+        console.log(`⚡ TOTAL time (user perception): ${totalElapsed.toFixed(0)}ms`);
+      }
     },
     [onlineEnabled, profile, channelRef],
   );

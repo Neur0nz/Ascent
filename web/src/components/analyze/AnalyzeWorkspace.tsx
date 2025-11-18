@@ -151,7 +151,7 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
   const MIN_EVAL_MOVE_INDEX = 3;
   const evaluationDepthModal = useDisclosure();
   const [depthSelection, setDepthSelection] = useState<string>('ai');
-  const [customDepth, setCustomDepth] = useState<number>(DEFAULT_CUSTOM_DEPTH);
+  const [customDepth, setCustomDepth] = useState<string>(String(DEFAULT_CUSTOM_DEPTH));
   const [depthError, setDepthError] = useState<string | null>(null);
   const [confirmingEvalDepth, setConfirmingEvalDepth] = useState(false);
   const [sharingGraph, setSharingGraph] = useState(false);
@@ -439,13 +439,13 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
     const referenceDepth = evaluationDepthUsed ?? santorini.evaluationDepth ?? null;
     if (referenceDepth == null) {
       setDepthSelection('ai');
-      setCustomDepth(DEFAULT_CUSTOM_DEPTH);
+      setCustomDepth(String(DEFAULT_CUSTOM_DEPTH));
     } else if (NUMERIC_PRESET_VALUES.has(String(referenceDepth))) {
       setDepthSelection(String(referenceDepth));
-      setCustomDepth(referenceDepth);
+      setCustomDepth(String(referenceDepth));
     } else {
       setDepthSelection('custom');
-      setCustomDepth(referenceDepth);
+      setCustomDepth(String(referenceDepth));
     }
     setDepthError(null);
     evaluationDepthModal.onOpen();
@@ -465,7 +465,8 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
     if (depthSelection === 'ai') {
       resolvedDepth = null;
     } else if (depthSelection === 'custom') {
-      resolvedDepth = customDepth;
+      const parsedCustomDepth = Math.round(Number(customDepth));
+      resolvedDepth = Number.isFinite(parsedCustomDepth) ? parsedCustomDepth : null;
     } else {
       resolvedDepth = Number(depthSelection);
     }
@@ -637,7 +638,7 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
   const cardBg = useColorModeValue('white', 'whiteAlpha.100');
   const cardBorder = useColorModeValue('gray.200', 'whiteAlpha.200');
   const mutedText = useColorModeValue('gray.600', 'whiteAlpha.700');
-  const helperText = useColorModeValue('gray.500', 'whiteAlpha.600');
+  const helperText = useColorModeValue('gray.600', 'whiteAlpha.700');
   const highlightBorder = useColorModeValue('teal.500', 'teal.300');
   const highlightBg = useColorModeValue('teal.50', 'teal.900');
   const badgeBorder = useColorModeValue('gray.200', 'whiteAlpha.200');
@@ -1317,14 +1318,8 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
                             max={50000}
                             step={50}
                             w="140px"
-                            value={Number.isFinite(customDepth) ? customDepth : DEFAULT_CUSTOM_DEPTH}
-                            onChange={(_, valueAsNumber) =>
-                              setCustomDepth(
-                                Number.isFinite(valueAsNumber) && valueAsNumber > 0
-                                  ? valueAsNumber
-                                  : DEFAULT_CUSTOM_DEPTH,
-                              )
-                            }
+                            value={customDepth}
+                            onChange={(valueString) => setCustomDepth(valueString)}
                             clampValueOnBlur
                           >
                             <NumberInputField />

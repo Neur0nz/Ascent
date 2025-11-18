@@ -77,7 +77,7 @@ function GameBoard({
   const cancelSelectableBg = useColorModeValue('orange.200', 'orange.700');
   const setupSelectableBg = useColorModeValue('green.100', 'green.700');
   const labelColor = useColorModeValue('gray.600', 'whiteAlpha.700');
-  const subtleLabelColor = useColorModeValue('gray.500', 'whiteAlpha.600');
+  const subtleLabelColor = useColorModeValue('gray.600', 'whiteAlpha.700');
   const boardFrameBg = useColorModeValue('gray.100', 'blackAlpha.500');
   const defaultBorderColor = useColorModeValue('gray.300', 'whiteAlpha.300');
   const buildingColor = useColorModeValue('gray.900', 'whiteAlpha.900');

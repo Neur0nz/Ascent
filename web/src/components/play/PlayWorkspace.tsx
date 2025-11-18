@@ -93,8 +93,8 @@ function MatchCreationModal({
   const [visibility, setVisibility] = useState<'public' | 'private'>('public');
   const [rated, setRated] = useState(true);
   const [hasClock, setHasClock] = useState(true);
-  const [minutes, setMinutes] = useState(10);
-  const [increment, setIncrement] = useState(5);
+  const [minutes, setMinutes] = useState('10');
+  const [increment, setIncrement] = useState('5');
   const [startingPlayer, setStartingPlayer] = useState<StartingPlayer>('random');
   const [submitting, setSubmitting] = useState(false);
   const [opponentType, setOpponentType] = useState<MatchOpponentType>('human');
@@ -121,12 +121,14 @@ function MatchCreationModal({
     setSubmitting(true);
     try {
       const clampedDepth = Math.max(MIN_AI_DEPTH, Math.min(MAX_AI_DEPTH, Math.round(aiDepth)));
+      const resolvedMinutes = Math.max(1, Math.round(Number(minutes) || 0));
+      const resolvedIncrement = Math.max(0, Math.round(Number(increment) || 0));
       const createdMatch = await onCreate({
         visibility: isAiMatch ? 'private' : visibility,
         rated: isAiMatch ? false : rated,
         hasClock: isAiMatch ? false : hasClock,
-        clockInitialMinutes: isAiMatch ? 0 : minutes,
-        clockIncrementSeconds: isAiMatch ? 0 : increment,
+        clockInitialMinutes: isAiMatch ? 0 : resolvedMinutes,
+        clockIncrementSeconds: isAiMatch ? 0 : resolvedIncrement,
         startingPlayer,
         opponentType,
         aiDepth: isAiMatch ? clampedDepth : undefined,
@@ -238,21 +240,37 @@ function MatchCreationModal({
               <Stack direction={{ base: 'column', md: 'row' }} spacing={3}>
                 <FormControl>
                   <FormLabel fontSize="sm">Initial time (minutes)</FormLabel>
-                  <Input
-                    type="number"
+                  <NumberInput
                     min={1}
+                    precision={0}
+                    step={1}
+                    clampValueOnBlur
                     value={minutes}
-                    onChange={(event) => setMinutes(Number(event.target.value))}
-                  />
+                    onChange={(valueString) => setMinutes(valueString)}
+                  >
+                    <NumberInputField inputMode="numeric" />
+                    <NumberInputStepper>
+                      <NumberIncrementStepper />
+                      <NumberDecrementStepper />
+                    </NumberInputStepper>
+                  </NumberInput>
                 </FormControl>
                 <FormControl>
                   <FormLabel fontSize="sm">Increment (seconds)</FormLabel>
-                  <Input
-                    type="number"
+                  <NumberInput
                     min={0}
+                    precision={0}
+                    step={1}
+                    clampValueOnBlur
                     value={increment}
-                    onChange={(event) => setIncrement(Number(event.target.value))}
-                  />
+                    onChange={(valueString) => setIncrement(valueString)}
+                  >
+                    <NumberInputField inputMode="numeric" />
+                    <NumberInputStepper>
+                      <NumberIncrementStepper />
+                      <NumberDecrementStepper />
+                    </NumberInputStepper>
+                  </NumberInput>
                 </FormControl>
               </Stack>
             )}

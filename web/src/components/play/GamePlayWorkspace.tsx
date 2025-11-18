@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   AlertDescription,
@@ -45,6 +45,7 @@ import {
   PopoverArrow,
   PopoverBody,
 } from '@chakra-ui/react';
+import type { AlertProps } from '@chakra-ui/react';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { SupabaseAuthState } from '@hooks/useSupabaseAuth';
 import { MATCH_PING_COOLDOWN_MS } from '@hooks/useMatchLobby';
@@ -898,105 +899,118 @@ function ActiveMatchContent({
     if (!undoState || undoMoveNumber === null) {
       return null;
     }
+
+    const renderUndoBanner = (
+      status: AlertProps['status'],
+      content: ReactNode,
+      actions?: ReactNode,
+    ) => (
+      <Alert
+        status={status}
+        variant="left-accent"
+        borderRadius="md"
+        mt={4}
+        w="full"
+        maxW="full"
+        flexDirection={{ base: 'column', md: 'row' }}
+        alignItems={{ base: 'flex-start', md: 'center' }}
+        gap={{ base: 3, md: 0 }}
+      >
+        <Flex align={{ base: 'flex-start', md: 'center' }} gap={3} w="100%">
+          <AlertIcon />
+          <Stack spacing={1} flex="1" minW={0}>
+            {content}
+          </Stack>
+        </Flex>
+        {actions ? (
+          <Stack
+            direction={{ base: 'column', sm: 'row' }}
+            spacing={2}
+            w={{ base: '100%', md: 'auto' }}
+            justifyContent={{ base: 'flex-start', md: 'flex-end' }}
+            alignItems={{ base: 'stretch', sm: 'center' }}
+          >
+            {actions}
+          </Stack>
+        ) : null}
+      </Alert>
+    );
+
     if (undoState.status === 'pending') {
       if (undoRequestedByMe) {
-        return (
-          <Alert status="info" variant="left-accent" borderRadius="md" mt={4} w="full" maxW="full">
-            <AlertIcon />
-            <Stack spacing={1} flex="1">
-              <AlertTitle>Undo request sent</AlertTitle>
-              <AlertDescription>Waiting for your opponent to respond…</AlertDescription>
-            </Stack>
-          </Alert>
+        return renderUndoBanner(
+          'info',
+          <>
+            <AlertTitle>Undo request sent</AlertTitle>
+            <AlertDescription>Waiting for your opponent to respond…</AlertDescription>
+          </>,
         );
       }
-      return (
-        <Alert
-          status="warning"
-          variant="left-accent"
-          borderRadius="md"
-          mt={4}
-          alignItems="center"
-          w="full"
-          maxW="full"
-        >
-          <AlertIcon />
-          <Stack spacing={1} flex="1">
-            <AlertTitle>Undo requested</AlertTitle>
-            <AlertDescription>Opponent wants to undo move #{undoMoveNumber}.</AlertDescription>
-          </Stack>
-          <ButtonGroup size="sm" ml={{ base: 2, md: 4 }} display="flex" flexWrap="wrap" justifyContent="flex-end">
-            <Button
-              colorScheme="teal"
-              onClick={() => handleRespondUndo(true)}
-              isLoading={respondingUndo}
-              isDisabled={respondingUndo}
-            >
-              Allow
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => handleRespondUndo(false)}
-              isLoading={respondingUndo}
-              isDisabled={respondingUndo}
-            >
-              Decline
-            </Button>
-          </ButtonGroup>
-        </Alert>
+      return renderUndoBanner(
+        'warning',
+        <>
+          <AlertTitle>Undo requested</AlertTitle>
+          <AlertDescription>Opponent wants to undo move #{undoMoveNumber}.</AlertDescription>
+        </>,
+        <>
+          <Button
+            colorScheme="teal"
+            onClick={() => handleRespondUndo(true)}
+            isLoading={respondingUndo}
+            isDisabled={respondingUndo}
+            w={{ base: '100%', sm: 'auto' }}
+          >
+            Allow
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => handleRespondUndo(false)}
+            isLoading={respondingUndo}
+            isDisabled={respondingUndo}
+            w={{ base: '100%', sm: 'auto' }}
+          >
+            Decline
+          </Button>
+        </>,
       );
     }
+
     if (undoState.status === 'accepted') {
-      return (
-        <Alert status="info" variant="left-accent" borderRadius="md" mt={4} w="full" maxW="full">
-          <AlertIcon />
-          <Stack spacing={1} flex="1">
-            <AlertTitle>Undo accepted</AlertTitle>
-            <AlertDescription>Restoring position…</AlertDescription>
-          </Stack>
-        </Alert>
+      return renderUndoBanner(
+        'info',
+        <>
+          <AlertTitle>Undo accepted</AlertTitle>
+          <AlertDescription>Restoring position…</AlertDescription>
+        </>,
       );
     }
+
     if (undoState.status === 'applied') {
-      return (
-        <Alert
-          status="success"
-          variant="left-accent"
-          borderRadius="md"
-          mt={4}
-          alignItems="center"
-          w="full"
-          maxW="full"
-        >
-          <AlertIcon />
-          <Stack spacing={1} flex="1">
-            <AlertTitle>Move undone</AlertTitle>
-            <AlertDescription>Move #{undoMoveNumber} has been undone.</AlertDescription>
-          </Stack>
-          <CloseButton position="relative" onClick={onClearUndo} alignSelf={{ base: 'flex-start', md: 'center' }} />
-        </Alert>
-      );
-    }
-    if (undoState.status === 'rejected') {
-      return (
-        <Alert
-          status="warning"
-          variant="left-accent"
-          borderRadius="md"
-          mt={4}
-          alignItems="center"
-          w="full"
-          maxW="full"
-        >
-          <AlertIcon />
-          <Stack spacing={1} flex="1">
-            <AlertTitle>Undo declined</AlertTitle>
-            <AlertDescription>Your opponent declined the undo request.</AlertDescription>
-          </Stack>
+      return renderUndoBanner(
+        'success',
+        <>
+          <AlertTitle>Move undone</AlertTitle>
+          <AlertDescription>Move #{undoMoveNumber} has been undone.</AlertDescription>
+        </>,
+        <Box display="flex" justifyContent={{ base: 'flex-start', md: 'flex-end' }} w="100%">
           <CloseButton position="relative" onClick={onClearUndo} />
-        </Alert>
+        </Box>,
       );
     }
+
+    if (undoState.status === 'rejected') {
+      return renderUndoBanner(
+        'warning',
+        <>
+          <AlertTitle>Undo declined</AlertTitle>
+          <AlertDescription>Your opponent declined the undo request.</AlertDescription>
+        </>,
+        <Box display="flex" justifyContent={{ base: 'flex-start', md: 'flex-end' }} w="100%">
+          <CloseButton position="relative" onClick={onClearUndo} />
+        </Box>,
+      );
+    }
+
     return null;
   }, [undoState, undoMoveNumber, undoRequestedByMe, respondingUndo, handleRespondUndo, onClearUndo]);
 

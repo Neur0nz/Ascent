@@ -47,7 +47,7 @@ function EvaluationBar({ value }: { value: number }) {
   const positiveWidth = safeValue > 0 ? safeValue * 50 : 0;
   const negativeWidth = safeValue < 0 ? Math.abs(safeValue) * 50 : 0;
   const trackBg = useColorModeValue('gray.200', 'whiteAlpha.300');
-  const centerLineColor = useColorModeValue('gray.400', 'whiteAlpha.600');
+  const centerLineColor = useColorModeValue('gray.500', 'whiteAlpha.700');
 
   return (
     <Box
@@ -114,7 +114,7 @@ function EvaluationPanel({
   const panelGradient = useColorModeValue('linear(to-br, gray.50, white)', 'linear(to-br, blackAlpha.500, blackAlpha.400)');
   const panelBorder = useColorModeValue('gray.200', 'whiteAlpha.200');
   const mutedText = useColorModeValue('gray.600', 'whiteAlpha.700');
-  const subtleText = useColorModeValue('gray.500', 'whiteAlpha.600');
+  const subtleText = useColorModeValue('gray.600', 'whiteAlpha.700');
   const strongText = useColorModeValue('gray.800', 'whiteAlpha.800');
   const moveBg = useColorModeValue('gray.50', 'whiteAlpha.100');
   const evalSelectValue = evaluationDepth == null ? 'ai' : String(evaluationDepth);

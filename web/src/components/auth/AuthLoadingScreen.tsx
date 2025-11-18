@@ -16,7 +16,7 @@ export function AuthLoadingScreen({
     'linear(to-br, gray.900, gray.800)'
   );
   const textColor = useColorModeValue('gray.700', 'whiteAlpha.900');
-  const subtleTextColor = useColorModeValue('gray.500', 'whiteAlpha.700');
+  const subtleTextColor = useColorModeValue('gray.600', 'whiteAlpha.800');
 
   return (
     <Center 
@@ -68,5 +68,4 @@ export function AuthLoadingScreen({
     </Center>
   );
 }
-
 

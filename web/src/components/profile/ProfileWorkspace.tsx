@@ -874,7 +874,9 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
                     {cropMetrics ? (
                       <ChakraImage
                         src={cropImageUrl}
-                        alt="Profile being cropped"
+                        alt=""
+                        role="presentation"
+                        aria-hidden="true"
                         draggable={false}
                         pointerEvents="none"
                         position="absolute"

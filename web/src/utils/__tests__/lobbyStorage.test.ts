@@ -46,7 +46,7 @@ describe("lobbyStorage", () => {
       get sessionStorage() {
         throw new Error("blocked");
       },
-    } as Window & typeof globalThis;
+    } as unknown as Window & typeof globalThis;
 
     vi.stubGlobal("window", throwingWindow);
 
