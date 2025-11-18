@@ -28,6 +28,15 @@ File-scoped helpers (still inside `web/`):
 - Format: `npx prettier --write src/components/Foo.tsx`
 - Single test file: `npx vitest run src/components/__tests__/Foo.test.tsx`
 
+## Testing Workflow
+- Vitest + jsdom power all unit tests. Run `npm run test -- --run` for a single-pass check or `npm run test -- --watch Foo.test.tsx` while iterating.
+- Co-locate tests next to the module they cover inside `__tests__/` directories. Name files after the module (`Foo.test.tsx`, `useBar.test.ts`).
+- `vitest.config.ts` pins the jsdom URL and loads `src/test/setup.ts` to polyfill globals like `crypto`/`matchMedia`. Extend that setup file when you need additional DOM shims so tests stay consistent.
+- When adding a test, favor deterministic fixtures (factory helpers at the top of the test file) and assert observable behavior (rendered output, return values, emitted actions) instead of implementation details.
+- Use `vi.spyOn`/`vi.stubGlobal` instead of rewriting modules. Clean up mocks via `afterEach` hooks or helper utilities to keep suites isolated.
+- Hooks should be validated via focused helpers or lightweight renderers; reducers/utilities should exercise both the “happy path” and guard rails.
+
+
 ## Build & CI Notes
 - `npm run build` automatically invokes `npm run build:wasm` via the `prebuild` hook. That script runs `wasm-pack build --target web --release` inside `rust-wasm/` before TypeScript compilation (`tsc`) and `vite build`.
 - Local env needs:
@@ -36,6 +45,7 @@ File-scoped helpers (still inside `web/`):
   3. `wasm-opt` from Binaryen for the optimization step (e.g., `brew install binaryen` or download from https://github.com/WebAssembly/binaryen/releases).
 - The Rust crate declares `license = "MIT"`. `wasm-pack` requires a `LICENSE` file inside `rust-wasm/`. Copy the root `LICENSE` (or add a symlink) to `rust-wasm/LICENSE` before running builds locally/CI to silence the warning seen in CI logs.
 - When TypeScript build errors point at Chakra components wrapped with `motion()`, prefer `forwardRef` wrappers that expose the original props (e.g., `const MotionTag = motion(forwardRef((props, ref) => <Tag ref={ref} {...props} />));`). This allows passing button props such as `type="button"` without breaking the compile step.
+- GitHub Actions runs `npm run test -- --run` in the `test` job before the Pages build. Keep suites deterministic (<60s) so deployments are not blocked.
 
 ## Coding Conventions
 - React function components with Chakra UI primitives. Hooks own side effects and cross-cutting state (`useSantorini`, `useOnlineSantorini`, etc.).

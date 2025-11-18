@@ -166,12 +166,24 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
   // Clock state
   const [clock, setClock] = useState<ClockState>(() => deriveInitialClocks(match));
   const [clockEnabled, setClockEnabled] = useState(match?.clock_initial_seconds ? match.clock_initial_seconds > 0 : false);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRef = useRef<number | null>(null);
   const lastTickRef = useRef<number | null>(null);
   const [placementComplete, setPlacementComplete] = useState<boolean>(
     () => engineRef.current.getPlacementContext() === null,
   );
   const incrementMs = useMemo(() => getIncrementMs(match), [match?.id, match?.clock_increment_seconds]);
+  const cancelTick = useCallback(() => {
+    if (timerRef.current === null) {
+      return;
+    }
+    const canUseAnimationFrame = typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function';
+    if (canUseAnimationFrame) {
+      window.cancelAnimationFrame(timerRef.current);
+    } else {
+      clearTimeout(timerRef.current);
+    }
+    timerRef.current = null;
+  }, []);
   
   // Sync tracking and locks
   const lastSyncedStateRef = useRef<{ matchId: string | null; snapshotMoveIndex: number; appliedMoveCount: number }>({ 
@@ -566,20 +578,20 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
   }, [cancelSelectable, isMyTurn, selectable]);
 
   useEffect(() => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
+    cancelTick();
     lastTickRef.current = null;
 
-    if (!clockEnabled || !match || match.status !== 'in_progress' || !placementComplete) {
+    if (!clockEnabled || !match || match.status !== 'in_progress') {
       return;
     }
 
-    // Double-check engine state so we never start clocks while workers are still being placed.
-    const inPlacementPhase = engineRef.current.getPlacementContext() !== null;
-    if (inPlacementPhase) {
-      return;
+    // Guard: clocks stay paused while the starting player is still placing workers.
+    const placementContext = engineRef.current.getPlacementContext();
+    if (placementContext) {
+      const placementRole = mapPlayerIndexToRole(placementContext.player, playerZeroRole);
+      if (placementRole === playerZeroRole) {
+        return;
+      }
     }
 
     const side = currentTurn;
@@ -587,10 +599,16 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       return;
     }
 
-    lastTickRef.current = performance.now();
-    timerRef.current = setInterval(() => {
+    const scheduleFrame = (cb: FrameRequestCallback): number => {
+      if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+        return window.requestAnimationFrame(cb);
+      }
+      return window.setTimeout(() => cb(performance.now()), TICK_INTERVAL);
+    };
+
+    const tick = (timestamp: number) => {
       setClock((prev) => {
-        const now = performance.now();
+        const now = typeof timestamp === 'number' ? timestamp : performance.now();
         const last = lastTickRef.current ?? now;
         lastTickRef.current = now;
         const delta = Math.max(0, Math.round(now - last));
@@ -607,25 +625,23 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
         }
         return next;
       });
-    }, TICK_INTERVAL);
+      timerRef.current = scheduleFrame(tick);
+    };
+
+    lastTickRef.current = performance.now();
+    timerRef.current = scheduleFrame(tick);
 
     return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
+      cancelTick();
       lastTickRef.current = null;
     };
-  }, [clockEnabled, currentTurn, match?.status, match, placementComplete]);
+  }, [cancelTick, clockEnabled, currentTurn, match?.status, match, placementComplete, playerZeroRole]);
 
   useEffect(() => {
     return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
+      cancelTick();
     };
-  }, []);
+  }, [cancelTick]);
 
   useEffect(() => {
     if (!clockEnabled || !match || match.status !== 'in_progress' || !placementComplete) {
