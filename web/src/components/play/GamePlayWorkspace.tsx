@@ -901,7 +901,7 @@ function ActiveMatchContent({
     if (undoState.status === 'pending') {
       if (undoRequestedByMe) {
         return (
-          <Alert status="info" variant="left-accent" borderRadius="md" mt={4}>
+          <Alert status="info" variant="left-accent" borderRadius="md" mt={4} w="full" maxW="full">
             <AlertIcon />
             <Stack spacing={1} flex="1">
               <AlertTitle>Undo request sent</AlertTitle>
@@ -911,13 +911,21 @@ function ActiveMatchContent({
         );
       }
       return (
-        <Alert status="warning" variant="left-accent" borderRadius="md" mt={4} alignItems="center">
+        <Alert
+          status="warning"
+          variant="left-accent"
+          borderRadius="md"
+          mt={4}
+          alignItems="center"
+          w="full"
+          maxW="full"
+        >
           <AlertIcon />
           <Stack spacing={1} flex="1">
             <AlertTitle>Undo requested</AlertTitle>
             <AlertDescription>Opponent wants to undo move #{undoMoveNumber}.</AlertDescription>
           </Stack>
-          <ButtonGroup size="sm" ml={{ base: 2, md: 4 }} display="flex">
+          <ButtonGroup size="sm" ml={{ base: 2, md: 4 }} display="flex" flexWrap="wrap" justifyContent="flex-end">
             <Button
               colorScheme="teal"
               onClick={() => handleRespondUndo(true)}
@@ -940,7 +948,7 @@ function ActiveMatchContent({
     }
     if (undoState.status === 'accepted') {
       return (
-        <Alert status="info" variant="left-accent" borderRadius="md" mt={4}>
+        <Alert status="info" variant="left-accent" borderRadius="md" mt={4} w="full" maxW="full">
           <AlertIcon />
           <Stack spacing={1} flex="1">
             <AlertTitle>Undo accepted</AlertTitle>
@@ -951,19 +959,35 @@ function ActiveMatchContent({
     }
     if (undoState.status === 'applied') {
       return (
-        <Alert status="success" variant="left-accent" borderRadius="md" mt={4} alignItems="center">
+        <Alert
+          status="success"
+          variant="left-accent"
+          borderRadius="md"
+          mt={4}
+          alignItems="center"
+          w="full"
+          maxW="full"
+        >
           <AlertIcon />
           <Stack spacing={1} flex="1">
             <AlertTitle>Move undone</AlertTitle>
             <AlertDescription>Move #{undoMoveNumber} has been undone.</AlertDescription>
           </Stack>
-          <CloseButton position="relative" onClick={onClearUndo} />
+          <CloseButton position="relative" onClick={onClearUndo} alignSelf={{ base: 'flex-start', md: 'center' }} />
         </Alert>
       );
     }
     if (undoState.status === 'rejected') {
       return (
-        <Alert status="warning" variant="left-accent" borderRadius="md" mt={4} alignItems="center">
+        <Alert
+          status="warning"
+          variant="left-accent"
+          borderRadius="md"
+          mt={4}
+          alignItems="center"
+          w="full"
+          maxW="full"
+        >
           <AlertIcon />
           <Stack spacing={1} flex="1">
             <AlertTitle>Undo declined</AlertTitle>
@@ -1115,9 +1139,16 @@ function ActiveMatchContent({
       </Stack>
 
       {ratingProjection && showRatingProjection && (
-        <Alert status="info" variant="left-accent" borderRadius="md">
+        <Alert status="info" variant="left-accent" borderRadius="md" w="full" maxW="full">
           <AlertIcon />
-          <Flex flex="1" align={{ base: 'flex-start', md: 'center' }} gap={3} direction={{ base: 'column', md: 'row' }}>
+          <Flex
+            flex="1"
+            align={{ base: 'flex-start', md: 'center' }}
+            gap={3}
+            direction={{ base: 'column', md: 'row' }}
+            flexWrap="wrap"
+            w="100%"
+          >
             <Stack spacing={1} flex="1">
               <AlertTitle>Rated stakes</AlertTitle>
               <AlertDescription fontSize="sm">
@@ -1680,6 +1711,9 @@ function WaitingForOpponentState({
                         fontFamily="mono" 
                         letterSpacing="wider"
                         color={accentHeading}
+                        textAlign="center"
+                        wordBreak="break-word"
+                        w="100%"
                       >
                         {shareableJoinCode}
                       </Heading>
@@ -2190,6 +2224,7 @@ function GamePlayWorkspace({
               align="center"
               justify={{ base: 'flex-start', md: 'flex-end' }}
               flex="1"
+              w="100%"
             >
               <WrapItem>
                 <Text fontSize="sm" fontWeight="semibold" color={accentHeading}>
@@ -2198,7 +2233,7 @@ function GamePlayWorkspace({
               </WrapItem>
               {activeMatchSummary.joinCode && (
                 <WrapItem>
-                  <Badge colorScheme="orange" fontSize="xs">
+                  <Badge colorScheme="orange" fontSize="xs" wordBreak="break-word" whiteSpace="normal">
                     Code: {activeMatchSummary.joinCode}
                   </Badge>
                 </WrapItem>
@@ -2255,16 +2290,25 @@ function GamePlayWorkspace({
             variant="left-accent"
             borderRadius="md"
             alignItems="center"
+            w="full"
+            maxW="full"
           >
             <AlertIcon />
-            <Flex direction={{ base: 'column', md: 'row' }} gap={{ base: 3, md: 4 }} flex="1" align={{ base: 'flex-start', md: 'center' }}>
+            <Flex
+              direction={{ base: 'column', md: 'row' }}
+              gap={{ base: 3, md: 4 }}
+              flex="1"
+              align={{ base: 'flex-start', md: 'center' }}
+              flexWrap="wrap"
+              w="100%"
+            >
               <Stack spacing={1} flex="1">
                 <AlertTitle>Rematch available</AlertTitle>
                 <AlertDescription>
                   {opponentName} created a rematch{joinCode ? ` • Join code ${joinCode}` : ''}.
                 </AlertDescription>
               </Stack>
-              <ButtonGroup size="sm" alignSelf={{ base: 'stretch', md: 'center' }}>
+              <ButtonGroup size="sm" alignSelf={{ base: 'stretch', md: 'center' }} flexWrap="wrap" justifyContent="flex-end">
                 <Button
                   colorScheme="teal"
                   onClick={() => handleAcceptRematch(offer.id)}
@@ -2293,7 +2337,15 @@ function GamePlayWorkspace({
 
       {/* Local mode deprecated */}
       {showLocalMigrationNotice && (
-        <Alert status="info" borderRadius="md" variant="left-accent" position="relative" pr={8}>
+        <Alert
+          status="info"
+          borderRadius="md"
+          variant="left-accent"
+          position="relative"
+          pr={8}
+          w="full"
+          maxW="full"
+        >
           <AlertIcon />
           <Flex align={{ base: 'flex-start', md: 'center' }} direction={{ base: 'column', md: 'row' }} gap={4} w="100%">
             <Stack spacing={1} flex="1">
