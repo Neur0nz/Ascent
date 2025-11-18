@@ -314,6 +314,25 @@ function normalizeAction(action: unknown): MatchAction {
   return { kind: 'unknown' } as MatchAction;
 }
 
+function normalizeMoveIndex(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.trunc(value);
+  }
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return Math.trunc(parsed);
+    }
+  }
+  if (typeof value === 'bigint') {
+    const coerced = Number(value);
+    if (Number.isFinite(coerced)) {
+      return Math.trunc(coerced);
+    }
+  }
+  return null;
+}
+
 function upsertMatch(list: LobbyMatch[], match: LobbyMatch): LobbyMatch[] {
   const index = list.findIndex((item) => item.id === match.id);
   if (index >= 0) {
@@ -687,10 +706,24 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         const mappedMoves =
           movesError || !Array.isArray(movesData)
             ? null
-            : (movesData as MatchMoveRecord<MatchAction>[]).map((move) => ({
-                ...move,
-                action: normalizeAction(move.action),
-              }));
+            : (movesData as MatchMoveRecord<MatchAction>[])
+                .map((move, index) => {
+                  const normalizedIndex = normalizeMoveIndex(move.move_index);
+                  if (normalizedIndex === null) {
+                    console.warn('useMatchLobby: Ignoring move with invalid move_index during hydration', {
+                      matchId,
+                      moveIndex: move.move_index,
+                      arrayIndex: index,
+                    });
+                    return null;
+                  }
+                  return {
+                    ...move,
+                    move_index: normalizedIndex,
+                    action: normalizeAction(move.action),
+                  };
+                })
+                .filter((move): move is MatchMoveRecord<MatchAction> => Boolean(move));
 
         setState((prev) => {
           if (prev.activeMatchId !== matchId) {
@@ -1155,8 +1188,16 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
           });
           
           const broadcastMove = payload.payload;
-          if (!broadcastMove || typeof broadcastMove.move_index !== 'number') {
+          if (!broadcastMove) {
             console.warn('⚡ BROADCAST: Invalid move payload', payload);
+            return;
+          }
+          const normalizedIndex = normalizeMoveIndex(broadcastMove.move_index);
+          if (normalizedIndex === null) {
+            console.warn('⚡ BROADCAST: Received move with non-numeric index', {
+              matchId,
+              rawMoveIndex: broadcastMove.move_index,
+            });
             return;
           }
           // Skip optimistic path during hydration to avoid applying on stale state
@@ -1166,41 +1207,41 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
           }
           
           // Check if we're already processing this move (prevents React setState race condition)
-          if (processingMovesRef.current.has(broadcastMove.move_index)) {
+          if (processingMovesRef.current.has(normalizedIndex)) {
             console.log('⚡ BROADCAST: Move already being processed, skipping duplicate', { 
-              moveIndex: broadcastMove.move_index 
+              moveIndex: normalizedIndex 
             });
             return;
           }
           
           // Mark as processing
-          processingMovesRef.current.add(broadcastMove.move_index);
+          processingMovesRef.current.add(normalizedIndex);
           
           setState((prev) => {
             if (prev.activeMatchId !== matchId) {
               // Clean up if match changed
-              processingMovesRef.current.delete(broadcastMove.move_index);
+              processingMovesRef.current.delete(normalizedIndex);
               return prev;
             }
             
             // Check if move already exists (prevent duplicates from race conditions)
-            const exists = prev.moves.some((move) => move.move_index === broadcastMove.move_index);
+            const exists = prev.moves.some((move) => move.move_index === normalizedIndex);
             if (exists) {
-              console.log('⚡ BROADCAST: Move already exists, skipping', { moveIndex: broadcastMove.move_index });
-              processingMovesRef.current.delete(broadcastMove.move_index);
+              console.log('⚡ BROADCAST: Move already exists, skipping', { moveIndex: normalizedIndex });
+              processingMovesRef.current.delete(normalizedIndex);
               return prev;
             }
             
             // Check sequence (prevent out-of-order moves from breaking game state)
             const expectedIndex = prev.moves.length;
-            if (broadcastMove.move_index !== expectedIndex) {
+            if (normalizedIndex !== expectedIndex) {
               console.warn('⚡ BROADCAST: Out of sequence move!', { 
                 expected: expectedIndex, 
-                received: broadcastMove.move_index,
+                received: normalizedIndex,
                 action: 'Will wait for DB confirmation'
               });
               // Don't add it yet - wait for DB to sort it out
-              processingMovesRef.current.delete(broadcastMove.move_index);
+              processingMovesRef.current.delete(normalizedIndex);
               return prev;
             }
 
@@ -1210,26 +1251,26 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
           if (prev.activeMatch) {
             const { creator_id, opponent_id } = prev.activeMatch;
             const playerZeroRole = getPlayerZeroRole(prev.activeMatch);
-            const expectedRole = getRoleForMoveIndex(broadcastMove.move_index, playerZeroRole);
+            const expectedRole = getRoleForMoveIndex(normalizedIndex, playerZeroRole);
             const expectedPlayerId =
               expectedRole === 'creator' ? creator_id ?? null : opponent_id ?? null;
 
             if (expectedPlayerId && broadcastMove.player_id !== expectedPlayerId) {
               console.warn('⚡ BROADCAST: Player/turn mismatch for optimistic apply, deferring to DB', {
-                moveIndex: broadcastMove.move_index,
+                moveIndex: normalizedIndex,
                 expectedPlayerId,
                 gotPlayerId: broadcastMove.player_id,
               });
-              processingMovesRef.current.delete(broadcastMove.move_index);
+              processingMovesRef.current.delete(normalizedIndex);
               return prev;
             }
           }
             
             // Create optimistic move record
             const moveRecord: MatchMoveRecord<MatchAction> = {
-              id: `optimistic-${broadcastMove.move_index}-${Date.now()}`,
+              id: `optimistic-${normalizedIndex}-${Date.now()}`,
               match_id: matchId,
-              move_index: broadcastMove.move_index,
+              move_index: normalizedIndex,
               player_id: broadcastMove.player_id,
               action: normalizeAction(broadcastMove.action),
               state_snapshot: null, // Server will compute
@@ -1244,7 +1285,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
             });
             
             // Remove from processing set after adding
-            processingMovesRef.current.delete(broadcastMove.move_index);
+            processingMovesRef.current.delete(normalizedIndex);
             
             const updatedMoves = [...prev.moves, moveRecord];
             return { ...prev, moves: updatedMoves };
@@ -1298,14 +1339,19 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
             if (prev.activeMatchId !== matchId) {
               return prev;
             }
+            const rejectedIndex = normalizeMoveIndex(rejection?.move_index);
+            if (rejectedIndex === null) {
+              console.warn('❌ BROADCAST: Move rejection missing valid move_index', rejection);
+              return prev;
+            }
             
             // Remove the optimistic move
             const updatedMoves = prev.moves.filter(
-              (move) => move.move_index !== rejection.move_index || !move.id.startsWith('optimistic-')
+              (move) => move.move_index !== rejectedIndex || !move.id.startsWith('optimistic-')
             );
             
             console.log('❌ BROADCAST: Removed rejected optimistic move', { 
-              moveIndex: rejection.move_index,
+              moveIndex: rejectedIndex,
               reason: rejection.error
             });
             
@@ -1318,14 +1364,14 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         { event: 'undo-request' },
         (payload: { type: string; event: string; payload: any }) => {
           const data = payload.payload ?? {};
-          const moveIndexRaw = typeof data.move_index === 'number' ? data.move_index : null;
+          const moveIndexRaw = normalizeMoveIndex(data.move_index);
           const requestedByRole = data.requested_by_role === 'creator' ? 'creator' : data.requested_by_role === 'opponent' ? 'opponent' : null;
           if (requestedByRole === null) {
             console.warn('⚠️ Received undo-request with unknown role', data);
             return;
           }
           setState((prev) => {
-            const moveIndex = moveIndexRaw ?? Math.max(prev.moves.length - 1, 0);
+            const moveIndex = moveIndexRaw !== null ? moveIndexRaw : Math.max(prev.moves.length - 1, 0);
             const requestState: UndoRequestState = {
               matchId,
               moveIndex,
@@ -1350,17 +1396,25 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
           const data = payload.payload ?? {};
           const accepted = Boolean(data.accepted);
           const responderRole = data.responded_by_role === 'creator' ? 'creator' : data.responded_by_role === 'opponent' ? 'opponent' : null;
-          const moveIndexRaw = typeof data.move_index === 'number' ? data.move_index : null;
+          const moveIndexRaw = normalizeMoveIndex(data.move_index);
           setState((prev) => {
             const existing = prev.undoRequests[matchId];
             if (!existing) {
               return prev;
             }
-            if (moveIndexRaw !== null && existing.moveIndex !== moveIndexRaw) {
+            const existingMoveIndex = normalizeMoveIndex(existing.moveIndex);
+            if (
+              moveIndexRaw !== null &&
+              existingMoveIndex !== null &&
+              existingMoveIndex !== moveIndexRaw
+            ) {
               return prev;
             }
+            const resolvedMoveIndex =
+              existingMoveIndex ?? moveIndexRaw ?? existing.moveIndex ?? Math.max(prev.moves.length - 1, 0);
             const nextState: UndoRequestState = {
               ...existing,
+              moveIndex: resolvedMoveIndex,
               status: accepted ? 'accepted' : 'rejected',
               respondedBy: responderRole ?? existing.respondedBy,
             };
@@ -1379,13 +1433,13 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         { event: 'undo-applied' },
         (payload: { type: string; event: string; payload: any }) => {
           const data = payload.payload ?? {};
-          const moveIndexRaw = typeof data.move_index === 'number' ? data.move_index : null;
+          const moveIndexRaw = normalizeMoveIndex(data.move_index);
           const removedIndexesRaw = Array.isArray(data.removed_move_indexes)
             ? (data.removed_move_indexes as unknown[])
             : [];
           const removedIndexesClean: number[] = removedIndexesRaw
-            .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
-            .map((value) => Math.trunc(value));
+            .map((value) => normalizeMoveIndex(value))
+            .filter((value): value is number => value !== null);
           setState((prev) => {
             if (prev.activeMatchId !== matchId) {
               return prev;
@@ -1409,7 +1463,13 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
             if (nextUndo) {
               nextUndoRequests[matchId] = nextUndo;
             }
-            const updatedMoves = prev.moves.filter((move) => !removalSet.has(move.move_index));
+            const updatedMoves = prev.moves.filter((move) => {
+              const moveIndex = normalizeMoveIndex(move.move_index);
+              if (moveIndex === null) {
+                return true;
+              }
+              return !removalSet.has(moveIndex);
+            });
             return {
               ...prev,
               moves: updatedMoves,
@@ -1527,10 +1587,20 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
               return prev;
             }
             if (payload.eventType === 'INSERT') {
-              const newMove = payload.new as MatchMoveRecord;
+              const insertedMove = payload.new as MatchMoveRecord;
+              const normalizedIndex = normalizeMoveIndex(insertedMove.move_index);
+              if (normalizedIndex === null) {
+                console.warn('✅ DB: Skipping move with invalid move_index', {
+                  matchId,
+                  moveId: insertedMove?.id,
+                  rawIndex: insertedMove?.move_index,
+                });
+                return prev;
+              }
               const moveRecord: MatchMoveRecord<MatchAction> = {
-                ...newMove,
-                action: normalizeAction(newMove.action),
+                ...insertedMove,
+                move_index: normalizedIndex,
+                action: normalizeAction(insertedMove.action),
               };
               
               // Check if we have an optimistic version of this move
@@ -1583,14 +1653,25 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
             }
             if (payload.eventType === 'DELETE') {
               const deletedMove = payload.old as MatchMoveRecord;
+              const deletedMoveIndex = normalizeMoveIndex(deletedMove?.move_index);
               const updatedMoves = prev.moves
-                .filter((move) => move.id !== deletedMove.id && move.move_index !== deletedMove.move_index)
+                .filter((move) => {
+                  if (move.id === deletedMove.id) {
+                    return false;
+                  }
+                  if (deletedMoveIndex === null) {
+                    return true;
+                  }
+                  return move.move_index !== deletedMoveIndex;
+                })
                 .sort((a, b) => a.move_index - b.move_index);
               const pendingUndo = prev.undoRequests[matchId];
               const nextUndoRequests = { ...prev.undoRequests };
-              if (pendingUndo && pendingUndo.moveIndex === deletedMove.move_index) {
+              const pendingUndoIndex = pendingUndo ? normalizeMoveIndex(pendingUndo.moveIndex) : null;
+              if (pendingUndo && pendingUndoIndex !== null && pendingUndoIndex === deletedMoveIndex) {
                 nextUndoRequests[matchId] = {
                   ...pendingUndo,
+                  moveIndex: pendingUndoIndex,
                   status: 'applied',
                 };
               }
@@ -2382,7 +2463,10 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
       if (!lastMoveForRole) {
         throw new Error('You have not made a move to undo yet.');
       }
-      const targetMoveIndex = lastMoveForRole.move_index;
+      const targetMoveIndex = normalizeMoveIndex(lastMoveForRole.move_index);
+      if (targetMoveIndex === null) {
+        throw new Error('Unable to determine which move to undo.');
+      }
       const existing = state.undoRequests[match.id];
       if (existing && existing.status === 'pending') {
         throw new Error('Undo request already pending.');
@@ -2448,6 +2532,10 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
       if (!pending || pending.status !== 'pending') {
         throw new Error('There is no pending undo request to respond to.');
       }
+      const requestedMoveIndex = normalizeMoveIndex(pending.moveIndex);
+      if (requestedMoveIndex === null) {
+        throw new Error('Invalid undo request state.');
+      }
       const responderRole =
         match.creator_id === profile.id
           ? 'creator'
@@ -2457,7 +2545,6 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
       if (!responderRole) {
         throw new Error('Only participants may respond to undo requests.');
       }
-      const requestedMoveIndex = pending.moveIndex;
       let undoResult:
         | {
             undone?: boolean;

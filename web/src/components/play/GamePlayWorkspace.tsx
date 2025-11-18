@@ -1620,14 +1620,14 @@ function CancelledMatchPrompt({
   );
 }
 
-function WaitingForOpponentState({ 
-  match, 
+function WaitingForOpponentState({
+  match,
   joinCode,
   canCancel = false,
   onCancel,
   isCancelling = false,
-}: { 
-  match: LobbyMatch; 
+}: {
+  match: LobbyMatch;
   joinCode: string | null;
   canCancel?: boolean;
   onCancel?: () => void;
@@ -1636,11 +1636,12 @@ function WaitingForOpponentState({
   const { cardBg, cardBorder, mutedText, accentHeading } = useSurfaceTokens();
   const gradientBg = useColorModeValue('linear(to-r, teal.50, green.50)', 'linear(to-r, teal.900, green.900)');
   const linkBackground = useColorModeValue('white', 'whiteAlpha.100');
-  const joinKey = match.private_join_code ?? joinCode ?? match.id;
+  const shareableJoinCode = match.private_join_code ?? joinCode ?? null;
+  const joinKey = shareableJoinCode ?? match.id;
   const joinLink = joinKey ? buildMatchJoinLink(joinKey) : '';
-  const { hasCopied: hasCopiedCode, onCopy: onCopyCode } = useClipboard(joinCode ?? '');
+  const { hasCopied: hasCopiedCode, onCopy: onCopyCode } = useClipboard(shareableJoinCode ?? '');
   const { hasCopied: hasCopiedLink, onCopy: onCopyLink } = useClipboard(joinLink);
-  const hasJoinCode = Boolean(match.private_join_code ?? joinCode);
+  const hasJoinCode = Boolean(shareableJoinCode);
   const hasJoinLink = Boolean(joinLink);
   
   return (
@@ -1680,7 +1681,7 @@ function WaitingForOpponentState({
                         letterSpacing="wider"
                         color={accentHeading}
                       >
-                        {joinCode}
+                        {shareableJoinCode}
                       </Heading>
                     </Stack>
                   </CardBody>
@@ -1722,44 +1723,47 @@ function WaitingForOpponentState({
               </Wrap>
 
               {(hasJoinCode || (canCancel && onCancel)) && (
-                <ButtonGroup
-                  size="sm"
-                  variant="outline"
-                  spacing={3}
-                  alignSelf="center"
-                  display="flex"
-                >
+                <Wrap spacing={3} justify="center" w="100%">
                   {hasJoinCode && (
-                    <Button
-                      variant="outline"
-                      colorScheme={hasCopiedCode ? 'teal' : 'gray'}
-                      onClick={onCopyCode}
-                    >
-                      {hasCopiedCode ? 'Code copied' : 'Copy code'}
-                    </Button>
+                    <WrapItem>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        colorScheme={hasCopiedCode ? 'teal' : 'gray'}
+                        onClick={onCopyCode}
+                      >
+                        {hasCopiedCode ? 'Code copied' : 'Copy code'}
+                      </Button>
+                    </WrapItem>
                   )}
                   {hasJoinLink && (
-                    <Button
-                      variant="outline"
-                      colorScheme={hasCopiedLink ? 'teal' : 'gray'}
-                      onClick={onCopyLink}
-                    >
-                      {hasCopiedLink ? 'Link copied' : 'Copy invite link'}
-                    </Button>
+                    <WrapItem>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        colorScheme={hasCopiedLink ? 'teal' : 'gray'}
+                        onClick={onCopyLink}
+                      >
+                        {hasCopiedLink ? 'Link copied' : 'Copy invite link'}
+                      </Button>
+                    </WrapItem>
                   )}
                   {canCancel && onCancel && (
-                    <Tooltip label="Removes this game so you can start a new one" hasArrow>
-                      <Button
-                        colorScheme="red"
-                        variant="ghost"
-                        onClick={onCancel}
-                        isLoading={isCancelling}
-                      >
-                        Cancel match
-                      </Button>
-                    </Tooltip>
+                    <WrapItem>
+                      <Tooltip label="Removes this game so you can start a new one" hasArrow>
+                        <Button
+                          size="sm"
+                          colorScheme="red"
+                          variant="ghost"
+                          onClick={onCancel}
+                          isLoading={isCancelling}
+                        >
+                          Cancel match
+                        </Button>
+                      </Tooltip>
+                    </WrapItem>
                   )}
-                </ButtonGroup>
+                </Wrap>
               )}
               {canCancel && onCancel && (
                 <Text fontSize="xs" color={mutedText}>

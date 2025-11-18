@@ -467,6 +467,7 @@ function MatchCreationModal({
   const [startingPlayer, setStartingPlayer] = useState<StartingPlayer>('random');
   const [opponentType, setOpponentType] = useState<MatchOpponentType>('human');
   const [aiDepth, setAiDepth] = useState(200);
+  const [isSubmitting, setIsSubmitting] = useBoolean(false);
   const isAiMatch = opponentType === 'ai';
   const MIN_AI_DEPTH = 10;
   const MAX_AI_DEPTH = 5000;
@@ -485,6 +486,7 @@ function MatchCreationModal({
   }, [isAiMatch, opponentType]);
 
   const handleSubmit = async () => {
+    setIsSubmitting.on();
     try {
       const clampedDepth = Math.max(MIN_AI_DEPTH, Math.min(MAX_AI_DEPTH, Math.round(aiDepth)));
       await onCreate({
@@ -505,6 +507,8 @@ function MatchCreationModal({
         status: 'error',
         description: error instanceof Error ? error.message : 'Unknown error',
       });
+    } finally {
+      setIsSubmitting.off();
     }
   };
 
@@ -627,7 +631,14 @@ function MatchCreationModal({
               <FormHelperText>Higher values make the AI slower but stronger. 200 is a good starting point.</FormHelperText>
             </FormControl>
           )}
-          <Button colorScheme="teal" onClick={handleSubmit} isDisabled={loading} isLoading={loading} w="full">
+          <Button
+            colorScheme="teal"
+            onClick={handleSubmit}
+            isDisabled={loading || isSubmitting}
+            isLoading={loading || isSubmitting}
+            w="full"
+            loadingText={isAiMatch ? 'Starting…' : 'Creating…'}
+          >
             {isAiMatch ? 'Start AI Match' : 'Create Match'}
           </Button>
         </ModalBody>
