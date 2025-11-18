@@ -14,6 +14,7 @@ import {
   AlertDescription,
   AlertIcon,
   AlertTitle,
+  Avatar,
   Badge,
   Box,
   Button,
@@ -61,7 +62,7 @@ import {
 } from '@chakra-ui/react';
 import type { TagProps } from '@chakra-ui/react';
 import { motion } from 'framer-motion';
-import { AddIcon, ArrowForwardIcon, RepeatIcon, SearchIcon, StarIcon } from '@chakra-ui/icons';
+import { AddIcon, ArrowForwardIcon, LockIcon, RepeatIcon, SearchIcon, StarIcon, TimeIcon, ViewIcon } from '@chakra-ui/icons';
 import type { SupabaseAuthState } from '@hooks/useSupabaseAuth';
 import type { CreateMatchPayload, LobbyMatch, StartingPlayer, MatchOpponentType } from '@hooks/useMatchLobby';
 import type { MatchStatus } from '@/types/match';
@@ -340,61 +341,167 @@ function LobbyHero({
 interface MatchBadgeConfig {
   label: ReactNode;
   colorScheme?: string;
+  icon?: ElementType;
+  tooltip?: ReactNode;
 }
+
+function buildMatchSettingsBadges(match: LobbyMatch): MatchBadgeConfig[] {
+  const badges: MatchBadgeConfig[] = [];
+
+  badges.push({
+    label: match.rated ? 'Rated' : 'Casual',
+    colorScheme: match.rated ? 'purple' : 'gray',
+    icon: match.rated ? StarIcon : undefined,
+    tooltip: match.rated ? 'This match affects ladder ratings.' : 'No rating impact — perfect for practice.',
+  });
+
+  if (match.clock_initial_seconds > 0 || match.clock_increment_seconds > 0) {
+    const minutes = Math.max(1, Math.round(match.clock_initial_seconds / 60));
+    badges.push({
+      label: `${minutes}+${match.clock_increment_seconds}`,
+      colorScheme: 'teal',
+      icon: TimeIcon,
+      tooltip: 'Time control (minutes + increment seconds).',
+    });
+  } else {
+    badges.push({
+      label: 'No clock',
+      colorScheme: 'gray',
+      icon: TimeIcon,
+      tooltip: 'Unlimited time — no clock is running.',
+    });
+  }
+
+  badges.push(
+    match.visibility === 'public'
+      ? {
+          label: 'Public',
+          colorScheme: 'green',
+          icon: ViewIcon,
+          tooltip: 'Visible to everyone browsing the lobby.',
+        }
+      : {
+          label: 'Private',
+          colorScheme: 'orange',
+          icon: LockIcon,
+          tooltip: match.private_join_code ? `Join code ${match.private_join_code}` : 'Requires an invite code.',
+        },
+  );
+
+  if (match.is_ai_match) {
+    badges.push({
+      label: `AI depth ${match.ai_depth ?? '—'}`,
+      colorScheme: 'pink',
+      icon: RepeatIcon,
+      tooltip: 'Practice game versus the built-in AI.',
+    });
+  }
+
+  return badges;
+}
+
+
 
 function MatchListCard({
   title,
+  subtitle,
   badges = [],
   description,
   meta,
   actions,
+  avatarUrl,
+  avatarLabel,
 }: {
   title: ReactNode;
+  subtitle?: ReactNode;
   badges?: MatchBadgeConfig[];
   description?: ReactNode;
   meta?: ReactNode;
   actions?: ReactNode;
+  avatarUrl?: string | null;
+  avatarLabel?: string;
 }) {
-  const { cardBorder, mutedText } = useSurfaceTokens();
+  const { cardBg, cardBorder, mutedText } = useSurfaceTokens();
+  const resolvedAvatarLabel = avatarLabel ?? (typeof title === 'string' ? title : undefined);
 
   return (
     <Box
       borderWidth="1px"
       borderColor={cardBorder}
-      borderRadius="md"
+      borderRadius="xl"
       px={4}
-      py={3}
+      py={4}
+      bg={cardBg}
+      transition="border-color 0.2s ease, box-shadow 0.2s ease"
+      _hover={{ borderColor: 'teal.400', boxShadow: 'xl' }}
     >
-      <Flex justify="space-between" align={{ base: 'flex-start', md: 'center' }} gap={4} flexDir={{ base: 'column', md: 'row' }}>
-        <Stack spacing={1} flex="1">
-          <HStack spacing={2} flexWrap="wrap" align="center">
-            <Heading size="sm">{title}</Heading>
-            {badges.map((badge, index) => (
-              <Badge key={`${badge.label}-${index}`} colorScheme={badge.colorScheme ?? 'gray'}>
-                {badge.label}
-              </Badge>
-            ))}
-          </HStack>
-          {description && (
-            <Box fontSize="sm" color={mutedText}>
-              {description}
-            </Box>
-          )}
-          {meta && (
-            <Box fontSize="xs" color={mutedText}>
-              {meta}
-            </Box>
-          )}
-        </Stack>
+      <Flex direction={{ base: 'column', md: 'row' }} gap={4} align={{ base: 'flex-start', md: 'stretch' }}>
+        <HStack align="flex-start" spacing={4} flex="1">
+          <Avatar
+            name={resolvedAvatarLabel}
+            src={avatarUrl ?? undefined}
+            size="md"
+            borderWidth="2px"
+            borderColor="teal.500"
+            boxShadow="sm"
+          />
+          <Stack spacing={2} flex="1">
+            <Stack spacing={0}>
+              {subtitle && (
+                <Text fontSize="xs" fontWeight="semibold" color={mutedText} textTransform="uppercase" letterSpacing="0.08em">
+                  {subtitle}
+                </Text>
+              )}
+              <Heading size="sm">{title}</Heading>
+            </Stack>
+            {description && (
+              <Text fontSize="sm" color={mutedText}>
+                {description}
+              </Text>
+            )}
+            {badges.length > 0 && (
+              <Wrap spacing={2} pt={1}>
+                {badges.map((badge, index) => {
+                  const tag = (
+                    <Tag
+                      colorScheme={badge.colorScheme ?? 'gray'}
+                      variant="subtle"
+                      borderRadius="full"
+                      px={3}
+                      py={1}
+                      display="inline-flex"
+                      alignItems="center"
+                      gap={2}
+                    >
+                      {badge.icon && <Icon as={badge.icon} boxSize={3} />}
+                      <Text fontSize="xs" fontWeight="semibold">
+                        {badge.label}
+                      </Text>
+                    </Tag>
+                  );
+                  return (
+                    <WrapItem key={`badge-${index}`}>
+                      {badge.tooltip ? (
+                        <Tooltip label={badge.tooltip} hasArrow>{tag}</Tooltip>
+                      ) : (
+                        tag
+                      )}
+                    </WrapItem>
+                  );
+                })}
+              </Wrap>
+            )}
+            {meta && (
+              <Text fontSize="xs" color={mutedText}>
+                {meta}
+              </Text>
+            )}
+          </Stack>
+        </HStack>
         {actions && (
-          <Box
-            display="flex"
-            alignItems="center"
-            justifyContent={{ base: 'flex-start', md: 'flex-end' }}
-            w={{ base: '100%', md: 'auto' }}
-          >
+          <Flex align="center" justify={{ base: 'flex-start', md: 'flex-end' }} w={{ base: '100%', md: 'auto' }}>
             {actions}
-          </Box>
+          </Flex>
         )}
       </Flex>
     </Box>
@@ -724,41 +831,58 @@ function PublicLobbies({
               </Alert>
             )}
             {matches.map((match) => {
-              const badges: MatchBadgeConfig[] = [
-                { label: match.rated ? 'Rated' : 'Casual', colorScheme: match.rated ? 'purple' : 'gray' },
-              ];
-              if (match.clock_initial_seconds > 0) {
-                badges.push({
-                  label: `${Math.round(match.clock_initial_seconds / 60)}+${match.clock_increment_seconds}`,
-                  colorScheme: 'green',
-                });
-              }
-
+              const hostName = match.creator?.display_name ?? 'Unknown player';
+              const visibilityLabel = match.visibility === 'public' ? 'Open lobby' : 'Invite only';
+              const statusBadge: MatchBadgeConfig =
+                match.status === 'waiting_for_opponent'
+                  ? {
+                      label: 'Waiting',
+                      colorScheme: 'yellow',
+                      icon: TimeIcon,
+                      tooltip: 'The host is waiting for someone to join.',
+                    }
+                  : {
+                      label: 'In progress',
+                      colorScheme: 'blue',
+                      icon: TimeIcon,
+                      tooltip: 'This match has already started.',
+                    };
+              const badges = [statusBadge, ...buildMatchSettingsBadges(match)];
               const description = match.opponent
                 ? `Facing ${match.opponent.display_name}`
                 : 'Waiting for an opponent';
-              const meta = `${match.visibility === 'public' ? 'Public lobby' : 'Private code'} • Created ${formatDate(
-                match.created_at,
-              )}`;
+              const meta = `${visibilityLabel} • Created ${formatDate(match.created_at)}`;
+              const joinAction = (
+                <MotionButton
+                  colorScheme="teal"
+                  bgGradient="linear(to-r, teal.400, teal.500)"
+                  color="white"
+                  size="md"
+                  borderRadius="full"
+                  px={6}
+                  rightIcon={<ArrowForwardIcon />}
+                  onClick={() => handleJoin(match.id)}
+                  isLoading={joiningId === match.id}
+                  loadingText="Joining"
+                  whileHover={{ y: -2, boxShadow: 'lg' }}
+                  whileTap={{ scale: 0.97 }}
+                  shadow="md"
+                >
+                  Join match
+                </MotionButton>
+              );
 
               return (
                 <MatchListCard
                   key={match.id}
-                  title={match.creator?.display_name ?? 'Unknown player'}
+                  title={hostName}
+                  subtitle="Host"
                   badges={badges}
                   description={description}
                   meta={meta}
-                  actions={(
-                    <ButtonGroup size="sm" variant="outline">
-                      <Button
-                        colorScheme="teal"
-                        onClick={() => handleJoin(match.id)}
-                        isLoading={joiningId === match.id}
-                      >
-                        Join
-                      </Button>
-                    </ButtonGroup>
-                  )}
+                  avatarUrl={match.creator?.avatar_url ?? null}
+                  avatarLabel={hostName}
+                  actions={joinAction}
                 />
               );
             })}
@@ -831,28 +955,36 @@ function PendingMatches({
           {pendingMatches.map((match) => {
             const isCreator = profile ? match.creator_id === profile.id : false;
             const badges: MatchBadgeConfig[] = [
-              { label: 'Pending', colorScheme: 'yellow' },
+              {
+                label: 'Pending',
+                colorScheme: 'yellow',
+                icon: TimeIcon,
+                tooltip: 'Waiting for an opponent to join.',
+              },
+              ...buildMatchSettingsBadges(match),
             ];
-            if (match.rated) badges.push({ label: 'Rated', colorScheme: 'purple' });
-            if (match.clock_initial_seconds > 0) {
-              badges.push({
-                label: `${Math.round(match.clock_initial_seconds / 60)}+${match.clock_increment_seconds}`,
-                colorScheme: 'green',
-              });
-            }
 
-            const descriptionParts: string[] = [];
+            const description = isCreator
+              ? 'Share the invite link or code while you wait for an opponent.'
+              : 'Waiting for the host to start the match.';
+            const metaParts: string[] = [];
             if (match.visibility === 'private' && match.private_join_code) {
-              descriptionParts.push(`Code: ${match.private_join_code}`);
+              metaParts.push(`Code: ${match.private_join_code}`);
             }
-            descriptionParts.push(`Created ${formatDate(match.created_at)}`);
+            metaParts.push(`Created ${formatDate(match.created_at)}`);
+            const meta = metaParts.join(' • ');
+            const hostName = match.creator?.display_name ?? 'Match host';
 
             return (
               <MatchListCard
                 key={match.id}
-                title={isCreator ? 'Waiting for opponent' : 'Joining...'}
+                title={hostName}
+                subtitle={isCreator ? 'You' : 'Host'}
                 badges={badges}
-                description={descriptionParts.join(' • ')}
+                description={description}
+                meta={meta}
+                avatarUrl={match.creator?.avatar_url ?? null}
+                avatarLabel={hostName}
                 actions={(
                   <PendingMatchActions
                     match={match}

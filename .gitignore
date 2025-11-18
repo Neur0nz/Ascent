@@ -42,3 +42,4 @@ rust-wasm/pkg/santorini_wasm_bg.wasm
 rust-wasm/pkg/santorini_wasm_bg.wasm
 rust-wasm/pkg/santorini_wasm_bg.wasm
 *.log
+web/.env

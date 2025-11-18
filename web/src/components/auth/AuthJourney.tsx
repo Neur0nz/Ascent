@@ -151,7 +151,7 @@ function AuthJourney({ auth, onNavigateToProfile }: AuthJourneyProps) {
   const email = session?.user.email;
 
   return (
-    <Menu placement="bottom-end" closeOnSelect={false}>
+    <Menu placement="bottom-end" closeOnSelect={false} autoSelect={false}>
       <MenuButton
         as={Button}
         size="sm"
@@ -169,7 +169,7 @@ function AuthJourney({ auth, onNavigateToProfile }: AuthJourneyProps) {
           <ChevronDownIcon />
         </HStack>
       </MenuButton>
-      <MenuList bg={menuBg} borderColor={menuBorder} minW="56">
+      <MenuList bg={menuBg} borderColor={menuBorder} minW="56" sx={{ '--menu-bg': menuBg }}>
         <Box px={3} py={2} display="flex" flexDir="column" gap={1}>
           <Text fontSize="xs" textTransform="uppercase" color={menuMuted} letterSpacing="wide">
             Signed in
