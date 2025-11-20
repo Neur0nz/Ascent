@@ -1200,8 +1200,8 @@ function ActiveMatchContent({
             variant="responsive"
             containerProps={{
               w: '100%',
-              maxW: '960px',
-              mx: { base: -3, md: 0 },
+              maxW: { base: '100%', md: '960px' },
+              mx: 'auto',
               overflow: 'hidden',
             }}
             board={santorini.board}
@@ -1778,11 +1778,17 @@ function WaitingForOpponentState({
                 <Card bgGradient={gradientBg} borderWidth="1px" borderColor={cardBorder} w="100%" maxW="md">
                   <CardBody>
                     <Stack spacing={3} align="center">
-                      <Badge colorScheme="orange" fontSize="md" px={4} py={2} borderRadius="full">
-                        Private Game
+                      <Badge
+                        colorScheme={match.visibility === 'public' ? 'green' : 'orange'}
+                        fontSize="md"
+                        px={4}
+                        py={2}
+                        borderRadius="full"
+                      >
+                        {match.visibility === 'public' ? 'Public lobby' : 'Invite code ready'}
                       </Badge>
                       <Text fontSize="sm" color={mutedText}>
-                        Share this code with your friend:
+                        Share this join code with your friend:
                       </Text>
                       <Heading 
                         size="2xl" 
@@ -1899,9 +1905,9 @@ function WaitingForOpponentState({
               )}
               
               <Text fontSize="xs" color={mutedText} fontStyle="italic">
-                {match.visibility === 'public' 
-                  ? 'This game is visible in the public lobby' 
-                  : 'Only players with the code can join'}
+                {match.visibility === 'public'
+                  ? 'This game is visible in the public lobby and also joinable by code.'
+                  : 'Only players with the code can join.'}
               </Text>
             </Stack>
           </Center>
@@ -1982,7 +1988,7 @@ function GamePlayWorkspace({
       ratedLabel: match.rated ? 'Rated' : 'Casual',
       moveCount,
       clockLabel,
-      joinCode: match.visibility === 'private' && match.private_join_code ? match.private_join_code : null,
+      joinCode: match.private_join_code ?? null,
       startingBadge: startingLabel && startingRole
         ? {
             label: startingLabel,

@@ -408,6 +408,8 @@ export function buildMatchSettingsBadges(match: LobbyMatch): MatchBadgeConfig[] 
     tooltip: match.rated ? 'This match affects ladder ratings.' : 'No rating impact — perfect for practice.',
   });
 
+  const joinCodeHint = match.private_join_code ? `Join code ${match.private_join_code}` : null;
+
   if (match.clock_initial_seconds > 0 || match.clock_increment_seconds > 0) {
     const minutes = Math.max(1, Math.round(match.clock_initial_seconds / 60));
     badges.push({
@@ -431,13 +433,13 @@ export function buildMatchSettingsBadges(match: LobbyMatch): MatchBadgeConfig[] 
           label: 'Public',
           colorScheme: 'green',
           icon: ViewIcon,
-          tooltip: 'Visible to everyone browsing the lobby.',
+          tooltip: joinCodeHint ? `Visible in the lobby • ${joinCodeHint}` : 'Visible to everyone browsing the lobby.',
         }
       : {
           label: 'Private',
           colorScheme: 'orange',
           icon: LockIcon,
-          tooltip: match.private_join_code ? `Join code ${match.private_join_code}` : 'Requires an invite code.',
+          tooltip: joinCodeHint ?? 'Requires an invite code.',
         },
   );
 
@@ -1096,7 +1098,7 @@ function PendingMatches({
               ? 'Share the invite link or code while you wait for an opponent.'
               : 'Waiting for the host to start the match.';
             const metaParts: string[] = [];
-            if (match.visibility === 'private' && match.private_join_code) {
+            if (match.private_join_code) {
               metaParts.push(`Code: ${match.private_join_code}`);
             }
             metaParts.push(`Created ${formatDate(match.created_at)}`);
@@ -1647,7 +1649,7 @@ function LobbyWorkspace({
           <ModalBody>
             <Stack spacing={3}>
               <Text fontSize="sm" color="gray.500">
-                Enter a private join code or match ID to join a friend's game.
+                Enter a join code or match ID to join a friend's game.
               </Text>
               <Input
                 placeholder="ABC123"

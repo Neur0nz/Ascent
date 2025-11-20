@@ -19,10 +19,10 @@ export async function shareMatchInvite({ joinLink, joinKey, toast, fallbackCopy 
     return false;
   }
 
-  const title = 'Join my Santorini match';
+  const title = 'Your Santorini invite is ready';
   const text = joinKey
-    ? `Join my Santorini match with code ${joinKey} on Ascent.`
-    : 'Join my Santorini match on Ascent.';
+    ? `Jump into my Santorini match on Ascent — use code ${joinKey} or open the live board link.`
+    : 'Jump into my Santorini match on Ascent with this live board link.';
 
   const navigatorRef = typeof navigator !== 'undefined' ? navigator : null;
   try {
@@ -31,7 +31,7 @@ export async function shareMatchInvite({ joinLink, joinKey, toast, fallbackCopy 
       toast({
         status: 'success',
         title: 'Invite shared',
-        description: 'Sent via your app with a rich preview.',
+        description: 'Shared with a rich preview — perfect for WhatsApp or Discord.',
         duration: 2500,
         isClosable: true,
       } satisfies UseToastOptions);

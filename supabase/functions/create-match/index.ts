@@ -250,7 +250,7 @@ async function ensureAiProfile(client: ReturnType<typeof createClient>) {
     }
   }
 
-  const joinCode = opponentType === 'human' && visibility === 'private' ? generateJoinCode() : null;
+  const joinCode = opponentType === 'human' ? generateJoinCode() : null;
 
   const { snapshot } = SantoriniEngine.createInitial(startingPlayerIndex, initialMetadata);
   console.log('Creating match with starting role:', playerZeroRole, 'from option:', startingPlayerOption);

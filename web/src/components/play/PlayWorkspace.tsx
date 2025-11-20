@@ -792,7 +792,7 @@ function ActiveMatchContent({
   // Note: Abort feature hooks are available but UI implementation is minimal for now
   // Full implementation with request/response flow can be added later
 
-  const showJoinCode = lobbyMatch?.visibility === 'private' && joinCode;
+  const showJoinCode = Boolean(joinCode);
 
   return (
     <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder} w="100%">
@@ -1364,7 +1364,7 @@ function PlayWorkspace({ auth }: { auth: SupabaseAuthState }) {
           <ModalBody>
             <Stack spacing={3}>
               <Text fontSize="sm" color={mutedText}>
-                Enter a private join code or match ID to join a friend's game.
+                Enter a join code or match ID to join a friend's game.
               </Text>
               <Input
                 placeholder="ABC123"
@@ -1417,7 +1417,7 @@ function PlayWorkspace({ auth }: { auth: SupabaseAuthState }) {
                     const displayName = waitingForOpponent && isCreator ? 'Waiting for opponent' : opponentName ?? fallbackName;
                     const creationTime = m.created_at ? formatDate(m.created_at) : undefined;
                     const joinCodeLine =
-                      waitingForOpponent && m.visibility === 'private' && m.private_join_code
+                      waitingForOpponent && m.private_join_code
                         ? `Code ${m.private_join_code}`
                         : undefined;
 
