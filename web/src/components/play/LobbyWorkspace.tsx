@@ -223,7 +223,7 @@ function LobbyHero({
   onOpenCreate: () => void;
   onOpenJoin: () => void;
   onNavigateToPractice?: () => void;
-  onNavigateToAnalysis?: () => void;
+  onNavigateToAnalysis?: (jobId?: string) => void;
   onNavigateToLeaderboard?: () => void;
   hasActiveGame: boolean;
 }) {
@@ -1204,7 +1204,7 @@ function LobbyWorkspace({
   auth: SupabaseAuthState;
   onNavigateToPlay: () => void;
   onNavigateToPractice: () => void;
-  onNavigateToAnalysis: () => void;
+  onNavigateToAnalysis: (jobId?: string) => void;
   onNavigateToLeaderboard: () => void;
 }) {
   const lobby = useMatchLobbyContext();

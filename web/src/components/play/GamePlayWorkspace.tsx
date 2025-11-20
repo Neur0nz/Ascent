@@ -76,11 +76,13 @@ import { EMOJIS } from '@components/EmojiPicker';
 import { deriveStartingRole } from '@/utils/matchStartingRole';
 import { SantoriniWorkerClient } from '@/lib/runtime/santoriniWorkerClient';
 import type { SantoriniSnapshot } from '@/lib/santoriniEngine';
-import { useEvaluationJobs } from '@hooks/useEvaluationJobs';
+import { useEvaluationJobs, type EvaluationJob } from '@hooks/useEvaluationJobs';
 import { fetchMatchWithMoves, MIN_EVAL_MOVE_INDEX } from '@/lib/matchAnalysis';
 import { describeMatch } from '@/utils/matchDescription';
 import { supabase } from '@/lib/supabaseClient';
 import { shareMatchInvite } from '@/utils/shareInvite';
+import { showEvaluationStartedToast } from '@/utils/analysisNotifications';
+import { rememberLastAnalyzedMatch } from '@/utils/analysisStorage';
 
 const K_FACTOR = 32;
 const NOTIFICATION_PROMPT_STORAGE_KEY = 'santorini:notificationsPrompted';
@@ -1377,6 +1379,46 @@ function CompletedMatchSummary({
   );
 }
 
+function AnalysisJobBanner({ job, onNavigateToAnalysis }: { job: EvaluationJob; onNavigateToAnalysis: (jobId?: string) => void }) {
+  const isComplete = job.status === 'success';
+  const isRunning = job.status === 'running' || job.status === 'queued';
+  const depthLabel = job.depth ? `depth ${job.depth}` : 'default depth';
+  const status: AlertProps['status'] = job.status === 'error' ? 'error' : isComplete ? 'success' : 'info';
+  const title = isComplete ? 'Analysis ready' : isRunning ? 'Analysis running' : 'Analysis update';
+  const description = isComplete
+    ? `${job.matchLabel} is ready to review.`
+    : `Analyzing ${job.matchLabel} at ${depthLabel}...`;
+
+  return (
+    <Alert
+      status={status}
+      variant="left-accent"
+      borderRadius="md"
+      alignItems={{ base: 'flex-start', md: 'center' }}
+      flexDirection={{ base: 'column', md: 'row' }}
+      gap={{ base: 2, md: 3 }}
+      w="100%"
+      maxW="100%"
+    >
+      <AlertIcon />
+      <Stack spacing={1} flex="1" minW={0}>
+        <AlertTitle>{title}</AlertTitle>
+        <AlertDescription>{description}</AlertDescription>
+      </Stack>
+      <ButtonGroup size="sm" flexWrap="wrap" justifyContent="flex-end">
+        <Button
+          colorScheme="teal"
+          variant={isComplete ? 'solid' : 'outline'}
+          onClick={() => onNavigateToAnalysis(job.id)}
+          isDisabled={!isComplete}
+        >
+          {isComplete ? 'View analysis' : 'Open analysis'}
+        </Button>
+      </ButtonGroup>
+    </Alert>
+  );
+}
+
 interface PlayerClockCardProps {
   label: string;
   clock: string;
@@ -1876,7 +1918,7 @@ function GamePlayWorkspace({
 }: {
   auth: SupabaseAuthState;
   onNavigateToLobby: () => void;
-  onNavigateToAnalysis: () => void;
+  onNavigateToAnalysis: (jobId?: string) => void;
 }) {
   const lobby = useMatchLobbyContext();
   const workspaceToast = useToast();
@@ -1996,6 +2038,10 @@ function GamePlayWorkspace({
 
   const autoAnalyzeEnabled = auth.profile?.auto_analyze_games ?? false;
   const autoAnalyzeDepth = auth.profile?.auto_analyze_depth ?? 800;
+  const resolvedAutoAnalyzeDepth = useMemo(
+    () => Math.max(1, Math.round(Number(autoAnalyzeDepth) || 800)),
+    [autoAnalyzeDepth],
+  );
 
   useEffect(() => {
     if (!auth.profile) {
@@ -2222,16 +2268,16 @@ function GamePlayWorkspace({
           match,
           moves,
           minMoveIndex: MIN_EVAL_MOVE_INDEX,
-          depth: Math.max(1, Math.round(autoAnalyzeDepth)),
+          depth: resolvedAutoAnalyzeDepth,
           enginePreference: auth.profile?.engine_preference ?? 'rust',
           matchLabel,
         });
         autoAnalysisMatchRef.current = jobKey;
-        workspaceToast({
-          title: 'Auto analysis running',
-          description: `Analyzing ${matchLabel} at depth ${autoAnalyzeDepth}.`,
-          status: 'info',
-          duration: 4000,
+        showEvaluationStartedToast(workspaceToast, {
+          matchLabel,
+          depth: resolvedAutoAnalyzeDepth,
+          mode: 'auto',
+          toastId: `auto-analysis-${completed.id}`,
         });
       } catch (error) {
         if (cancelled) return;
@@ -2248,11 +2294,11 @@ function GamePlayWorkspace({
     };
   }, [
     auth.profile,
-    autoAnalyzeDepth,
     autoAnalyzeEnabled,
     currentProfileId,
     jobs,
     lobby.lastCompletedMatch,
+    resolvedAutoAnalyzeDepth,
     supabase,
     sessionMode,
     startJob,
@@ -2312,6 +2358,17 @@ function GamePlayWorkspace({
               : null)
       : null;
 
+  const latestAnalysisJobForCompletedMatch = useMemo(() => {
+    if (!completedMatch) {
+      return null;
+    }
+    const candidates = Object.values(jobs).filter((job) => job.matchId === completedMatch.id);
+    if (candidates.length === 0) {
+      return null;
+    }
+    return candidates.reduce((latest, job) => (job.updatedAt > latest.updatedAt ? job : latest));
+  }, [completedMatch, jobs]);
+
   const handleRequestSummaryRematch = useCallback(async () => {
     setRequestingSummaryRematch.on();
     try {
@@ -2342,7 +2399,7 @@ function GamePlayWorkspace({
       return;
     }
     try {
-      localStorage.setItem('santorini:lastAnalyzedMatch', match.id);
+      rememberLastAnalyzedMatch(match.id);
     } catch (error) {
       console.warn('Unable to store last analyzed match', error);
     }
@@ -2354,6 +2411,17 @@ function GamePlayWorkspace({
     });
     onNavigateToAnalysis();
   }, [onNavigateToAnalysis, workspaceToast]);
+
+  const handleNavigateToAnalysisJob = useCallback(
+    (job: EvaluationJob | null) => {
+      if (!job) {
+        return;
+      }
+      rememberLastAnalyzedMatch(job.matchId);
+      onNavigateToAnalysis(job.id);
+    },
+    [onNavigateToAnalysis],
+  );
 
   return (
     <Stack spacing={6} py={{ base: 6, md: 10 }}>
@@ -2466,6 +2534,13 @@ function GamePlayWorkspace({
           </Alert>
         );
       })}
+
+      {sessionMode === 'online' && latestAnalysisJobForCompletedMatch && (
+        <AnalysisJobBanner
+          job={latestAnalysisJobForCompletedMatch}
+          onNavigateToAnalysis={() => handleNavigateToAnalysisJob(latestAnalysisJobForCompletedMatch)}
+        />
+      )}
 
       {sessionMode === 'online' && completedMatch && (
         <CompletedMatchSummary

@@ -71,6 +71,8 @@ import type { SupabaseAuthState } from '@hooks/useSupabaseAuth';
 import type { LobbyMatch } from '@hooks/useMatchLobby';
 import { useEvaluationJobs } from '@hooks/useEvaluationJobs';
 import { orientEvaluationToCreator } from '@/utils/evaluationPerspective';
+import { getLastAnalyzedMatch, rememberLastAnalyzedMatch } from '@/utils/analysisStorage';
+import { showEvaluationStartedToast } from '@/utils/analysisNotifications';
 
 interface LoadedAnalysis {
   match: MatchRecord;
@@ -112,8 +114,6 @@ const clampValue = (value: number, domain: [number, number]): number =>
 const DEFAULT_CUSTOM_DEPTH = 800;
 
 const describeRoleName = (role: MatchRole): string => (role === 'creator' ? 'Creator' : 'Opponent');
-
-const LAST_ANALYZED_MATCH_KEY = 'santorini:lastAnalyzedMatch';
 
 interface RecentGameCardProps {
   game: LobbyMatch;
@@ -251,7 +251,7 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
   const initializeSantorini = santorini.initialize;
   const setSantoriniGameMode = santorini.controls.setGameMode;
   const { jobs, startJob } = useEvaluationJobs();
-  const [matchId, setMatchId] = useState(() => localStorage.getItem(LAST_ANALYZED_MATCH_KEY) ?? '');
+  const [matchId, setMatchId] = useState(() => getLastAnalyzedMatch());
   const [loaded, setLoaded] = useState<LoadedAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(-1);
@@ -493,7 +493,7 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
       // Start at the last move
       await replayToSnapshot(loadedData.moves.length - 1, loadedData);
       
-      localStorage.setItem(LAST_ANALYZED_MATCH_KEY, trimmedId);
+      rememberLastAnalyzedMatch(trimmedId);
       setMatchId(trimmedId);
       
       toast({
@@ -624,11 +624,11 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
       });
       setEvaluationError(null);
       evaluationDepthModal.onClose();
-      toast({
-        title: 'Evaluation started',
-        description: 'The AI is generating the graph in the background.',
-        status: 'info',
-        duration: 4000,
+      showEvaluationStartedToast(toast, {
+        matchLabel,
+        depth: resolvedDepth,
+        mode: 'manual',
+        toastId: `analysis-start-${loaded.match.id}`,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to start evaluation.';

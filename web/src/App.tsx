@@ -428,8 +428,10 @@ function App() {
     }
   }, [activeTab, openHistory]);
 
-  const handleEvaluationToastNavigate = useCallback((jobId: string) => {
-    setPendingJobId(jobId);
+  const navigateToAnalysis = useCallback((jobId?: string) => {
+    if (jobId) {
+      setPendingJobId(jobId);
+    }
     setActiveTab('analysis');
   }, []);
 
@@ -465,7 +467,7 @@ function App() {
         profileId={auth.profile?.id ?? null}
         onNavigateToPlay={() => setActiveTab('play')}
       />
-      <EvaluationJobToasts onNavigateToAnalysis={handleEvaluationToastNavigate} />
+      <EvaluationJobToasts onNavigateToAnalysis={navigateToAnalysis} />
       <Tabs
         index={activeIndex}
         onChange={handleTabChange}
@@ -494,7 +496,7 @@ function App() {
                           auth={auth}
                           onNavigateToPlay={() => setActiveTab('play')}
                           onNavigateToPractice={() => setActiveTab('practice')}
-                          onNavigateToAnalysis={() => setActiveTab('analysis')}
+                          onNavigateToAnalysis={() => navigateToAnalysis()}
                           onNavigateToLeaderboard={() => setActiveTab('leaderboard')}
                         />
                       </MotionPanel>
@@ -508,7 +510,7 @@ function App() {
                         <GamePlayWorkspace
                           auth={auth}
                           onNavigateToLobby={() => setActiveTab('lobby')}
-                          onNavigateToAnalysis={() => setActiveTab('analysis')}
+                          onNavigateToAnalysis={navigateToAnalysis}
                         />
                       </MotionPanel>
                     )}
