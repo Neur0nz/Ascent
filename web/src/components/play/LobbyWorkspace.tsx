@@ -138,6 +138,9 @@ function ActiveGameNotice({
       borderRadius="md"
       borderWidth="1px"
       borderColor={cardBorder}
+      alignItems={{ base: 'flex-start', md: 'center' }}
+      flexDirection={{ base: 'column', md: 'row' }}
+      gap={{ base: 3, md: 4 }}
     >
       <AlertIcon />
       <Stack spacing={1} flex="1">
@@ -151,7 +154,16 @@ function ActiveGameNotice({
           }
         </AlertDescription>
       </Stack>
-      <ButtonGroup size="sm" variant="solid">
+      <ButtonGroup
+        size="sm"
+        variant="solid"
+        flexShrink={0}
+        flexWrap="wrap"
+        width={{ base: '100%', md: 'auto' }}
+        justifyContent={{ base: 'flex-start', md: 'flex-end' }}
+        columnGap={2}
+        rowGap={{ base: 2, md: 0 }}
+      >
         {hasShareLink && (
           <Tooltip label="Copy a link to share with your opponent" hasArrow>
             <Button
@@ -535,8 +547,13 @@ function MatchListCard({
           </Stack>
         </HStack>
         {actions && (
-          <Flex align="center" justify={{ base: 'flex-start', md: 'flex-end' }} w={{ base: '100%', md: 'auto' }}>
-            {actions}
+          <Flex
+            align="center"
+            justify={{ base: 'flex-start', md: 'flex-end' }}
+            w={{ base: '100%', md: 'auto' }}
+            maxW="100%"
+          >
+            <Box w="100%">{actions}</Box>
           </Flex>
         )}
       </Flex>
@@ -577,49 +594,67 @@ function PendingMatchActions({
   }, [hasJoinLink, joinLink, joinKey, onCopy, toast]);
 
   return (
-    <ButtonGroup size="sm" variant="outline" spacing={2}>
-      <Button variant="outline" onClick={onSelect}>
-        View
-      </Button>
-      <Tooltip
-        label="Copy a link your friend can use to join this match"
-        hasArrow
-        isDisabled={!hasJoinLink}
-      >
-        <Button
-          variant="outline"
-          colorScheme={hasCopied ? 'teal' : 'gray'}
-          onClick={onCopy}
+    <Wrap
+      spacing={2}
+      width={{ base: '100%', md: 'auto' }}
+      justify={{ base: 'flex-start', md: 'flex-end' }}
+    >
+      <WrapItem>
+        <Button size="sm" variant="outline" onClick={onSelect} width={{ base: 'full', sm: 'auto' }}>
+          View
+        </Button>
+      </WrapItem>
+      <WrapItem>
+        <Tooltip
+          label="Copy a link your friend can use to join this match"
+          hasArrow
           isDisabled={!hasJoinLink}
         >
-          {hasCopied ? 'Link copied' : 'Copy invite link'}
-        </Button>
-      </Tooltip>
-      <Tooltip
-        label="Share an invite with a rich preview"
-        hasArrow
-        isDisabled={!hasJoinLink}
-      >
-        <Button
-          leftIcon={<MdShare />}
-          variant="outline"
-          colorScheme="teal"
-          onClick={() => void handleShare()}
-          isDisabled={!hasJoinLink || sharing}
-          isLoading={sharing}
+          <Button
+            size="sm"
+            variant="outline"
+            colorScheme={hasCopied ? 'teal' : 'gray'}
+            onClick={onCopy}
+            isDisabled={!hasJoinLink}
+            width={{ base: 'full', sm: 'auto' }}
+          >
+            {hasCopied ? 'Link copied' : 'Copy invite link'}
+          </Button>
+        </Tooltip>
+      </WrapItem>
+      <WrapItem>
+        <Tooltip
+          label="Share an invite with a rich preview"
+          hasArrow
+          isDisabled={!hasJoinLink}
         >
-          Share invite
+          <Button
+            size="sm"
+            leftIcon={<MdShare />}
+            variant="outline"
+            colorScheme="teal"
+            onClick={() => void handleShare()}
+            isDisabled={!hasJoinLink || sharing}
+            isLoading={sharing}
+            width={{ base: 'full', sm: 'auto' }}
+          >
+            Share invite
+          </Button>
+        </Tooltip>
+      </WrapItem>
+      <WrapItem>
+        <Button
+          size="sm"
+          colorScheme="red"
+          variant="ghost"
+          onClick={onCancel}
+          isLoading={isCancelling}
+          width={{ base: 'full', sm: 'auto' }}
+        >
+          Cancel
         </Button>
-      </Tooltip>
-      <Button
-        colorScheme="red"
-        variant="ghost"
-        onClick={onCancel}
-        isLoading={isCancelling}
-      >
-        Cancel
-      </Button>
-    </ButtonGroup>
+      </WrapItem>
+    </Wrap>
   );
 }
 
