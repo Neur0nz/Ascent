@@ -141,6 +141,9 @@ function ActiveGameNotice({
       alignItems={{ base: 'flex-start', md: 'center' }}
       flexDirection={{ base: 'column', md: 'row' }}
       gap={{ base: 3, md: 4 }}
+      w="100%"
+      maxW="100%"
+      minW={0}
     >
       <AlertIcon />
       <Stack spacing={1} flex="1">
@@ -163,6 +166,7 @@ function ActiveGameNotice({
         justifyContent={{ base: 'flex-start', md: 'flex-end' }}
         columnGap={2}
         rowGap={{ base: 2, md: 0 }}
+        maxW="100%"
       >
         {hasShareLink && (
           <Tooltip label="Copy a link to share with your opponent" hasArrow>
@@ -170,6 +174,7 @@ function ActiveGameNotice({
               variant="outline"
               onClick={onCopy}
               colorScheme={hasCopied ? 'teal' : 'gray'}
+              width={{ base: 'full', sm: 'auto' }}
             >
               {hasCopied ? 'Link copied' : 'Copy invite link'}
             </Button>
@@ -184,6 +189,7 @@ function ActiveGameNotice({
               onClick={() => void handleShare()}
               isLoading={sharing}
               isDisabled={sharing}
+              width={{ base: 'full', sm: 'auto' }}
             >
               Share invite
             </Button>
@@ -193,6 +199,7 @@ function ActiveGameNotice({
           colorScheme="teal" 
           onClick={onNavigateToPlay}
           rightIcon={<ArrowForwardIcon />}
+          width={{ base: 'full', sm: 'auto' }}
         >
           {isWaiting ? 'View game' : 'Continue game'}
         </Button>
@@ -482,8 +489,14 @@ function MatchListCard({
       bg={cardBg}
       transition="border-color 0.2s ease, box-shadow 0.2s ease"
       _hover={{ borderColor: 'teal.400', boxShadow: 'xl' }}
+      maxW="100%"
     >
-      <Flex direction={{ base: 'column', md: 'row' }} gap={4} align={{ base: 'flex-start', md: 'stretch' }}>
+      <Flex
+        direction={{ base: 'column', md: 'row' }}
+        gap={4}
+        align={{ base: 'flex-start', md: 'stretch' }}
+        minW={0}
+      >
         <HStack align="flex-start" spacing={4} flex="1">
           <Avatar
             name={resolvedAvatarLabel}
@@ -1049,10 +1062,22 @@ function PendingMatches({
       <CardBody>
         <Stack spacing={3}>
           {feedback && (
-            <Alert status={feedback.status} variant="left-accent" borderRadius="md" alignItems="center">
+            <Alert
+              status={feedback.status}
+              variant="left-accent"
+              borderRadius="md"
+              alignItems={{ base: 'flex-start', md: 'center' }}
+              flexDirection={{ base: 'column', md: 'row' }}
+              gap={{ base: 2, md: 3 }}
+              w="100%"
+              maxW="100%"
+              minW={0}
+            >
               <AlertIcon />
-              <AlertDescription flex="1">{feedback.message}</AlertDescription>
-              <CloseButton position="relative" onClick={() => setFeedback(null)} />
+              <AlertDescription flex="1" minW={0} wordBreak="break-word">
+                {feedback.message}
+              </AlertDescription>
+              <CloseButton position="relative" onClick={() => setFeedback(null)} alignSelf={{ base: 'flex-end', md: 'center' }} />
             </Alert>
           )}
           {pendingMatches.map((match) => {
