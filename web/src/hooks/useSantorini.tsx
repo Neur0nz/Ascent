@@ -1279,6 +1279,14 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     ],
   );
 
+  useEffect(() => {
+    if (loading) {
+      return;
+    }
+    // After initialization, check if it's AI's turn to play
+    aiPlayIfNeeded();
+  }, [loading, aiPlayIfNeeded]);
+
   return {
     loading,
     initialize,
