@@ -1959,79 +1959,38 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         }
       }
 
-      const isCode = idOrCode.length <= 8;
-      let targetMatch: (MatchRecord & Partial<LobbyMatch>) | null = null;
-
-      if (isCode) {
-        const { data, error } = await client
-          .from('matches')
-          .select(MATCH_WITH_PROFILES)
-          .eq('private_join_code', idOrCode)
-          .maybeSingle();
-        if (error) {
-          console.error('Failed to find match by code', error);
-          throw error;
-        }
-        targetMatch = (data ?? null) as (MatchRecord & Partial<LobbyMatch>) | null;
-      } else {
-        const { data, error } = await client
-          .from('matches')
-          .select(MATCH_WITH_PROFILES)
-          .eq('id', idOrCode)
-          .maybeSingle();
-        if (error) {
-          console.error('Failed to find match by id', error);
-          throw error;
-        }
-        targetMatch = (data ?? null) as (MatchRecord & Partial<LobbyMatch>) | null;
-      }
-
-      if (!targetMatch) {
-        throw new Error('Match not found.');
-      }
-
-      if (targetMatch.status !== 'waiting_for_opponent') {
-        throw new Error('Match is no longer accepting players.');
-      }
-
-      if (targetMatch.opponent_id !== null) {
-        throw new Error('Match is no longer available or has already been joined by another player.');
-      }
-
-      const hydratedTarget = attachProfiles(targetMatch) ?? { ...targetMatch, creator: null, opponent: null };
-      if (targetMatch.creator_id === profile.id) {
-        throw new Error('You cannot join your own game.');
-      }
-
-      const { data, error } = await client
-        .from('matches')
-        .update({ opponent_id: profile.id, status: 'in_progress' })
-        .eq('id', targetMatch.id)
-        .is('opponent_id', null)
-        .select(MATCH_WITH_PROFILES)
-        .maybeSingle();
+      const { data, error } = await invokeAuthorizedFunction<{ match?: MatchRecord & Partial<LobbyMatch> }>(
+        client,
+        'join-match',
+        {
+          body: { identifier: idOrCode },
+        },
+      );
 
       if (error) {
-        console.error('Failed to join match', error);
-        throw error;
+        console.error('Failed to join match via function', error);
+        // Surface known errors
+        const message = (error as any)?.context?.body?.error ?? error.message ?? 'Unable to join match';
+        throw new Error(message);
       }
 
-      if (!data) {
-        throw new Error('Match is no longer available or has already been joined by another player.');
+      const payloadMatch = (data as { match?: MatchRecord & Partial<LobbyMatch> } | null)?.match;
+      if (!payloadMatch) {
+        throw new Error('Match response was empty.');
       }
 
-      const joined = data as unknown as MatchRecord & Partial<LobbyMatch>;
       const mergedProfiles: PlayerProfile[] = [];
-      if (joined.creator) mergedProfiles.push(joined.creator);
-      if (joined.opponent) mergedProfiles.push(joined.opponent);
+      if (payloadMatch.creator) mergedProfiles.push(payloadMatch.creator);
+      if (payloadMatch.opponent) mergedProfiles.push(payloadMatch.opponent);
       mergePlayers(mergedProfiles);
-      const enriched = attachProfiles(joined) ?? {
-        ...joined,
-        creator: hydratedTarget.creator,
-        opponent: profile,
+
+      const enriched = attachProfiles(payloadMatch) ?? {
+        ...payloadMatch,
+        creator: payloadMatch.creator ?? null,
+        opponent: payloadMatch.opponent ?? null,
       };
-      enterOnlineMatchState(enriched, targetMatch.private_join_code ?? null);
-      void ensurePlayersLoaded([joined.creator_id, joined.opponent_id ?? undefined]);
+      enterOnlineMatchState(enriched, payloadMatch.private_join_code ?? null);
+      void ensurePlayersLoaded([payloadMatch.creator_id, payloadMatch.opponent_id ?? undefined]);
       return enriched;
     },
     [attachProfiles, ensurePlayersLoaded, enterOnlineMatchState, mergePlayers, onlineEnabled, profile],
