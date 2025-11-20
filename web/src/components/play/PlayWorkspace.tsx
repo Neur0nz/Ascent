@@ -73,7 +73,7 @@ import { deriveStartingRole } from '@/utils/matchStartingRole';
 import { getOppositeRole, getPlayerZeroRole, isAiMatch } from '@/utils/matchAiDepth';
 import { isSantoriniMoveAction } from '@/utils/matchActions';
 
-const ALLOW_ONLINE_AI_MATCHES = false;
+const ALLOW_ONLINE_AI_MATCHES = true;
 
 function formatDate(value: string) {
   return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -177,9 +177,9 @@ function MatchCreationModal({
               <HStack spacing={4}>
                 <Radio value="human">Real player</Radio>
                 <Tooltip
-                  label="Online AI matches are temporarily unavailable. Use the Practice tab for AI opponents."
+                  label="Play an unrated online match against the built-in Santorini AI (no clock)."
                   hasArrow
-                  isDisabled={ALLOW_ONLINE_AI_MATCHES}
+                  isDisabled={false}
                 >
                   <Radio value="ai" isDisabled={!ALLOW_ONLINE_AI_MATCHES}>
                     Santorini AI

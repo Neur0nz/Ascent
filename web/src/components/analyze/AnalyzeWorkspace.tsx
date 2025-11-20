@@ -141,8 +141,9 @@ function RecentGameCard({ game, profile, isActive, isLoading, onLoad }: RecentGa
     { label: clockLabel, colorScheme: game.clock_initial_seconds > 0 ? 'green' : 'gray' },
     { label: visibilityLabel, colorScheme: game.visibility === 'public' ? 'green' : 'orange' },
   ];
-  if (game.is_ai_match) {
-    tags.push({ label: 'AI match', colorScheme: 'pink' });
+  if (isAiMatch(game)) {
+    const depth = getMatchAiDepth(game);
+    tags.push({ label: depth ? `AI depth ${depth}` : 'AI match', colorScheme: 'pink' });
   }
 
   let resultTag: { label: string; colorScheme: string } | null = null;

@@ -117,6 +117,7 @@ serve(async (req) => {
     ? Math.max(10, Math.min(5000, Math.round(normalizeNumber(payload.aiDepth, DEFAULT_AI_DEPTH))))
     : null;
   const opponentId = opponentType === 'ai' ? AI_PLAYER_ID : null;
+  const isAiMatch = opponentType === 'ai';
   
   // Determine starting player
   let startingPlayerOption = payload.startingPlayer || 'creator';
@@ -263,6 +264,8 @@ async function ensureAiProfile(client: ReturnType<typeof createClient>) {
     clock_initial_seconds: clockInitialSeconds,
     clock_increment_seconds: clockIncrementSeconds,
     initial_state: snapshot,
+    is_ai_match: isAiMatch,
+    ai_depth: aiDepth,
     ...(opponentType === 'ai' ? { status: 'in_progress' as const } : {}),
   };
 

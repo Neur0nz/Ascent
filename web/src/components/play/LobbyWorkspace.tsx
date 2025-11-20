@@ -69,6 +69,7 @@ import type { SupabaseAuthState } from '@hooks/useSupabaseAuth';
 import type { CreateMatchPayload, LobbyMatch, StartingPlayer, MatchOpponentType } from '@hooks/useMatchLobby';
 import type { MatchStatus } from '@/types/match';
 import { useMatchLobbyContext } from '@hooks/matchLobbyContext';
+import { getMatchAiDepth, isAiMatch } from '@/utils/matchAiDepth';
 import GoogleIcon from '@components/auth/GoogleIcon';
 import { useSurfaceTokens } from '@/theme/useSurfaceTokens';
 import { buildMatchJoinLink } from '@/utils/joinLinks';
@@ -76,7 +77,7 @@ import { PENDING_JOIN_STORAGE_KEY, consumeAutoOpenCreateFlag } from '@/utils/lob
 import { useBrowserNotifications } from '@hooks/useBrowserNotifications';
 import { usePushSubscription } from '@hooks/usePushSubscription';
 
-const ALLOW_ONLINE_AI_MATCHES = false;
+const ALLOW_ONLINE_AI_MATCHES = true;
 const MotionCard = motion(Card);
 const MotionButton = motion(Button);
 const MotionTag = motion(
@@ -429,7 +430,7 @@ interface MatchBadgeConfig {
   tooltip?: ReactNode;
 }
 
-function buildMatchSettingsBadges(match: LobbyMatch): MatchBadgeConfig[] {
+export function buildMatchSettingsBadges(match: LobbyMatch): MatchBadgeConfig[] {
   const badges: MatchBadgeConfig[] = [];
 
   badges.push({
@@ -472,9 +473,11 @@ function buildMatchSettingsBadges(match: LobbyMatch): MatchBadgeConfig[] {
         },
   );
 
-  if (match.is_ai_match) {
+  const aiMatch = isAiMatch(match);
+  if (aiMatch) {
+    const depth = getMatchAiDepth(match);
     badges.push({
-      label: `AI depth ${match.ai_depth ?? '—'}`,
+      label: `AI depth ${depth ?? '—'}`,
       colorScheme: 'pink',
       icon: RepeatIcon,
       tooltip: 'Practice game versus the built-in AI.',
@@ -749,9 +752,9 @@ function MatchCreationModal({
               <HStack spacing={4}>
                 <Radio value="human">Real player</Radio>
                 <Tooltip
-                  label="Online AI matches are temporarily offline. Visit the Practice tab for AI opponents."
+                  label="Play an unrated match against the built-in Santorini AI (no clock)."
                   hasArrow
-                  isDisabled={ALLOW_ONLINE_AI_MATCHES}
+                  isDisabled={false}
                 >
                   <Radio value="ai" isDisabled={!ALLOW_ONLINE_AI_MATCHES}>
                     Santorini AI
