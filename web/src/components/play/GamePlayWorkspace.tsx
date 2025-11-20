@@ -45,6 +45,7 @@ import {
   PopoverArrow,
   PopoverBody,
 } from '@chakra-ui/react';
+import { MdShare } from 'react-icons/md';
 import type { AlertProps } from '@chakra-ui/react';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { SupabaseAuthState } from '@hooks/useSupabaseAuth';
@@ -79,6 +80,7 @@ import { useEvaluationJobs } from '@hooks/useEvaluationJobs';
 import { fetchMatchWithMoves, MIN_EVAL_MOVE_INDEX } from '@/lib/matchAnalysis';
 import { describeMatch } from '@/utils/matchDescription';
 import { supabase } from '@/lib/supabaseClient';
+import { shareMatchInvite } from '@/utils/shareInvite';
 
 const K_FACTOR = 32;
 const NOTIFICATION_PROMPT_STORAGE_KEY = 'santorini:notificationsPrompted';
@@ -1692,6 +1694,22 @@ function WaitingForOpponentState({
   const { hasCopied: hasCopiedLink, onCopy: onCopyLink } = useClipboard(joinLink);
   const hasJoinCode = Boolean(shareableJoinCode);
   const hasJoinLink = Boolean(joinLink);
+  const toast = useToast();
+  const [sharing, setSharing] = useState(false);
+
+  const handleShare = useCallback(async () => {
+    if (!hasJoinLink) {
+      return;
+    }
+    setSharing(true);
+    await shareMatchInvite({
+      joinLink,
+      joinKey,
+      toast,
+      fallbackCopy: onCopyLink,
+    });
+    setSharing(false);
+  }, [hasJoinLink, joinLink, joinKey, onCopyLink, toast]);
   
   return (
     <Stack spacing={6}>
@@ -1789,16 +1807,31 @@ function WaitingForOpponentState({
                     </WrapItem>
                   )}
                   {hasJoinLink && (
-                    <WrapItem>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        colorScheme={hasCopiedLink ? 'teal' : 'gray'}
-                        onClick={onCopyLink}
-                      >
-                        {hasCopiedLink ? 'Link copied' : 'Copy invite link'}
-                      </Button>
-                    </WrapItem>
+                    <>
+                      <WrapItem>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          colorScheme={hasCopiedLink ? 'teal' : 'gray'}
+                          onClick={onCopyLink}
+                        >
+                          {hasCopiedLink ? 'Link copied' : 'Copy invite link'}
+                        </Button>
+                      </WrapItem>
+                      <WrapItem>
+                        <Button
+                          size="sm"
+                          variant="solid"
+                          colorScheme="teal"
+                          leftIcon={<MdShare />}
+                          onClick={() => void handleShare()}
+                          isLoading={sharing}
+                          isDisabled={sharing}
+                        >
+                          Share invite
+                        </Button>
+                      </WrapItem>
+                    </>
                   )}
                   {canCancel && onCancel && (
                     <WrapItem>

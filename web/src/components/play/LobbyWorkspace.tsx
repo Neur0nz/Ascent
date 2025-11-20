@@ -76,6 +76,7 @@ import { buildMatchJoinLink } from '@/utils/joinLinks';
 import { PENDING_JOIN_STORAGE_KEY, consumeAutoOpenCreateFlag } from '@/utils/lobbyStorage';
 import { useBrowserNotifications } from '@hooks/useBrowserNotifications';
 import { usePushSubscription } from '@hooks/usePushSubscription';
+import { shareMatchInvite } from '@/utils/shareInvite';
 
 const ALLOW_ONLINE_AI_MATCHES = true;
 const MotionCard = motion(Card);
@@ -94,59 +95,6 @@ const heroButtonSpring = { type: 'spring', stiffness: 280, damping: 28 };
 
 function formatDate(value: string) {
   return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-async function shareMatchInvite({
-  joinLink,
-  joinKey,
-  toast,
-  fallbackCopy,
-}: {
-  joinLink: string;
-  joinKey?: string;
-  toast: ReturnType<typeof useToast>;
-  fallbackCopy: () => void | Promise<void>;
-}) {
-  if (!joinLink) {
-    return;
-  }
-
-  const title = 'Join my Santorini match';
-  const text = joinKey
-    ? `Join my Santorini match with code ${joinKey} on Ascent.`
-    : 'Join my Santorini match on Ascent.';
-
-  const navigatorRef = typeof navigator !== 'undefined' ? navigator : null;
-  try {
-    if (navigatorRef?.share) {
-      await navigatorRef.share({ title, text, url: joinLink });
-      toast({
-        status: 'success',
-        title: 'Invite shared',
-        description: 'Sent via your app with a rich preview.',
-        duration: 2500,
-        isClosable: true,
-      });
-    } else {
-      await Promise.resolve(fallbackCopy());
-      toast({
-        status: 'success',
-        title: 'Link copied',
-        description: 'Paste it into WhatsApp, Discord, or anywhere else.',
-        duration: 2500,
-        isClosable: true,
-      });
-    }
-  } catch (error) {
-    console.error('Failed to share match invite', error);
-    toast({
-      status: 'error',
-      title: 'Unable to share invite',
-      description: 'Try again or copy the link manually.',
-      duration: 3000,
-      isClosable: true,
-    });
-  }
 }
 
 const NOTIFICATION_PROMPT_STORAGE_KEY = 'santorini:notificationsPrompted';
@@ -217,15 +165,16 @@ function ActiveGameNotice({
         )}
         {hasShareLink && (
           <Tooltip label="Share with WhatsApp, Discord, or any app" hasArrow>
-            <IconButton
-              aria-label="Share invite link"
-              icon={<MdShare />}
-              variant="ghost"
+            <Button
+              leftIcon={<MdShare />}
+              variant="outline"
               colorScheme="teal"
               onClick={() => void handleShare()}
               isLoading={sharing}
               isDisabled={sharing}
-            />
+            >
+              Share invite
+            </Button>
           </Tooltip>
         )}
         <Button 
@@ -651,15 +600,16 @@ function PendingMatchActions({
         hasArrow
         isDisabled={!hasJoinLink}
       >
-        <IconButton
-          aria-label="Share match invite"
-          icon={<MdShare />}
-          variant="ghost"
+        <Button
+          leftIcon={<MdShare />}
+          variant="outline"
           colorScheme="teal"
           onClick={() => void handleShare()}
           isDisabled={!hasJoinLink || sharing}
           isLoading={sharing}
-        />
+        >
+          Share invite
+        </Button>
       </Tooltip>
       <Button
         colorScheme="red"
