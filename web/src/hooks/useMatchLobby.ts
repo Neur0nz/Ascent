@@ -209,6 +209,8 @@ export const MATCH_PING_COOLDOWN_MS = 60_000;
 
 const PRESENCE_HEARTBEAT_INTERVAL = 5000;
 const CONNECTION_MONITOR_INTERVAL = 4500;
+const isPublicWaitingMatch = (match: MatchRecord) =>
+  match.status === 'waiting_for_opponent' && match.visibility === 'public';
 
 function determineConnectionQuality(lastSeen: number | null, now: number): ConnectionQuality {
   if (lastSeen === null) {
@@ -817,6 +819,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
           .from('matches')
           .select(MATCH_WITH_PROFILES)
           .eq('status', 'waiting_for_opponent')
+          .eq('visibility', 'public')
           .order('created_at', { ascending: true });
 
         if (error) {
@@ -825,18 +828,19 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
 
         const rawRecords = Array.isArray(data) ? data : [];
         const records = rawRecords as unknown as Array<MatchRecord & Partial<LobbyMatch>>;
+        const publicWaitingRecords = records.filter(isPublicWaitingMatch);
         const profilesToCache: PlayerProfile[] = [];
-        records.forEach((record) => {
+        publicWaitingRecords.forEach((record) => {
           if (record.creator) profilesToCache.push(record.creator);
           if (record.opponent) profilesToCache.push(record.opponent);
         });
         mergePlayers(profilesToCache);
-        const hydrated = records.map(
+        const hydrated = publicWaitingRecords.map(
           (record) => attachProfiles(record) ?? { ...record, creator: null, opponent: null },
         );
         setState((prev) => ({ ...prev, loading: false, matches: hydrated }));
         void ensurePlayersLoaded(
-          records.flatMap((match) => [match.creator_id, match.opponent_id ?? undefined]),
+          publicWaitingRecords.flatMap((match) => [match.creator_id, match.opponent_id ?? undefined]),
         );
       } catch (error) {
         console.error('Failed to fetch matches', error);
@@ -854,25 +858,34 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         (payload: RealtimePostgresChangesPayload<MatchRecord>) => {
           setState((prev) => {
             const matches = [...prev.matches];
+            const nextRecord = (payload.new ?? payload.old) as MatchRecord;
+            const shouldInclude = nextRecord ? isPublicWaitingMatch(nextRecord) : false;
+
             if (payload.eventType === 'INSERT') {
               const record = payload.new as MatchRecord;
-              if (record.status === 'waiting_for_opponent') {
+              if (shouldInclude) {
                 matches.unshift(attachProfiles(record) ?? { ...record, creator: null, opponent: null });
               }
-              void ensurePlayersLoaded([record.creator_id, record.opponent_id ?? undefined]);
+              if (shouldInclude) {
+                void ensurePlayersLoaded([record.creator_id, record.opponent_id ?? undefined]);
+              }
             } else if (payload.eventType === 'UPDATE') {
               const updated = payload.new as MatchRecord;
               const index = matches.findIndex((m) => m.id === updated.id);
               if (index >= 0) {
-                matches[index] = attachProfiles({ ...matches[index], ...updated }) ?? {
-                  ...matches[index],
-                  ...updated,
-                };
-              } else if (updated.status === 'waiting_for_opponent') {
+                if (!shouldInclude) {
+                  matches.splice(index, 1);
+                } else {
+                  matches[index] = attachProfiles({ ...matches[index], ...updated }) ?? {
+                    ...matches[index],
+                    ...updated,
+                  };
+                }
+              } else if (shouldInclude) {
                 matches.unshift(attachProfiles(updated) ?? { ...updated, creator: null, opponent: null });
               }
-              if (updated.status !== 'waiting_for_opponent') {
-                return { ...prev, matches: matches.filter((m) => m.id !== updated.id) };
+              if (!shouldInclude) {
+                return { ...prev, matches };
               }
               void ensurePlayersLoaded([updated.creator_id, updated.opponent_id ?? undefined]);
             } else if (payload.eventType === 'DELETE') {
