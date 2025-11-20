@@ -21,6 +21,11 @@ import {
   Heading,
   HStack,
   Input,
+  NumberDecrementStepper,
+  NumberIncrementStepper,
+  NumberInput,
+  NumberInputField,
+  NumberInputStepper,
   Image as ChakraImage,
   Radio,
   RadioGroup,
@@ -113,6 +118,8 @@ interface PendingSettings {
   displayName: string;
   enginePreference: EnginePreference;
   showCoordinateLabels: boolean;
+  autoAnalyzeEnabled: boolean;
+  autoAnalyzeDepth: number;
 }
 
 function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
@@ -128,6 +135,7 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
     updateAvatar,
     updateEnginePreference,
     updateCoordinatePreference,
+    updateAutoAnalysisPreference,
     refreshProfile,
   } = auth;
   const [startingGoogle, setStartingGoogle] = useBoolean(false);
@@ -165,6 +173,8 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
         displayName: profile.display_name,
         enginePreference: profile.engine_preference ?? 'python',
         showCoordinateLabels: profile.show_coordinate_labels ?? true,
+        autoAnalyzeEnabled: profile.auto_analyze_games ?? false,
+        autoAnalyzeDepth: profile.auto_analyze_depth ?? 800,
       });
       setNameError(null);
     } else {
@@ -203,7 +213,10 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
     const nameChanged = pendingSettings.displayName.trim() !== profile.display_name;
     const engineChanged = pendingSettings.enginePreference !== (profile.engine_preference ?? 'python');
     const coordsChanged = pendingSettings.showCoordinateLabels !== (profile.show_coordinate_labels ?? true);
-    return nameChanged || engineChanged || coordsChanged;
+    const autoSettingsChanged =
+      pendingSettings.autoAnalyzeEnabled !== (profile.auto_analyze_games ?? false) ||
+      pendingSettings.autoAnalyzeDepth !== (profile.auto_analyze_depth ?? 800);
+    return nameChanged || engineChanged || coordsChanged || autoSettingsChanged;
   }, [profile, pendingSettings]);
 
   const handleGoogleSignIn = async () => {
@@ -244,6 +257,9 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
     setIsSaving.on();
     let changesSucceeded = 0;
     let changesAttempted = 0;
+    const autoSettingsChanged =
+      pendingSettings.autoAnalyzeEnabled !== (profile.auto_analyze_games ?? false) ||
+      pendingSettings.autoAnalyzeDepth !== (profile.auto_analyze_depth ?? 800);
 
     try {
       if (pendingSettings.displayName.trim() !== profile.display_name) {
@@ -261,6 +277,12 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
       if (pendingSettings.showCoordinateLabels !== (profile.show_coordinate_labels ?? true)) {
         changesAttempted++;
         await updateCoordinatePreference(pendingSettings.showCoordinateLabels);
+        changesSucceeded++;
+      }
+
+      if (autoSettingsChanged) {
+        changesAttempted++;
+        await updateAutoAnalysisPreference(pendingSettings.autoAnalyzeEnabled, pendingSettings.autoAnalyzeDepth);
         changesSucceeded++;
       }
 
@@ -825,6 +847,58 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
                 }
                 colorScheme="teal"
               />
+            </FormControl>
+            <FormControl>
+              <Stack spacing={3}>
+                <Flex
+                  align={{ base: 'flex-start', md: 'center' }}
+                  justify="space-between"
+                  direction={{ base: 'column', md: 'row' }}
+                  gap={{ base: 2, md: 4 }}
+                >
+                  <Box>
+                    <FormLabel mb={1}>Auto analyze games after completion</FormLabel>
+                    <FormHelperText color={helperText}>
+                      Kick off an AI analysis graph as soon as one of your online games ends.
+                    </FormHelperText>
+                  </Box>
+                  <Switch
+                    colorScheme="teal"
+                    isChecked={pendingSettings.autoAnalyzeEnabled}
+                    onChange={(event) =>
+                      setPendingSettings({ ...pendingSettings, autoAnalyzeEnabled: event.target.checked })
+                    }
+                  />
+                </Flex>
+                <Box>
+                  <FormLabel htmlFor="auto-analysis-depth" fontSize="sm" mb={1}>
+                    Analysis depth
+                  </FormLabel>
+                  <NumberInput
+                    id="auto-analysis-depth"
+                    min={50}
+                    max={5000}
+                    step={50}
+                    value={pendingSettings.autoAnalyzeDepth}
+                    isDisabled={!pendingSettings.autoAnalyzeEnabled}
+                    onChange={(_, valueNumber) => {
+                      const nextDepth = Number.isFinite(valueNumber)
+                        ? Math.max(1, Math.round(valueNumber))
+                        : pendingSettings.autoAnalyzeDepth;
+                      setPendingSettings({ ...pendingSettings, autoAnalyzeDepth: nextDepth });
+                    }}
+                  >
+                    <NumberInputField />
+                    <NumberInputStepper>
+                      <NumberIncrementStepper />
+                      <NumberDecrementStepper />
+                    </NumberInputStepper>
+                  </NumberInput>
+                  <FormHelperText color={helperText}>
+                    Used when auto analysis runs automatically. Higher depths take longer but produce stronger lines.
+                  </FormHelperText>
+                </Box>
+              </Stack>
             </FormControl>
           </VStack>
           <Divider />

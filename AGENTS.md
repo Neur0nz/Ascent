@@ -65,6 +65,7 @@ File-scoped helpers (still inside `web/`):
 - Before returning code, run the smallest meaningful verification (unit tests, targeted build, or `tsc --noEmit`). If something cannot run locally, spell out manual steps for the user.
 - Do not undo user changes you did not make. If the tree is dirty, work around existing files.
 - Cite file paths + line numbers in summaries (e.g., `web/src/hooks/useSantorini.tsx:42`).
+- Large `apply_patch` blocks that include template literals can confuse the shell. When that happens, write the patch to a temp file via `cat <<'PATCH' >/tmp/your_patch.patch` and run `apply_patch < /tmp/your_patch.patch` from the repo directory to keep the content literal.
 
 ## MCP Tooling & Memory Usage
 We have access to generic MCP services plus a memory graph (`mcp-neo4j-agent-memory`) for persistent knowledge. Follow these principles, based on current guidance for AGENTS.md usage and MCP memory servers (Builder.io blog on AGENTS.md best practices; agentsmd.io Codex guide; SmartScope Codex CLI best-practices; Basic Memory integration docs; Glama Agentic Tools `create_memory`/`update_memory` specs):

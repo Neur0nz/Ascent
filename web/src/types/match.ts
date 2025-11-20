@@ -29,6 +29,8 @@ export interface PlayerProfile {
   updated_at: string;
   engine_preference: EnginePreference;
   show_coordinate_labels: boolean;
+  auto_analyze_games: boolean;
+  auto_analyze_depth: number | null;
 }
 
 export interface MatchRecord {

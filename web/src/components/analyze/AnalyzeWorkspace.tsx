@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toPng } from 'html-to-image';
 import {
+  Avatar,
+  AvatarGroup,
   Badge,
   Box,
   Button,
@@ -17,7 +19,6 @@ import {
   Heading,
   HStack,
   IconButton,
-  Input,
   Modal,
   ModalBody,
   ModalCloseButton,
@@ -32,10 +33,13 @@ import {
   NumberInputStepper,
   Radio,
   RadioGroup,
+  SimpleGrid,
   Spinner,
   Stack,
   Text,
   Tooltip as ChakraTooltip,
+  Wrap,
+  WrapItem,
   useColorModeValue,
   useDisclosure,
   useToast,
@@ -56,10 +60,12 @@ import { MdShare } from 'react-icons/md';
 import GameBoard from '@components/GameBoard';
 import EvaluationPanel from '@components/EvaluationPanel';
 import { supabase } from '@/lib/supabaseClient';
+import { fetchMatchWithMoves, MIN_EVAL_MOVE_INDEX } from '@/lib/matchAnalysis';
 import { SantoriniEngine, type SantoriniSnapshot } from '@/lib/santoriniEngine';
 import { useSantorini } from '@hooks/useSantorini';
 import type { MatchMoveRecord, MatchRecord, MatchRole, SantoriniMoveAction, PlayerProfile, SantoriniStateSnapshot } from '@/types/match';
 import { getMatchAiDepth, getOppositeRole, getPlayerZeroRole, isAiMatch } from '@/utils/matchAiDepth';
+import { describeMatch } from '@/utils/matchDescription';
 import type { EvaluationSeriesPoint } from '@/types/evaluation';
 import type { SupabaseAuthState } from '@hooks/useSupabaseAuth';
 import type { LobbyMatch } from '@hooks/useMatchLobby';
@@ -106,24 +112,129 @@ const DEFAULT_CUSTOM_DEPTH = 800;
 
 const describeRoleName = (role: MatchRole): string => (role === 'creator' ? 'Creator' : 'Opponent');
 
-function describeMatch(match: LobbyMatch, profile: PlayerProfile | null) {
-  if (isAiMatch(match)) {
-    const depth = getMatchAiDepth(match);
-    const depthLabel = depth ? ` (depth ${depth})` : '';
-    return `You vs AI${depthLabel}`;
+const LAST_ANALYZED_MATCH_KEY = 'santorini:lastAnalyzedMatch';
+
+interface RecentGameCardProps {
+  game: LobbyMatch;
+  profile: PlayerProfile | null;
+  isActive: boolean;
+  isLoading: boolean;
+  onLoad: (id: string) => void;
+}
+
+function RecentGameCard({ game, profile, isActive, isLoading, onLoad }: RecentGameCardProps) {
+  const borderColor = useColorModeValue('gray.200', 'whiteAlpha.200');
+  const hoverBorder = useColorModeValue('teal.400', 'teal.300');
+  const activeBg = useColorModeValue('teal.50', 'whiteAlpha.200');
+  const muted = useColorModeValue('gray.600', 'whiteAlpha.700');
+  const clockLabel =
+    game.clock_initial_seconds > 0
+      ? `${Math.round(game.clock_initial_seconds / 60)}+${game.clock_increment_seconds}`
+      : 'No clock';
+  const visibilityLabel = game.visibility === 'public' ? 'Public' : 'Private';
+  const createdAt = new Date(game.updated_at ?? game.created_at);
+  const createdLabel = Number.isNaN(createdAt.valueOf())
+    ? ''
+    : createdAt.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const tags = [
+    { label: game.rated ? 'Rated' : 'Casual', colorScheme: game.rated ? 'purple' : 'gray' },
+    { label: clockLabel, colorScheme: game.clock_initial_seconds > 0 ? 'green' : 'gray' },
+    { label: visibilityLabel, colorScheme: game.visibility === 'public' ? 'green' : 'orange' },
+  ];
+  if (game.is_ai_match) {
+    tags.push({ label: 'AI match', colorScheme: 'pink' });
   }
-  const isCreator = profile ? match.creator_id === profile.id : false;
-  if (isCreator) {
-    const opponentName = match.opponent?.display_name ?? 'Unknown opponent';
-    return `You vs ${opponentName}`;
+
+  let resultTag: { label: string; colorScheme: string } | null = null;
+  if (game.status === 'completed') {
+    if (!game.winner_id) {
+      resultTag = { label: 'Draw', colorScheme: 'yellow' };
+    } else if (profile && game.winner_id === profile.id) {
+      resultTag = { label: 'You won', colorScheme: 'teal' };
+    } else if (profile && (game.creator_id === profile.id || game.opponent_id === profile.id)) {
+      resultTag = { label: 'You lost', colorScheme: 'red' };
+    } else {
+      const winnerName =
+        game.winner_id === game.creator_id
+          ? game.creator?.display_name ?? 'Creator'
+          : game.opponent?.display_name ?? 'Opponent';
+      resultTag = { label: `${winnerName} won`, colorScheme: 'blue' };
+    }
   }
-  if (profile && match.opponent_id === profile.id) {
-    const creatorName = match.creator?.display_name ?? 'Unknown opponent';
-    return `${creatorName} vs You`;
-  }
-  const creatorName = match.creator?.display_name ?? 'Player 1';
-  const opponentName = match.opponent?.display_name ?? 'Player 2';
-  return `${creatorName} vs ${opponentName}`;
+
+  const handleLoad = () => onLoad(game.id);
+
+  return (
+    <Box
+      borderWidth="1px"
+      borderColor={isActive ? hoverBorder : borderColor}
+      borderRadius="lg"
+      p={4}
+      bg={isActive ? activeBg : 'transparent'}
+      cursor={isLoading ? 'default' : 'pointer'}
+      transition="all 0.2s ease"
+      opacity={isLoading ? 0.85 : 1}
+      onClick={isLoading ? undefined : handleLoad}
+      _hover={
+        isLoading
+          ? undefined
+          : {
+              borderColor: hoverBorder,
+              transform: 'translateY(-2px)',
+              boxShadow: 'lg',
+            }
+      }
+    >
+      <Stack spacing={3}>
+        <HStack justify="space-between" align="flex-start" spacing={3}>
+          <Stack spacing={1} flex="1" minW={0}>
+            <Text fontSize="sm" fontWeight="semibold">
+              {describeMatch(game, profile)}
+            </Text>
+            {createdLabel && (
+              <Text fontSize="xs" color={muted}>
+                {createdLabel}
+              </Text>
+            )}
+          </Stack>
+          <AvatarGroup size="sm" max={2} spacing={-2}>
+            <Avatar name={game.creator?.display_name ?? 'Creator'} src={game.creator?.avatar_url ?? undefined} />
+            <Avatar name={game.opponent?.display_name ?? 'Opponent'} src={game.opponent?.avatar_url ?? undefined} />
+          </AvatarGroup>
+        </HStack>
+        <Wrap spacing={2}>
+          {tags.map((tag, index) => (
+            <WrapItem key={`${game.id}-tag-${index}`}>
+              <Badge colorScheme={tag.colorScheme} borderRadius="full" px={2.5} py={0.5} fontSize="xs">
+                {tag.label}
+              </Badge>
+            </WrapItem>
+          ))}
+          {resultTag && (
+            <WrapItem>
+              <Badge colorScheme={resultTag.colorScheme} borderRadius="full" px={2.5} py={0.5} fontSize="xs">
+                {resultTag.label}
+              </Badge>
+            </WrapItem>
+          )}
+        </Wrap>
+        <Flex justify="flex-end">
+          <Button
+            size="sm"
+            colorScheme="teal"
+            variant={isActive ? 'solid' : 'outline'}
+            onClick={(event) => {
+              event.stopPropagation();
+              handleLoad();
+            }}
+            isLoading={isLoading}
+          >
+            {isActive ? 'Analyzing' : 'Analyze game'}
+          </Button>
+        </Flex>
+      </Stack>
+    </Box>
+  );
 }
 
 interface AnalyzeWorkspaceProps {
@@ -138,7 +249,7 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
   const initializeSantorini = santorini.initialize;
   const setSantoriniGameMode = santorini.controls.setGameMode;
   const { jobs, startJob } = useEvaluationJobs();
-  const [matchId, setMatchId] = useState(() => localStorage.getItem('santorini:lastAnalyzedMatch') ?? '');
+  const [matchId, setMatchId] = useState(() => localStorage.getItem(LAST_ANALYZED_MATCH_KEY) ?? '');
   const [loaded, setLoaded] = useState<LoadedAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(-1);
@@ -148,7 +259,6 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
   const [replaying, setReplaying] = useState(false);
   const [isExploring, setIsExploring] = useState(false);
   const [evaluationError, setEvaluationError] = useState<string | null>(null);
-  const MIN_EVAL_MOVE_INDEX = 3;
   const evaluationDepthModal = useDisclosure();
   const [depthSelection, setDepthSelection] = useState<string>('ai');
   const [customDepth, setCustomDepth] = useState<string>(String(DEFAULT_CUSTOM_DEPTH));
@@ -323,51 +433,26 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
       });
       return;
     }
-    if (!id.trim()) {
+    const trimmedId = id.trim();
+    if (!trimmedId) {
       toast({ title: 'Enter a match ID', status: 'info' });
       return;
     }
 
     setLoading(true);
     try {
-      const [{ data: matchData, error: matchError }, { data: movesData, error: movesError }] = await Promise.all([
-        supabase.from('matches').select('*').eq('id', id.trim()).maybeSingle(),
-        supabase
-          .from('match_moves')
-          .select('*')
-          .eq('match_id', id.trim())
-          .order('move_index', { ascending: true }),
-      ]);
-
-      if (matchError) {
-        throw matchError;
-      }
-      if (!matchData) {
-        throw new Error('Match not found.');
-      }
-      if (movesError) {
-        throw movesError;
-      }
-
-      const typedMoves: MatchMoveRecord<SantoriniMoveAction>[] = (movesData ?? []).map(
-        (move: MatchMoveRecord) => ({
-          ...move,
-          action: move.action as SantoriniMoveAction,
-        }),
-      );
-
-      const loadedData = { match: matchData as MatchRecord, moves: typedMoves };
+      const loadedData = await fetchMatchWithMoves(supabase, trimmedId);
       setLoaded(loadedData);
       
       // Start at the last move
-      await replayToSnapshot(typedMoves.length - 1, loadedData);
+      await replayToSnapshot(loadedData.moves.length - 1, loadedData);
       
-      localStorage.setItem('santorini:lastAnalyzedMatch', id.trim());
-      setMatchId(id.trim());
+      localStorage.setItem(LAST_ANALYZED_MATCH_KEY, trimmedId);
+      setMatchId(trimmedId);
       
       toast({
         title: 'Match loaded',
-        description: `${typedMoves.length} moves loaded successfully`,
+        description: `${loadedData.moves.length} moves loaded successfully`,
         status: 'success',
       });
     } catch (error) {
@@ -400,10 +485,6 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
     loadMatchById(targetJob.matchId);
     onPendingJobConsumed?.();
   }, [jobs, loadMatchById, matchId, onPendingJobConsumed, pendingJobId]);
-
-  const loadMatch = useCallback(() => {
-    loadMatchById(matchId);
-  }, [loadMatchById, matchId]);
 
   const handleCellClick = useCallback(
     (y: number, x: number) => {
@@ -836,88 +917,26 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
                     No completed games yet. Finish a game to see it here.
                   </Text>
                 ) : (
-                  <Stack spacing={2} maxH="300px" overflowY="auto">
-                    {myCompletedGames.map((game) => {
-                      const isCurrentlyLoaded = loaded?.match.id === game.id;
-                      return (
-                        <Box
+                  <Box maxH="360px" overflowY="auto" pr={1}>
+                    <SimpleGrid columns={{ base: 1, md: 2 }} spacing={3} minChildWidth="260px">
+                      {myCompletedGames.map((game) => (
+                        <RecentGameCard
                           key={game.id}
-                          borderWidth="2px"
-                          borderColor={isCurrentlyLoaded ? highlightBorder : cardBorder}
-                          bg={isCurrentlyLoaded ? highlightBg : 'transparent'}
-                          borderRadius="md"
-                          px={3}
-                          py={2}
-                          cursor="pointer"
-                          onClick={() => loadMatchById(game.id)}
-                          transition="all 0.2s"
-                          _hover={{ borderColor: highlightBorder }}
-                        >
-                          <Flex justify="space-between" align="center" gap={3}>
-                            <Stack spacing={1} flex="1">
-                              <Text fontWeight={isCurrentlyLoaded ? 'bold' : 'semibold'} fontSize="sm">
-                                {describeMatch(game, auth?.profile ?? null)}
-                              </Text>
-                              <HStack spacing={2} flexWrap="wrap">
-                                <Badge colorScheme={game.rated ? 'purple' : 'gray'} fontSize="xs">
-                                  {game.rated ? 'Rated' : 'Casual'}
-                                </Badge>
-                                {game.clock_initial_seconds > 0 && (
-                                  <Badge colorScheme="green" fontSize="xs">
-                                    {Math.round(game.clock_initial_seconds / 60)}+{game.clock_increment_seconds}
-                                  </Badge>
-                                )}
-                                <Text fontSize="xs" color={helperText}>
-                                  {new Date(game.created_at).toLocaleDateString()}
-                                </Text>
-                              </HStack>
-                            </Stack>
-                            <Button
-                              size="xs"
-                              colorScheme="teal"
-                              variant={isCurrentlyLoaded ? 'solid' : 'outline'}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                loadMatchById(game.id);
-                              }}
-                              isLoading={loading && matchId === game.id}
-                            >
-                              {isCurrentlyLoaded ? 'Loaded' : 'Load analysis'}
-                            </Button>
-                          </Flex>
-                        </Box>
-                      );
-                    })}
-                  </Stack>
+                          game={game}
+                          profile={auth?.profile ?? null}
+                          isActive={loaded?.match.id === game.id}
+                          isLoading={loading && matchId === game.id}
+                          onLoad={loadMatchById}
+                        />
+                      ))}
+                    </SimpleGrid>
+                  </Box>
                 )}
               </Box>
 
               <Divider />
             </>
           )}
-
-          {/* Manual Match ID Entry */}
-          <Box>
-            <Heading size="sm" mb={3}>Or enter a match ID</Heading>
-            <Text color={mutedText} fontSize="sm" mb={3}>
-              Paste any match ID to analyze games not in your history.
-          </Text>
-          <HStack spacing={3} align="center">
-            <Input
-                placeholder="Match ID (e.g., 2af5ce96-718b-4361-bb6c-b6c419f21010)"
-              value={matchId}
-              onChange={(event) => setMatchId(event.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    loadMatch();
-                  }
-                }}
-            />
-              <Button colorScheme="teal" onClick={loadMatch} isLoading={loading} minW="100px">
-              Load
-            </Button>
-          </HStack>
-          </Box>
 
           {loaded && summary && (
             <HStack spacing={3} flexWrap="wrap">

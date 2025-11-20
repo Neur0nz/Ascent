@@ -19,6 +19,7 @@ import {
 import { ArrowForwardIcon, CloseIcon } from '@chakra-ui/icons';
 import type { LobbyMatch } from '@hooks/useMatchLobby';
 import type { PlayerProfile } from '@/types/match';
+import { describeMatch } from '@/utils/matchDescription';
 
 type MyMatchesPanelProps = {
   matches: LobbyMatch[];
@@ -37,24 +38,6 @@ function formatStatus(match: LobbyMatch) {
     default:
       return { label: match.status.replaceAll('_', ' '), colorScheme: 'gray' as const };
   }
-}
-
-function describeMatch(match: LobbyMatch, profile: PlayerProfile | null) {
-  const isCreator = profile ? match.creator_id === profile.id : false;
-  if (match.status === 'waiting_for_opponent') {
-    return 'Waiting for an opponent';
-  }
-  if (isCreator) {
-    const opponentName = match.opponent?.display_name ?? 'Unknown opponent';
-    return `You vs ${opponentName}`;
-  }
-  if (profile && match.opponent_id === profile.id) {
-    const creatorName = match.creator?.display_name ?? 'Unknown opponent';
-    return `${creatorName} vs You`;
-  }
-  const creatorName = match.creator?.display_name ?? 'Player 1';
-  const opponentName = match.opponent?.display_name ?? 'Player 2';
-  return `${creatorName} vs ${opponentName}`;
 }
 
 function MyMatchesPanel({ matches, activeMatchId, profile, onSelect, onLeave }: MyMatchesPanelProps) {

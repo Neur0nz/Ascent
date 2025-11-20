@@ -20,7 +20,7 @@ const DEFAULT_STATE: AuthState = {
 };
 
 const PROFILE_QUERY_FIELDS =
-  'id, auth_user_id, display_name, avatar_url, rating, games_played, created_at, updated_at, engine_preference, show_coordinate_labels';
+  'id, auth_user_id, display_name, avatar_url, rating, games_played, created_at, updated_at, engine_preference, show_coordinate_labels, auto_analyze_games, auto_analyze_depth';
 const PROFILE_RETRY_DELAY = 2000; // Retry quickly to mask transient hiccups
 const AVATAR_STORAGE_BUCKET = 'avatars';
 const MAX_AVATAR_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB cap keeps uploads lightweight
@@ -962,6 +962,43 @@ export function useSupabaseAuth() {
     [userId, state.session]
   );
 
+  const updateAutoAnalysisPreference = useCallback(
+    async (enabled: boolean, depth: number) => {
+      const client = supabase;
+      if (!client) {
+        throw new Error('Supabase is not configured.');
+      }
+      if (!userId) {
+        throw new Error('You must be signed in to update analysis preferences.');
+      }
+
+      const normalizedDepth = Number.isFinite(depth) ? Math.max(1, Math.round(depth)) : 800;
+
+      const { data, error } = await client
+        .from('players')
+        .update({ auto_analyze_games: !!enabled, auto_analyze_depth: normalizedDepth })
+        .eq('auth_user_id', userId)
+        .select(PROFILE_QUERY_FIELDS)
+        .single();
+
+      if (error || !data) {
+        console.error('Failed to update auto-analysis preference', error);
+        throw new Error('Unable to update analysis preference. Please try again.');
+      }
+
+      const nextProfile = data as PlayerProfile;
+      const session = state.session;
+
+      setState((prev) => ({ ...prev, profile: nextProfile }));
+
+      if (session) {
+        cachedStateRef.current = { session, profile: nextProfile };
+        cacheAuthState(session, nextProfile);
+      }
+    },
+    [userId, state.session]
+  );
+
   useEffect(() => {
     if (!state.loading) {
       return undefined;
@@ -1027,6 +1064,7 @@ export function useSupabaseAuth() {
     updateAvatar,
     updateEnginePreference,
     updateCoordinatePreference,
+    updateAutoAnalysisPreference,
   };
 }
 

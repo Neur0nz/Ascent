@@ -2,6 +2,10 @@
 
 import { clientsClaim } from 'workbox-core';
 import { precacheAndRoute, PrecacheEntry } from 'workbox-precaching';
+import { registerRoute } from 'workbox-routing';
+import { CacheFirst } from 'workbox-strategies';
+import { CacheableResponsePlugin } from 'workbox-cacheable-response';
+import { ExpirationPlugin } from 'workbox-expiration';
 
 declare const self: ServiceWorkerGlobalScope & typeof globalThis & {
   __WB_MANIFEST: Array<PrecacheEntry>;
@@ -68,6 +72,18 @@ const getSourceId = (source: ServiceWorkerMessageSource | null | undefined): str
 clientsClaim();
 self.skipWaiting();
 precacheAndRoute(self.__WB_MANIFEST);
+
+registerRoute(
+  ({ url }) =>
+    url.hostname.endsWith('supabase.co') && url.pathname.startsWith('/storage/v1/object/public/'),
+  new CacheFirst({
+    cacheName: 'supabase-storage',
+    plugins: [
+      new CacheableResponsePlugin({ statuses: [0, 200] }),
+      new ExpirationPlugin({ maxAgeSeconds: 30 * 24 * 60 * 60, maxEntries: 60 }),
+    ],
+  }),
+);
 
 self.addEventListener('message', (event: ExtendableMessageEvent) => {
   const data = event.data;

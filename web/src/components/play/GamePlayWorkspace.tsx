@@ -75,6 +75,10 @@ import { EMOJIS } from '@components/EmojiPicker';
 import { deriveStartingRole } from '@/utils/matchStartingRole';
 import { SantoriniWorkerClient } from '@/lib/runtime/santoriniWorkerClient';
 import type { SantoriniSnapshot } from '@/lib/santoriniEngine';
+import { useEvaluationJobs } from '@hooks/useEvaluationJobs';
+import { fetchMatchWithMoves, MIN_EVAL_MOVE_INDEX } from '@/lib/matchAnalysis';
+import { describeMatch } from '@/utils/matchDescription';
+import { supabase } from '@/lib/supabaseClient';
 
 const K_FACTOR = 32;
 const NOTIFICATION_PROMPT_STORAGE_KEY = 'santorini:notificationsPrompted';
@@ -1846,6 +1850,8 @@ function GamePlayWorkspace({
   const { cardBg, cardBorder, mutedText, accentHeading } = useSurfaceTokens();
   const currentProfileId = auth.profile?.id ?? null;
   const completionToastKeyRef = useRef<string | null>(null);
+  const autoAnalysisMatchRef = useRef<string | null>(null);
+  const { jobs, startJob } = useEvaluationJobs();
   const rematchOffers = useMemo(
     () =>
       Object.values(lobby.rematchOffers ?? {}).filter((offer): offer is LobbyMatch => Boolean(offer)),
@@ -1954,6 +1960,9 @@ function GamePlayWorkspace({
     },
     [lobby],
   );
+
+  const autoAnalyzeEnabled = auth.profile?.auto_analyze_games ?? false;
+  const autoAnalyzeDepth = auth.profile?.auto_analyze_depth ?? 800;
 
   useEffect(() => {
     if (!auth.profile) {
@@ -2130,6 +2139,92 @@ function GamePlayWorkspace({
       });
     }
   }, [currentProfileId, lobby.lastCompletedMatch, sessionMode, workspaceToast]);
+
+  useEffect(() => {
+    if (!autoAnalyzeEnabled) {
+      return;
+    }
+    if (sessionMode !== 'online') {
+      return;
+    }
+    if (!supabase) {
+      return;
+    }
+    const completed = lobby.lastCompletedMatch;
+    if (!completed) {
+      return;
+    }
+    const finished = completed.status === 'completed' || completed.status === 'abandoned';
+    if (!finished) {
+      return;
+    }
+    if (!currentProfileId) {
+      return;
+    }
+    const participated =
+      currentProfileId === completed.creator_id || currentProfileId === completed.opponent_id;
+    if (!participated) {
+      return;
+    }
+    const matchLabel = describeMatch(completed, auth.profile ?? null);
+    const jobKey = `${completed.id}:${completed.updated_at ?? completed.status}`;
+    if (autoAnalysisMatchRef.current === jobKey) {
+      return;
+    }
+    const existingJob = Object.values(jobs).some(
+      (job) =>
+        job.matchId === completed.id &&
+        (job.status === 'queued' || job.status === 'running' || job.status === 'success'),
+    );
+    if (existingJob) {
+      autoAnalysisMatchRef.current = jobKey;
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { match, moves } = await fetchMatchWithMoves(supabase, completed.id);
+        if (cancelled) return;
+        await startJob({
+          match,
+          moves,
+          minMoveIndex: MIN_EVAL_MOVE_INDEX,
+          depth: Math.max(1, Math.round(autoAnalyzeDepth)),
+          enginePreference: auth.profile?.engine_preference ?? 'python',
+          matchLabel,
+        });
+        autoAnalysisMatchRef.current = jobKey;
+        workspaceToast({
+          title: 'Auto analysis running',
+          description: `Analyzing ${matchLabel} at depth ${autoAnalyzeDepth}.`,
+          status: 'info',
+          duration: 4000,
+        });
+      } catch (error) {
+        if (cancelled) return;
+        console.error('Failed to auto-start analysis', error);
+        workspaceToast({
+          title: 'Auto analysis failed',
+          status: 'error',
+          description: error instanceof Error ? error.message : 'Unable to start analysis automatically.',
+        });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    auth.profile,
+    autoAnalyzeDepth,
+    autoAnalyzeEnabled,
+    currentProfileId,
+    jobs,
+    lobby.lastCompletedMatch,
+    supabase,
+    sessionMode,
+    startJob,
+    workspaceToast,
+  ]);
   const { activeMatchId, clearUndoRequest, undoRequests } = lobby;
   const activeUndoState = activeMatchId ? undoRequests[activeMatchId] : undefined;
 
