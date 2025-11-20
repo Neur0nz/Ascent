@@ -527,7 +527,7 @@ function App() {
                   <AnimatePresence mode="wait">
                     {activeTab === 'practice' && (
                       <MotionPanel key="panel-practice" {...panelMotionProps} style={{ width: '100%', height: '100%' }}>
-                        <SantoriniProvider enginePreference={auth.profile?.engine_preference ?? 'python'}>
+                        <SantoriniProvider enginePreference={auth.profile?.engine_preference ?? 'rust'}>
                           <PracticeTabContent onShowHistory={openHistory} />
                           <PracticeHistoryModal isOpen={isHistoryOpen} onClose={closeHistory} />
                         </SantoriniProvider>
@@ -541,7 +541,7 @@ function App() {
                       <MotionPanel key="panel-analysis" {...panelMotionProps} style={{ width: '100%', height: '100%' }}>
                         <SantoriniProvider
                           evaluationEnabled={true}
-                          enginePreference={auth.profile?.engine_preference ?? 'python'}
+                          enginePreference={auth.profile?.engine_preference ?? 'rust'}
                           persistState
                           storageNamespace="analysis"
                         >

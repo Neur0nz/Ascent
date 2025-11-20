@@ -51,9 +51,8 @@ type WorkerRequest =
 type WorkerResponse =
   | { id: number; success: true; result?: unknown }
   | { id: number; success: false; error: string };
-
 let bridge: SantoriniPythonBridge | null = null;
-let enginePreference: EnginePreference = 'python';
+let enginePreference: EnginePreference = 'rust';
 
 type EvalController = { cancelled: boolean };
 const workerGlobal = self as typeof self & { __santoriniEvalController?: EvalController };

@@ -171,7 +171,7 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
     if (profile) {
       setPendingSettings({
         displayName: profile.display_name,
-        enginePreference: profile.engine_preference ?? 'python',
+        enginePreference: profile.engine_preference ?? 'rust',
         showCoordinateLabels: profile.show_coordinate_labels ?? true,
         autoAnalyzeEnabled: profile.auto_analyze_games ?? false,
         autoAnalyzeDepth: profile.auto_analyze_depth ?? 800,
@@ -211,7 +211,7 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
       return false;
     }
     const nameChanged = pendingSettings.displayName.trim() !== profile.display_name;
-    const engineChanged = pendingSettings.enginePreference !== (profile.engine_preference ?? 'python');
+    const engineChanged = pendingSettings.enginePreference !== (profile.engine_preference ?? 'rust');
     const coordsChanged = pendingSettings.showCoordinateLabels !== (profile.show_coordinate_labels ?? true);
     const autoSettingsChanged =
       pendingSettings.autoAnalyzeEnabled !== (profile.auto_analyze_games ?? false) ||
@@ -268,7 +268,7 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
         changesSucceeded++;
       }
 
-      if (pendingSettings.enginePreference !== (profile.engine_preference ?? 'python')) {
+      if (pendingSettings.enginePreference !== (profile.engine_preference ?? 'rust')) {
         changesAttempted++;
         await updateEnginePreference(pendingSettings.enginePreference);
         changesSucceeded++;

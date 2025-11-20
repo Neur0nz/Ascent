@@ -179,7 +179,7 @@ export type EvaluationStatus =
 function useSantoriniInternal(options: UseSantoriniOptions = {}) {
   const {
     evaluationEnabled = true,
-    enginePreference = 'python',
+    enginePreference = 'rust',
     persistState = true,
     storageNamespace = 'practice',
   } = options;
@@ -261,9 +261,9 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
   const guidedSetupPlacementsRef = useRef<Array<[number, number]>>([]);
   const processingMoveRef = useRef<boolean>(false); // Prevent rapid clicks
   const workerClientRef = useRef<SantoriniWorkerClient | null>(null);
-  const workerPreferenceRef = useRef<EnginePreference>('python');
+  const workerPreferenceRef = useRef<EnginePreference>('rust');
   const analysisWorkerRef = useRef<SantoriniWorkerClient | null>(null);
-  const analysisWorkerPreferenceRef = useRef<EnginePreference>('python');
+  const analysisWorkerPreferenceRef = useRef<EnginePreference>('rust');
 
   useEffect(() => {
     if (evaluationStatus.state !== 'running') {

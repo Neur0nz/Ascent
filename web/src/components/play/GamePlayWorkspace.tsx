@@ -2223,7 +2223,7 @@ function GamePlayWorkspace({
           moves,
           minMoveIndex: MIN_EVAL_MOVE_INDEX,
           depth: Math.max(1, Math.round(autoAnalyzeDepth)),
-          enginePreference: auth.profile?.engine_preference ?? 'python',
+          enginePreference: auth.profile?.engine_preference ?? 'rust',
           matchLabel,
         });
         autoAnalysisMatchRef.current = jobKey;
@@ -2523,7 +2523,7 @@ function GamePlayWorkspace({
       {sessionMode === 'online' && isInProgress && (
         <SantoriniProvider
           evaluationEnabled={false}
-          enginePreference={auth.profile?.engine_preference ?? 'python'}
+          enginePreference={auth.profile?.engine_preference ?? 'rust'}
           persistState={false}
         >
           <ActiveMatchContent
@@ -2546,7 +2546,7 @@ function GamePlayWorkspace({
           canSendEmoji={canSendEmoji}
           onSendEmoji={handleSendEmoji}
           onPingOpponent={lobby.pingOpponent}
-          enginePreference={auth.profile?.engine_preference ?? 'python'}
+          enginePreference={auth.profile?.engine_preference ?? 'rust'}
         />
         </SantoriniProvider>
       )}

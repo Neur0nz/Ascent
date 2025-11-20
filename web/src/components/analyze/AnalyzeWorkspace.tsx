@@ -619,7 +619,7 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
         moves: loaded.moves,
         minMoveIndex: MIN_EVAL_MOVE_INDEX,
         depth: resolvedDepth,
-        enginePreference: auth.profile?.engine_preference ?? 'python',
+        enginePreference: auth.profile?.engine_preference ?? 'rust',
         matchLabel,
       });
       setEvaluationError(null);

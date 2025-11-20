@@ -287,7 +287,7 @@ interface CreateRuntimeOptions {
 }
 
 export async function createSantoriniRuntime(options: CreateRuntimeOptions): Promise<RuntimeResult> {
-  const { enginePreference = 'python' } = options ?? {};
+  const { enginePreference = 'rust' } = options ?? {};
   const predictor = await ensureOnnxPredictor();
 
   if (enginePreference === 'rust') {

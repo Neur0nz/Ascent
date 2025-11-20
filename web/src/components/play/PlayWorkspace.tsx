@@ -1565,7 +1565,7 @@ function PlayWorkspace({ auth }: { auth: SupabaseAuthState }) {
         connectionStates={lobby.connectionStates}
         currentUserId={auth.profile?.id ?? null}
         onlineEnabled={lobby.onlineEnabled}
-        enginePreference={auth.profile?.engine_preference ?? 'python'}
+        enginePreference={auth.profile?.engine_preference ?? 'rust'}
         undoRequests={lobby.undoRequests}
         onRequestUndo={lobby.requestUndo}
         onClearUndo={lobby.clearUndoRequest}
