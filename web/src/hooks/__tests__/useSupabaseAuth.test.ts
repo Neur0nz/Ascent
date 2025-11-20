@@ -65,7 +65,7 @@ const mockProfile: PlayerProfile = {
   games_played: 0,
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
-  engine_preference: 'python',
+  engine_preference: 'rust',
   show_coordinate_labels: true,
   auto_analyze_games: false,
   auto_analyze_depth: 800,
