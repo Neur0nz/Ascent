@@ -192,7 +192,13 @@ function EvaluationPanel({
     >
       {disclosure.isOpen ? (
         <>
-          <Flex justify="space-between" align="center" mb={4}>
+          <Flex
+            direction={{ base: 'column', md: 'row' }}
+            align={{ base: 'flex-start', md: 'center' }}
+            justify="space-between"
+            gap={{ base: 3, md: 0 }}
+            mb={4}
+          >
             <Box>
               <Heading size="md">AI Evaluation</Heading>
               <Text fontSize="xs" color={mutedText} mt={1}>
@@ -208,10 +214,17 @@ function EvaluationPanel({
                 </Link>
               </Text>
             </Box>
-            <HStack spacing={3}>
+            <Flex
+              flexWrap="wrap"
+              justify={{ base: 'flex-start', md: 'flex-end' }}
+              rowGap={2}
+              columnGap={3}
+              minW={0}
+            >
               <Select
                 size="sm"
                 maxW="160px"
+                width={{ base: '100%', sm: 'auto' }}
                 value={evalSelectValue}
                 onChange={(event) => {
                   const value = event.target.value;
@@ -229,10 +242,16 @@ function EvaluationPanel({
               <Button size="sm" variant="outline" onClick={disclosure.onToggle}>
                 Hide
               </Button>
-              <Button size="sm" colorScheme="teal" onClick={refreshEvaluation} isLoading={loading || runningEval} isDisabled={runningEval}>
+              <Button
+                size="sm"
+                colorScheme="teal"
+                onClick={refreshEvaluation}
+                isLoading={loading || runningEval}
+                isDisabled={runningEval}
+              >
                 Refresh
               </Button>
-            </HStack>
+            </Flex>
           </Flex>
           <Collapse in={disclosure.isOpen} animateOpacity>
             <Stack spacing={5}>

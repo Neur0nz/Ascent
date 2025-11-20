@@ -79,9 +79,9 @@ import { usePushSubscription } from '@hooks/usePushSubscription';
 import { shareMatchInvite } from '@/utils/shareInvite';
 
 const ALLOW_ONLINE_AI_MATCHES = true;
-const MotionCard = motion(Card);
-const MotionButton = motion(Button);
-const MotionTag = motion(
+const MotionCard = motion.create(Card);
+const MotionButton = motion.create(Button);
+const MotionTag = motion.create(
   forwardRef<HTMLButtonElement, TagProps & ButtonHTMLAttributes<HTMLButtonElement>>((props, ref) => (
     <Tag ref={ref} {...props} />
   )),

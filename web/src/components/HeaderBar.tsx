@@ -49,7 +49,7 @@ function HeaderBar({ activeTab, actions, auth, onNavigateToProfile }: HeaderBarP
   const tabSelectedColor = useColorModeValue('teal.800', 'teal.100');
   const tabHelperColor = useColorModeValue('gray.600', 'whiteAlpha.700');
   const { headerGradient, headerBorder, headerAccent } = useSurfaceTokens();
-  const MotionBox = motion(Box);
+  const MotionBox = motion.create(Box);
 
   const activeTabDetails = useMemo(() => NAV_TABS.find((tab) => tab.key === activeTab), [activeTab]);
 

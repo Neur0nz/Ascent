@@ -6,9 +6,12 @@ import type {
   EnginePreference,
   MatchMoveRecord,
   MatchRecord,
+  MatchRole,
   SantoriniMoveAction,
   SantoriniStateSnapshot,
 } from '@/types/match';
+import { getPlayerZeroRole } from '@/utils/matchAiDepth';
+import { orientEvaluationToCreator } from '@/utils/evaluationPerspective';
 
 type SnapshotEntry = {
   snapshot: SantoriniSnapshot;
@@ -194,6 +197,7 @@ export function EvaluationJobsProvider({ children }: { children: ReactNode }) {
       entries: SnapshotEntry[],
       depth: number | null,
       enginePreference: EnginePreference,
+      playerZeroRole: MatchRole,
     ) => {
       const controller = controllersRef.current.get(jobId);
       if (!controller) {
@@ -238,7 +242,8 @@ export function EvaluationJobsProvider({ children }: { children: ReactNode }) {
 
           const valueArray = evaluation?.value;
           const rawValue = Array.isArray(valueArray) && valueArray.length > 0 ? Number(valueArray[0]) : null;
-          const point = toEvaluationPoint(entry, rawValue);
+          const creatorValue = orientEvaluationToCreator(rawValue, playerZeroRole);
+          const point = toEvaluationPoint(entry, creatorValue);
 
           updateJob(jobId, (job) => {
             const evaluatedCount = Math.min(job.totalPositions, job.evaluatedCount + 1);
@@ -323,10 +328,11 @@ export function EvaluationJobsProvider({ children }: { children: ReactNode }) {
         points: [],
       };
 
+      const playerZeroRole = getPlayerZeroRole(args.match);
       controllersRef.current.set(jobId, { cancelled: false });
       setJobs((prev) => ({ ...prev, [jobId]: job }));
 
-      void runJob(jobId, filteredEntries, args.depth, args.enginePreference);
+      void runJob(jobId, filteredEntries, args.depth, args.enginePreference, playerZeroRole);
 
       return job;
     },

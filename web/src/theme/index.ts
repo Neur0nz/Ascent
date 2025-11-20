@@ -60,7 +60,7 @@ const components = {
 const styles = {
   global: {
     '*': {
-      '-webkit-tap-highlight-color': 'transparent',
+      WebkitTapHighlightColor: 'transparent',
     },
   },
 };

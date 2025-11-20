@@ -30,7 +30,7 @@ import type { MatchChatAuthor, MatchChatMessage, MatchChatReaction } from '@hook
 import { FaThumbsUp } from 'react-icons/fa';
 import { motion } from 'framer-motion';
 
-const MotionBox = motion(Box);
+const MotionBox = motion.create(Box);
 
 interface MatchChatPanelProps {
   matchId: string | null;

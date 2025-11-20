@@ -70,6 +70,7 @@ import type { EvaluationSeriesPoint } from '@/types/evaluation';
 import type { SupabaseAuthState } from '@hooks/useSupabaseAuth';
 import type { LobbyMatch } from '@hooks/useMatchLobby';
 import { useEvaluationJobs } from '@hooks/useEvaluationJobs';
+import { orientEvaluationToCreator } from '@/utils/evaluationPerspective';
 
 interface LoadedAnalysis {
   match: MatchRecord;
@@ -297,6 +298,50 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
   const oppositeStartRole = getOppositeRole(playerZeroRole);
   const greenDescriptor = `Green (starting player – ${describeRoleName(playerZeroRole)})`;
   const redDescriptor = `Red (other player – ${describeRoleName(oppositeStartRole)})`;
+
+  const evaluationForAnalysis = useMemo(() => {
+    const orientedValue = orientEvaluationToCreator(santorini.evaluation.value, playerZeroRole);
+    const hasOrientedValue = Number.isFinite(orientedValue);
+    const numericValue = hasOrientedValue && orientedValue != null ? Number(orientedValue) : 0;
+    const label = hasOrientedValue
+      ? numericValue >= 0
+        ? `+${numericValue.toFixed(3)}`
+        : numericValue.toFixed(3)
+      : santorini.evaluation.label;
+
+    const baseAdvantage = santorini.evaluation.advantage;
+    const advantage =
+      baseAdvantage === 'Placement phase' || baseAdvantage === 'Error'
+        ? baseAdvantage
+        : numericValue > 0
+          ? 'Creator ahead'
+          : numericValue < 0
+            ? 'Opponent ahead'
+            : 'Balanced';
+
+    return {
+      ...santorini.evaluation,
+      value: numericValue,
+      label,
+      advantage,
+    };
+  }, [playerZeroRole, santorini.evaluation]);
+
+  const topMovesForAnalysis = useMemo(
+    () =>
+      santorini.topMoves.map((move) => ({
+        ...move,
+        eval:
+          typeof move.eval === 'number'
+            ? orientEvaluationToCreator(move.eval, playerZeroRole) ?? undefined
+            : move.eval,
+        delta:
+          typeof move.delta === 'number'
+            ? orientEvaluationToCreator(move.delta, playerZeroRole) ?? undefined
+            : move.delta,
+      })),
+    [playerZeroRole, santorini.topMoves],
+  );
 
   // Initialize AI engine on mount
   useEffect(() => {
@@ -1074,9 +1119,9 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
                     {/* AI Evaluation Panel */}
                     <EvaluationPanel
                       loading={santorini.loading}
-                      evaluation={santorini.evaluation}
+                      evaluation={evaluationForAnalysis}
                       evaluationStatus={santorini.evaluationStatus}
-                      topMoves={santorini.topMoves}
+                      topMoves={topMovesForAnalysis}
                       calcOptionsBusy={santorini.calcOptionsBusy}
                       evaluationDepth={santorini.evaluationDepth}
                       optionsDepth={santorini.optionsDepth}
