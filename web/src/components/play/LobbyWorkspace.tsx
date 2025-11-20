@@ -31,6 +31,7 @@ import {
   Heading,
   HStack,
   Icon,
+  IconButton,
   Input,
   Modal,
   ModalBody,
@@ -63,6 +64,7 @@ import {
 import type { TagProps } from '@chakra-ui/react';
 import { motion } from 'framer-motion';
 import { AddIcon, ArrowForwardIcon, LockIcon, RepeatIcon, SearchIcon, StarIcon, TimeIcon, ViewIcon } from '@chakra-ui/icons';
+import { MdShare } from 'react-icons/md';
 import type { SupabaseAuthState } from '@hooks/useSupabaseAuth';
 import type { CreateMatchPayload, LobbyMatch, StartingPlayer, MatchOpponentType } from '@hooks/useMatchLobby';
 import type { MatchStatus } from '@/types/match';
@@ -93,6 +95,59 @@ function formatDate(value: string) {
   return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+async function shareMatchInvite({
+  joinLink,
+  joinKey,
+  toast,
+  fallbackCopy,
+}: {
+  joinLink: string;
+  joinKey?: string;
+  toast: ReturnType<typeof useToast>;
+  fallbackCopy: () => void | Promise<void>;
+}) {
+  if (!joinLink) {
+    return;
+  }
+
+  const title = 'Join my Santorini match';
+  const text = joinKey
+    ? `Join my Santorini match with code ${joinKey} on Ascent.`
+    : 'Join my Santorini match on Ascent.';
+
+  const navigatorRef = typeof navigator !== 'undefined' ? navigator : null;
+  try {
+    if (navigatorRef?.share) {
+      await navigatorRef.share({ title, text, url: joinLink });
+      toast({
+        status: 'success',
+        title: 'Invite shared',
+        description: 'Sent via your app with a rich preview.',
+        duration: 2500,
+        isClosable: true,
+      });
+    } else {
+      await Promise.resolve(fallbackCopy());
+      toast({
+        status: 'success',
+        title: 'Link copied',
+        description: 'Paste it into WhatsApp, Discord, or anywhere else.',
+        duration: 2500,
+        isClosable: true,
+      });
+    }
+  } catch (error) {
+    console.error('Failed to share match invite', error);
+    toast({
+      status: 'error',
+      title: 'Unable to share invite',
+      description: 'Try again or copy the link manually.',
+      duration: 3000,
+      isClosable: true,
+    });
+  }
+}
+
 const NOTIFICATION_PROMPT_STORAGE_KEY = 'santorini:notificationsPrompted';
 
 function ActiveGameNotice({ 
@@ -108,8 +163,24 @@ function ActiveGameNotice({
   const joinLink = buildMatchJoinLink(joinKey);
   const { hasCopied, onCopy } = useClipboard(joinLink);
   const hasShareLink = isWaiting && Boolean(joinKey);
+  const [sharing, setSharing] = useState(false);
+  const toast = useToast();
   
   const opponentName = match.opponent?.display_name || 'an opponent';
+
+  const handleShare = useCallback(async () => {
+    if (!hasShareLink) {
+      return;
+    }
+    setSharing(true);
+    await shareMatchInvite({
+      joinLink,
+      joinKey,
+      toast,
+      fallbackCopy: onCopy,
+    });
+    setSharing(false);
+  }, [hasShareLink, joinLink, joinKey, onCopy, toast]);
   
   return (
     <Alert 
@@ -141,6 +212,19 @@ function ActiveGameNotice({
             >
               {hasCopied ? 'Link copied' : 'Copy invite link'}
             </Button>
+          </Tooltip>
+        )}
+        {hasShareLink && (
+          <Tooltip label="Share with WhatsApp, Discord, or any app" hasArrow>
+            <IconButton
+              aria-label="Share invite link"
+              icon={<MdShare />}
+              variant="ghost"
+              colorScheme="teal"
+              onClick={() => void handleShare()}
+              isLoading={sharing}
+              isDisabled={sharing}
+            />
           </Tooltip>
         )}
         <Button 
@@ -523,6 +607,22 @@ function PendingMatchActions({
   const joinLink = buildMatchJoinLink(joinKey);
   const { hasCopied, onCopy } = useClipboard(joinLink);
   const hasJoinLink = Boolean(joinKey);
+  const [sharing, setSharing] = useState(false);
+  const toast = useToast();
+
+  const handleShare = useCallback(async () => {
+    if (!hasJoinLink) {
+      return;
+    }
+    setSharing(true);
+    await shareMatchInvite({
+      joinLink,
+      joinKey,
+      toast,
+      fallbackCopy: onCopy,
+    });
+    setSharing(false);
+  }, [hasJoinLink, joinLink, joinKey, onCopy, toast]);
 
   return (
     <ButtonGroup size="sm" variant="outline" spacing={2}>
@@ -542,6 +642,21 @@ function PendingMatchActions({
         >
           {hasCopied ? 'Link copied' : 'Copy invite link'}
         </Button>
+      </Tooltip>
+      <Tooltip
+        label="Share an invite with a rich preview"
+        hasArrow
+        isDisabled={!hasJoinLink}
+      >
+        <IconButton
+          aria-label="Share match invite"
+          icon={<MdShare />}
+          variant="ghost"
+          colorScheme="teal"
+          onClick={() => void handleShare()}
+          isDisabled={!hasJoinLink || sharing}
+          isLoading={sharing}
+        />
       </Tooltip>
       <Button
         colorScheme="red"
