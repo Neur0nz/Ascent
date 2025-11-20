@@ -1255,7 +1255,10 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
             const expectedPlayerId =
               expectedRole === 'creator' ? creator_id ?? null : opponent_id ?? null;
 
-            if (expectedPlayerId && broadcastMove.player_id !== expectedPlayerId) {
+            // In AI matches, the creator controls both sides, so skip strict turn ownership checks
+            const skipTurnGuard = isAiMatch(prev.activeMatch);
+
+            if (!skipTurnGuard && expectedPlayerId && broadcastMove.player_id !== expectedPlayerId) {
               console.warn('⚡ BROADCAST: Player/turn mismatch for optimistic apply, deferring to DB', {
                 moveIndex: normalizedIndex,
                 expectedPlayerId,
