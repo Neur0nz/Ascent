@@ -11,6 +11,8 @@ import { createCancelMaskFromSelector } from '@/utils/moveSelectorMasks';
 import { isSantoriniMoveAction } from '@/utils/matchActions';
 import { useToast } from '@chakra-ui/react';
 import { GameOutcomeToast } from '@/components/GameOutcomeToast';
+import { GameOutcomeToast } from '@/components/GameOutcomeToast';
+import { GameOutcomeToast } from '@/components/GameOutcomeToast';
 
 export interface UseOnlineSantoriniOptions {
   match: LobbyMatch | null;

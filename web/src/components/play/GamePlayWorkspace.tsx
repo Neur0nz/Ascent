@@ -86,6 +86,7 @@ import { rememberLastAnalyzedMatch } from '@/utils/analysisStorage';
 
 const K_FACTOR = 32;
 const NOTIFICATION_PROMPT_STORAGE_KEY = 'santorini:notificationsPrompted';
+const PLAYER_REACTION_SCROLL_DEBOUNCE_MS = 250;
 const MotionBox = motion.create(Box);
 
 const formatNameWithRating = (profile: PlayerProfile | null | undefined, fallback: string): string => {
@@ -1126,6 +1127,7 @@ function ActiveMatchContent({
           align="stretch"
         >
           <PlayerClockCard
+            ref={creatorCardRef}
             label={creatorClockLabel}
             clock={creatorClock}
             active={creatorTurnActive}
@@ -1142,6 +1144,7 @@ function ActiveMatchContent({
             pingHelperText={role === 'opponent' ? pingHelperText : undefined}
           />
           <PlayerClockCard
+            ref={opponentCardRef}
             label={opponentClockLabel}
             clock={opponentClock}
             active={opponentTurnActive}
@@ -1580,7 +1583,7 @@ function PlayerClockCard({
               isDisabled={pingDisabled}
               isLoading={pingBusy}
             >
-              Notify opponent
+              {pingCooldownRemaining > 0 ? `Notify (${Math.ceil(pingCooldownRemaining / 1000)}s)` : 'Notify opponent'}
             </Button>
             {pingHelperText ? (
               <Text fontSize="xs" color={mutedText}>
@@ -1617,6 +1620,7 @@ function PlayerClockCard({
 
   return (
     <Box
+      ref={ref}
       flex="1 1 0"
       minW={{ base: '0', md: '220px' }}
       p={cardPadding ?? 3}
@@ -1932,6 +1936,8 @@ function GamePlayWorkspace({
   const currentProfileId = auth.profile?.id ?? null;
   const completionToastKeyRef = useRef<string | null>(null);
   const autoAnalysisMatchRef = useRef<string | null>(null);
+  const creatorCardRef = useRef<HTMLDivElement>(null);
+  const opponentCardRef = useRef<HTMLDivElement>(null);
   const { jobs, startJob } = useEvaluationJobs();
   const rematchOffers = useMemo(
     () =>
@@ -2326,16 +2332,52 @@ function GamePlayWorkspace({
     }
   }, [lobby.enableOnline, lobby.sessionMode]);
 
-  // Auto-select first in-progress game if none is selected
   useEffect(() => {
-    if (sessionMode === 'online' && !lobby.activeMatch && lobby.myMatches.length > 0) {
-      const inProgressGames = lobby.myMatches.filter(m => m.status === 'in_progress');
-      if (inProgressGames.length > 0) {
-        console.log('Auto-selecting first in-progress game:', inProgressGames[0].id);
-        lobby.setActiveMatch(inProgressGames[0].id);
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const handleReaction = (
+      reactions: EmojiReaction[],
+      cardRef: React.RefObject<HTMLDivElement>,
+      isSelf: boolean,
+    ) => {
+      // Only scroll if there's a new reaction and it's not from ourselves
+      if (reactions.length > 0 && !isSelf) {
+        // Debounce to prevent rapid scrolling if many emojis arrive at once
+        if (debounceTimer) {
+          clearTimeout(debounceTimer);
+        }
+        debounceTimer = setTimeout(() => {
+          const cardElement = cardRef.current;
+          if (cardElement) {
+            const rect = cardElement.getBoundingClientRect();
+            // Check if the element is outside the viewport vertically
+            const isOutsideViewport = rect.top < 0 || rect.bottom > (window.innerHeight || document.documentElement.clientHeight);
+
+            if (isOutsideViewport) {
+              cardElement.scrollIntoView({
+                behavior: 'smooth',
+                block: 'nearest',
+              });
+            }
+          }
+        }, PLAYER_REACTION_SCROLL_DEBOUNCE_MS);
       }
+    };
+
+    // Handle creator reactions (if current user is opponent)
+    if (lobby.activeRole === 'opponent') {
+      handleReaction(creatorReactions, creatorCardRef, false);
     }
-  }, [sessionMode, lobby.activeMatch, lobby.myMatches, lobby.setActiveMatch]);
+    // Handle opponent reactions (if current user is creator)
+    if (lobby.activeRole === 'creator') {
+      handleReaction(opponentReactions, opponentCardRef, false);
+    }
+
+    return () => {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+    };
+  }, [creatorReactions, opponentReactions, lobby.activeRole]);
 
   // Check if we have an active online game or waiting
   const hasActiveMatch = sessionMode === 'online' && lobby.activeMatch;
