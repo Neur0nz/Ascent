@@ -27,10 +27,21 @@ create index if not exists web_push_subscriptions_auth_user_id_idx on public.web
 
 alter table public.web_push_subscriptions enable row level security;
 
-create policy if not exists "Allow users to manage their push subscriptions" on public.web_push_subscriptions
-  for all
-  using (auth.uid() = auth_user_id)
-  with check (auth.uid() = auth_user_id);
+-- CREATE POLICY does not support IF NOT EXISTS; make it idempotent manually.
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public'
+      and tablename = 'web_push_subscriptions'
+      and policyname = 'Allow users to manage their push subscriptions'
+  ) then
+    create policy "Allow users to manage their push subscriptions" on public.web_push_subscriptions
+      for all
+      using (auth.uid() = auth_user_id)
+      with check (auth.uid() = auth_user_id);
+  end if;
+end $$;
 
 drop trigger if exists set_web_push_updated_at on public.web_push_subscriptions;
 

@@ -108,7 +108,7 @@ function ActiveGameNotice({
 }) {
   const { cardBorder } = useSurfaceTokens();
   const isWaiting = match.status === 'waiting_for_opponent';
-  const joinKey = match.private_join_code ?? match.id;
+  const joinKey = match.short_code;
   const joinLink = buildMatchJoinLink(joinKey);
   const { hasCopied, onCopy } = useClipboard(joinLink);
   const hasShareLink = isWaiting && Boolean(joinKey);
@@ -408,7 +408,7 @@ export function buildMatchSettingsBadges(match: LobbyMatch): MatchBadgeConfig[] 
     tooltip: match.rated ? 'This match affects ladder ratings.' : 'No rating impact — perfect for practice.',
   });
 
-  const joinCodeHint = match.private_join_code ? `Join code ${match.private_join_code}` : null;
+  const joinCodeHint = match.short_code ? `Join code ${match.short_code}` : null;
 
   if (match.clock_initial_seconds > 0 || match.clock_increment_seconds > 0) {
     const minutes = Math.max(1, Math.round(match.clock_initial_seconds / 60));
@@ -587,7 +587,7 @@ function PendingMatchActions({
   onCancel: () => void;
   isCancelling: boolean;
 }) {
-  const joinKey = match.private_join_code ?? match.id;
+  const joinKey = match.short_code;
   const joinLink = buildMatchJoinLink(joinKey);
   const { hasCopied, onCopy } = useClipboard(joinLink);
   const hasJoinLink = Boolean(joinKey);
@@ -1098,8 +1098,8 @@ function PendingMatches({
               ? 'Share the invite link or code while you wait for an opponent.'
               : 'Waiting for the host to start the match.';
             const metaParts: string[] = [];
-            if (match.private_join_code) {
-              metaParts.push(`Code: ${match.private_join_code}`);
+            if (match.short_code) {
+              metaParts.push(`Code: ${match.short_code}`);
             }
             metaParts.push(`Created ${formatDate(match.created_at)}`);
             const meta = metaParts.join(' • ');

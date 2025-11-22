@@ -10,6 +10,7 @@ import { mapPlayerIndexToRole } from '@/utils/playerRoleMapping';
 import { createCancelMaskFromSelector } from '@/utils/moveSelectorMasks';
 import { isSantoriniMoveAction } from '@/utils/matchActions';
 import { useToast } from '@chakra-ui/react';
+import { GameOutcomeToast } from '@/components/GameOutcomeToast';
 
 export interface UseOnlineSantoriniOptions {
   match: LobbyMatch | null;
@@ -678,10 +679,15 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
     }
     const iWon = winnerRole === role;
     toast({
-      title: iWon ? 'Win on time' : 'Time forfeited',
-      description: iWon ? 'Your opponent ran out of time.' : 'You ran out of time.',
-      status: iWon ? 'success' : 'error',
       duration: 5000,
+      render: ({ onClose }) => (
+        <GameOutcomeToast
+          title={iWon ? 'Win on time' : 'Time forfeited'}
+          description={iWon ? 'Your opponent ran out of time.' : 'You ran out of time.'}
+          status={iWon ? 'success' : 'error'}
+          onClose={onClose}
+        />
+      ),
     });
     onGameComplete?.(winnerId);
   }, [clock.creatorMs, clock.opponentMs, clockEnabled, currentTurn, match, onGameComplete, placementComplete, role, toast]);
@@ -766,9 +772,14 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       .catch((error) => {
         console.error('useOnlineSantorini: Failed to submit move', error);
         toast({
-          title: 'Failed to send move',
-          status: 'error',
-          description: error instanceof Error ? error.message : 'Unknown error',
+          render: ({ onClose }) => (
+            <GameOutcomeToast
+              title="Failed to send move"
+              description={error instanceof Error ? error.message : 'Unknown error'}
+              status="error"
+              onClose={onClose}
+            />
+          ),
         });
         pendingLocalMovesRef.current = [];
         placementBatchRef.current = { actions: [], snapshotBefore: null };
@@ -814,18 +825,30 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
         return;
       }
       if (!role) {
-        toast({ title: 'Loading match...', status: 'info' });
+        toast({
+          render: ({ onClose }) => (
+            <GameOutcomeToast title="Loading match..." status="info" onClose={onClose} />
+          ),
+        });
         return;
       }
       if (match.status !== 'in_progress') {
-        toast({ title: 'Waiting for opponent', status: 'info' });
+        toast({
+          render: ({ onClose }) => (
+            <GameOutcomeToast title="Waiting for opponent" status="info" onClose={onClose} />
+          ),
+        });
         return;
       }
       
       // Block moves during sync (critical guard!)
       if (syncInProgressRef.current) {
         debugLog('useOnlineSantorini: Cannot make move - sync in progress');
-        toast({ title: 'Please wait - syncing game state', status: 'info' });
+        toast({
+          render: ({ onClose }) => (
+            <GameOutcomeToast title="Please wait - syncing game state" status="info" onClose={onClose} />
+          ),
+        });
         return;
       }
       
@@ -836,7 +859,11 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       }
       
       if (currentTurn !== role) {
-        toast({ title: "It's not your turn", status: 'warning' });
+        toast({
+          render: ({ onClose }) => (
+            <GameOutcomeToast title="It's not your turn" status="warning" onClose={onClose} />
+          ),
+        });
         return;
       }
 
@@ -848,7 +875,11 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
           currentMatchId: match.id,
           currentMovesLength: moves.length,
         });
-        toast({ title: 'Please wait - syncing game state', status: 'info' });
+        toast({
+          render: ({ onClose }) => (
+            <GameOutcomeToast title="Please wait - syncing game state" status="info" onClose={onClose} />
+          ),
+        });
         return;
       }
 
@@ -862,7 +893,11 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       const hasPendingMoves = pendingLocalMovesRef.current.length > 0;
       const canQueueDuringPlacement = hasPendingMoves && isPlacementPhase && placementRole === role;
       if (hasPendingMoves && !canQueueDuringPlacement) {
-        toast({ title: 'Please wait - syncing previous move', status: 'info' });
+        toast({
+          render: ({ onClose }) => (
+            <GameOutcomeToast title="Please wait - syncing previous move" status="info" onClose={onClose} />
+          ),
+        });
         return;
       }
       
@@ -888,11 +923,19 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       const placementAction = y * 5 + x;
       if (isPlacementPhase) {
         if (placementRole && placementRole !== role) {
-          toast({ title: "It's not your placement turn", status: 'warning' });
+          toast({
+            render: ({ onClose }) => (
+              <GameOutcomeToast title="It's not your placement turn" status="warning" onClose={onClose} />
+            ),
+          });
           return;
         }
         if (placementAction >= validMoves.length || !validMoves[placementAction]) {
-          toast({ title: 'Invalid placement', status: 'warning' });
+          toast({
+            render: ({ onClose }) => (
+              <GameOutcomeToast title="Invalid placement" status="warning" onClose={onClose} />
+            ),
+          });
           return;
         }
         processingMoveRef.current = true;
@@ -952,7 +995,11 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
           }
         } catch (error) {
           console.error('useOnlineSantorini: Move failed', error);
-          toast({ title: 'Invalid move', status: 'error' });
+          toast({
+            render: ({ onClose }) => (
+              <GameOutcomeToast title="Invalid move" status="error" onClose={onClose} />
+            ),
+          });
         } finally {
           processingMoveRef.current = false;
         }
@@ -990,7 +1037,11 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
         
         if (!clicked) {
           debugWarn('❌ Invalid selection at', { y, x }, 'stage:', updatedStage);
-          toast({ title: 'Invalid selection', status: 'warning' });
+          toast({
+            render: ({ onClose }) => (
+              <GameOutcomeToast title="Invalid selection" status="warning" onClose={onClose} />
+            ),
+          });
           return;
         }
         
@@ -1044,7 +1095,11 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
             setPendingMoveVersion(v => v + 1); // Trigger submission effect
           } catch (error) {
             console.error('useOnlineSantorini: Move failed', error);
-            toast({ title: 'Move failed', status: 'error' });
+            toast({
+              render: ({ onClose }) => (
+                <GameOutcomeToast title="Move failed" status="error" onClose={onClose} />
+              ),
+            });
             moveSelector.reset();
             // Restore selectable state on error
             const nextSel = computeSelectable(
@@ -1090,17 +1145,27 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
     if (winnerRole) {
       const isUserWinner = winnerRole === role;
       toast({
-        title: isUserWinner ? 'Victory!' : 'Defeat',
-        description: isUserWinner ? 'You reached level 3.' : 'Your opponent reached level 3.',
-        status: isUserWinner ? 'success' : 'error',
         duration: 4000,
+        render: ({ onClose }) => (
+          <GameOutcomeToast
+            title={isUserWinner ? 'Victory!' : 'Defeat'}
+            description={isUserWinner ? 'You reached level 3.' : 'Your opponent reached level 3.'}
+            status={isUserWinner ? 'success' : 'error'}
+            onClose={onClose}
+          />
+        ),
       });
     } else {
       toast({
-        title: 'Drawn game',
-        description: 'Neither player could secure a win.',
-        status: 'info',
         duration: 4000,
+        render: ({ onClose }) => (
+          <GameOutcomeToast
+            title="Drawn game"
+            description="Neither player could secure a win."
+            status="info"
+            onClose={onClose}
+          />
+        ),
       });
     }
 
