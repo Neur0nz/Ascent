@@ -273,7 +273,7 @@ async function ensureAiProfile(client: ReturnType<typeof createClient>) {
   const { snapshot } = SantoriniEngine.createInitial(startingPlayerIndex, initialMetadata);
   console.log('Creating match with starting role:', playerZeroRole, 'from option:', startingPlayerOption);
 
-  const insertPayload = {
+  const baseInsertPayload = {
     creator_id: profile.id,
     opponent_id: opponentId,
     visibility,
@@ -283,15 +283,33 @@ async function ensureAiProfile(client: ReturnType<typeof createClient>) {
     clock_increment_seconds: clockIncrementSeconds,
     initial_state: snapshot,
     is_ai_match: isAiMatch,
-    ai_depth: aiDepth,
     ...(opponentType === 'ai' ? { status: 'in_progress' as const } : {}),
   };
 
-  const { data: match, error: insertError } = await supabase
-    .from('matches')
-    .insert(insertPayload)
-    .select(MATCH_WITH_PROFILES)
-    .single();
+  const includeAiDepth = opponentType === 'ai' && typeof aiDepth === 'number';
+  const payloadWithDepth = includeAiDepth ? { ...baseInsertPayload, ai_depth: aiDepth } : baseInsertPayload;
+
+  const attemptInsert = async (payload: Record<string, unknown>) =>
+    supabase.from('matches').insert(payload).select(MATCH_WITH_PROFILES).single();
+
+  let matchResult = await attemptInsert(payloadWithDepth);
+  let match = matchResult.data;
+  let insertError = matchResult.error;
+
+  // Retry without ai_depth if the column is missing in the current schema (older environments).
+  const missingAiDepth =
+    insertError &&
+    includeAiDepth &&
+    ['42703', 'PGRST204'].includes((insertError as { code?: string }).code ?? '') ||
+    (insertError as { hint?: string; details?: string })?.hint?.includes('ai_depth') ||
+    (insertError as { hint?: string; details?: string })?.details?.includes('ai_depth');
+
+  if (missingAiDepth) {
+    console.warn('create-match: ai_depth column missing, retrying insert without ai_depth');
+    matchResult = await attemptInsert(baseInsertPayload);
+    match = matchResult.data;
+    insertError = matchResult.error;
+  }
 
   if (insertError || !match) {
     const postgresError = insertError as { code?: string; message?: string; details?: string } | null;
