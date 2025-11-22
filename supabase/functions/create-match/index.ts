@@ -22,13 +22,10 @@ interface CreateMatchRequest {
 }
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 const AI_PLAYER_ID = Deno.env.get('AI_PLAYER_ID') ?? '00000000-0000-0000-0000-00000000a11a';
 const DEFAULT_AI_DEPTH = 200;
-
-if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
-  throw new Error('Missing Supabase configuration environment variables');
-}
 
 function jsonResponse(body: Record<string, unknown>, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -88,6 +85,11 @@ serve(async (req) => {
     return new Response('Method Not Allowed', { status: 405 });
   }
 
+  if (!SUPABASE_URL || (!SUPABASE_ANON_KEY && !SERVICE_ROLE_KEY)) {
+    console.error('create-match: missing SUPABASE_URL or API keys');
+    return jsonResponse({ error: 'Service misconfigured' }, { status: 500 });
+  }
+
   const authHeader = req.headers.get('Authorization');
   if (!authHeader) {
     return jsonResponse({ error: 'Missing authorization token' }, { status: 401 });
@@ -142,13 +144,27 @@ serve(async (req) => {
   const clockInitialSeconds = hasClock ? Math.max(0, Math.round(initialMinutes * 60)) : 0;
   const clockIncrementSeconds = hasClock ? Math.max(0, Math.round(incrementSeconds)) : 0;
 
-  const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+  const supabaseAnonKey = SUPABASE_ANON_KEY ?? SERVICE_ROLE_KEY!;
+  const supabaseAdminKey = SERVICE_ROLE_KEY ?? supabaseAnonKey;
+  // Client for queries that should run as the authenticated user (respecting RLS)
+  const supabase = createClient(SUPABASE_URL, supabaseAnonKey, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
     auth: { persistSession: false },
   });
 
+  // Admin client is only needed for provisioning the AI profile; fallback to user client if service key missing.
+  const supabaseAdmin =
+    SERVICE_ROLE_KEY && SUPABASE_URL
+      ? createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } })
+      : supabase;
+
   if (opponentType === 'ai') {
+    if (!SERVICE_ROLE_KEY) {
+      console.error('AI match requested but SUPABASE_SERVICE_ROLE_KEY is not configured');
+      return jsonResponse({ error: 'AI opponent unavailable right now' }, { status: 503 });
+    }
     try {
-      await ensureAiProfile(supabase);
+      await ensureAiProfile(supabaseAdmin);
     } catch (error) {
       console.error('Failed to ensure AI profile exists', error);
       return jsonResponse({ error: 'Failed to provision AI opponent' }, { status: 500 });
