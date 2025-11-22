@@ -1,4 +1,4 @@
-import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState, forwardRef } from 'react';
 import {
   Alert,
   AlertDescription,
@@ -1142,6 +1142,7 @@ function ActiveMatchContent({
             pingBusy={pingBusy}
             pingDisabled={pingDisabled}
             pingHelperText={role === 'opponent' ? pingHelperText : undefined}
+            pingCooldownRemaining={pingCooldownRemaining}
           />
           <PlayerClockCard
             ref={opponentCardRef}
@@ -1159,6 +1160,7 @@ function ActiveMatchContent({
             pingBusy={pingBusy}
             pingDisabled={pingDisabled}
             pingHelperText={role === 'creator' ? pingHelperText : undefined}
+            pingCooldownRemaining={pingCooldownRemaining}
           />
         </Stack>
       </Stack>
@@ -1437,9 +1439,10 @@ interface PlayerClockCardProps {
   pingBusy?: boolean;
   pingDisabled?: boolean;
   pingHelperText?: string | null;
+  pingCooldownRemaining?: number;
 }
 
-function PlayerClockCard({
+const PlayerClockCard = forwardRef<HTMLDivElement, PlayerClockCardProps>(({
   label,
   clock,
   active,
@@ -1454,7 +1457,7 @@ function PlayerClockCard({
   pingBusy,
   pingDisabled,
   pingHelperText,
-}: PlayerClockCardProps) {
+}: PlayerClockCardProps, ref: React.Ref<HTMLDivElement>) => {
   const { cardBorder, mutedText, strongText } = useSurfaceTokens();
   const activeBg = useColorModeValue('teal.50', 'teal.900');
   const inactiveBg = useColorModeValue('white', 'whiteAlpha.100');
@@ -1658,7 +1661,7 @@ function PlayerClockCard({
       )}
     </Box>
   );
-}
+}); // Closing for forwardRef
 
 function NoActiveGamePrompt({ onNavigateToLobby }: { onNavigateToLobby?: () => void }) {
   const { cardBg, cardBorder, mutedText } = useSurfaceTokens();

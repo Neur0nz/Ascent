@@ -108,8 +108,8 @@ function ActiveGameNotice({
 }) {
   const { cardBorder } = useSurfaceTokens();
   const isWaiting = match.status === 'waiting_for_opponent';
-  const joinKey = match.short_code;
-  const joinLink = buildMatchJoinLink(joinKey);
+  const joinKey = match.private_join_code;
+  const joinLink = joinKey ? buildMatchJoinLink(joinKey) : '';
   const { hasCopied, onCopy } = useClipboard(joinLink);
   const hasShareLink = isWaiting && Boolean(joinKey);
   const [sharing, setSharing] = useState(false);
@@ -124,7 +124,7 @@ function ActiveGameNotice({
     setSharing(true);
     await shareMatchInvite({
       joinLink,
-      joinKey,
+      joinKey: joinKey ?? undefined,
       toast,
       fallbackCopy: onCopy,
     });
@@ -588,7 +588,7 @@ function PendingMatchActions({
   isCancelling: boolean;
 }) {
   const joinKey = match.short_code;
-  const joinLink = buildMatchJoinLink(joinKey);
+  const joinLink = joinKey ? buildMatchJoinLink(joinKey) : '';
   const { hasCopied, onCopy } = useClipboard(joinLink);
   const hasJoinLink = Boolean(joinKey);
   const [sharing, setSharing] = useState(false);

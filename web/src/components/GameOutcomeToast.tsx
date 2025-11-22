@@ -1,12 +1,12 @@
 import { motion } from 'framer-motion';
-import { Box, Text, useColorModeValue } from '@chakra-ui/react';
+import { Box, Text, useColorModeValue, CloseButton } from '@chakra-ui/react';
 import { CheckCircleIcon, WarningIcon, InfoIcon } from '@chakra-ui/icons';
 import type { ToastProps } from '@chakra-ui/react';
 
-interface GameOutcomeToastProps extends ToastProps {
+export interface GameOutcomeToastProps extends ToastProps {
   title: string;
-  description: string;
-  status: 'success' | 'error' | 'info';
+  description?: string;
+  status: 'success' | 'error' | 'info' | 'warning';
 }
 
 const statusMap = {
@@ -25,9 +25,14 @@ const statusMap = {
     color: 'blue.300',
     bgColor: 'blue.700',
   },
+  warning: {
+    icon: WarningIcon,
+    color: 'orange.300',
+    bgColor: 'orange.700',
+  },
 };
 
-export const GameOutcomeToast = ({ title, description, status, ...rest }: GameOutcomeToastProps) => {
+export const GameOutcomeToast = ({ title, description, status, onClose }: GameOutcomeToastProps) => {
   const { icon: Icon, color, bgColor } = statusMap[status];
   const textColor = useColorModeValue('white', 'gray.100');
 
@@ -48,15 +53,15 @@ export const GameOutcomeToast = ({ title, description, status, ...rest }: GameOu
         color={textColor}
         maxW="md"
         minW="xs"
-        {...rest}
       >
         <Icon w={6} h={6} color={color} mr={3} />
         <Box>
           <Text fontWeight="bold" fontSize="lg">
             {title}
           </Text>
-          <Text fontSize="sm">{description}</Text>
+          {description && <Text fontSize="sm">{description}</Text>}
         </Box>
+        <CloseButton size="sm" onClick={onClose} ml="auto" />
       </Box>
     </motion.div>
   );

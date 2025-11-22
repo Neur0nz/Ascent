@@ -40,6 +40,7 @@ export interface MatchRecord {
   visibility: MatchVisibility;
   rated: boolean;
   private_join_code: string | null;
+  short_code?: string;
   clock_initial_seconds: number;
   clock_increment_seconds: number;
   status: MatchStatus;
