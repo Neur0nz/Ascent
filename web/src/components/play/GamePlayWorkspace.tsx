@@ -128,6 +128,8 @@ function ActiveMatchContent({
   onSendEmoji,
   onPingOpponent,
   enginePreference,
+  creatorCardRef,
+  opponentCardRef,
 }: {
   match: LobbyMatch | null;
   role: 'creator' | 'opponent' | null;
@@ -149,6 +151,8 @@ function ActiveMatchContent({
   onSendEmoji?: (emoji: string) => void;
   onPingOpponent?: () => Promise<PingOpponentResult>;
   enginePreference: EnginePreference;
+  creatorCardRef: React.RefObject<HTMLDivElement>;
+  opponentCardRef: React.RefObject<HTMLDivElement>;
 }) {
   const toast = useToast();
   const [leaveBusy, setLeaveBusy] = useBoolean();
@@ -1457,6 +1461,7 @@ const PlayerClockCard = forwardRef<HTMLDivElement, PlayerClockCardProps>(({
   pingBusy,
   pingDisabled,
   pingHelperText,
+  pingCooldownRemaining = 0,
 }: PlayerClockCardProps, ref: React.Ref<HTMLDivElement>) => {
   const { cardBorder, mutedText, strongText } = useSurfaceTokens();
   const activeBg = useColorModeValue('teal.50', 'teal.900');
@@ -2673,6 +2678,8 @@ function GamePlayWorkspace({
           onSendEmoji={handleSendEmoji}
           onPingOpponent={lobby.pingOpponent}
           enginePreference={auth.profile?.engine_preference ?? 'rust'}
+          creatorCardRef={creatorCardRef}
+          opponentCardRef={opponentCardRef}
         />
         </SantoriniProvider>
       )}
