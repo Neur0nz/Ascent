@@ -3,11 +3,15 @@
 begin;
 
 -- Matches policies ---------------------------------------------------------
+-- Make reruns idempotent when a later migration already created the new
+-- consolidated policy name. Dropping it up front avoids 42710 conflicts.
+drop policy if exists "Matches - select access" on public.matches;
 drop policy if exists "Public matches are visible to everyone" on public.matches;
 drop policy if exists "Private matches can be viewed with join code" on public.matches;
 drop policy if exists "Participants can update their match" on public.matches;
 drop policy if exists "Players can join open matches" on public.matches;
 drop policy if exists "Creators can manage their matches" on public.matches;
+drop policy if exists "Matches - creator insert" on public.matches;
 
 create policy "Matches - select access"
   on public.matches
