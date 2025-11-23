@@ -296,17 +296,32 @@ async function ensureAiProfile(client: ReturnType<typeof createClient>) {
   let match = matchResult.data;
   let insertError = matchResult.error;
 
-  // Retry without ai_depth if the column is missing in the current schema (older environments).
-  const missingAiDepth =
-    insertError &&
-    includeAiDepth &&
-    ['42703', 'PGRST204'].includes((insertError as { code?: string }).code ?? '') ||
-    (insertError as { hint?: string; details?: string })?.hint?.includes('ai_depth') ||
-    (insertError as { hint?: string; details?: string })?.details?.includes('ai_depth');
+  const isMissingColumn = (err: unknown, column: string) => {
+    const code = (err as { code?: string })?.code ?? '';
+    const hint = (err as { hint?: string; details?: string })?.hint ?? '';
+    const details = (err as { hint?: string; details?: string })?.details ?? '';
+    return (
+      ['42703', 'PGRST204'].includes(code) ||
+      hint.includes(column) ||
+      details.includes(column)
+    );
+  };
 
+  // Retry without ai_depth if the column is missing in the current schema (older environments).
+  const missingAiDepth = insertError && includeAiDepth && isMissingColumn(insertError, 'ai_depth');
   if (missingAiDepth) {
     console.warn('create-match: ai_depth column missing, retrying insert without ai_depth');
     matchResult = await attemptInsert(baseInsertPayload);
+    match = matchResult.data;
+    insertError = matchResult.error;
+  }
+
+  // Retry without is_ai_match flag if that column is missing in older schemas.
+  const missingIsAiMatch = insertError && isMissingColumn(insertError, 'is_ai_match');
+  if (missingIsAiMatch) {
+    console.warn('create-match: is_ai_match column missing, retrying insert without is_ai_match');
+    const { is_ai_match, ...payloadWithoutAiFlag } = baseInsertPayload;
+    matchResult = await attemptInsert(payloadWithoutAiFlag);
     match = matchResult.data;
     insertError = matchResult.error;
   }
