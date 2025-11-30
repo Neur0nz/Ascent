@@ -74,7 +74,10 @@ const extractLatestEndsAt = (
     if (isSantoriniMoveAction(action) && action.clocks) {
       const { creatorEndsAt, opponentEndsAt } = action.clocks;
       if (creatorEndsAt || opponentEndsAt) {
-        return { creatorEndsAt: toTimestampMs(creatorEndsAt), opponentEndsAt: toTimestampMs(opponentEndsAt) };
+        return {
+          creatorEndsAt: toTimestampMs(creatorEndsAt) ?? undefined,
+          opponentEndsAt: toTimestampMs(opponentEndsAt) ?? undefined,
+        };
       }
     }
   }
