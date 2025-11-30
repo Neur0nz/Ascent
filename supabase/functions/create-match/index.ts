@@ -266,9 +266,8 @@ async function ensureAiProfile(client: ReturnType<typeof createClient>) {
     }
   }
 
-  // Only generate a join code for private human matches; some databases still enforce
-  // constraints that disallow codes on public rows.
-  const joinCode = opponentType === 'human' && visibility === 'private' ? generateJoinCode() : null;
+  // Generate a short join code for all human matches (public or private)
+  const joinCode = opponentType === 'human' ? generateJoinCode() : null;
 
   const { snapshot } = SantoriniEngine.createInitial(startingPlayerIndex, initialMetadata);
   console.log('Creating match with starting role:', playerZeroRole, 'from option:', startingPlayerOption);

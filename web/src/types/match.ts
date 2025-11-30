@@ -72,6 +72,8 @@ export type SantoriniMoveAction = {
   clocks?: {
     creatorMs: number;
     opponentMs: number;
+    creatorEndsAt?: number;
+    opponentEndsAt?: number;
   };
 };
 

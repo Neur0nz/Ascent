@@ -56,10 +56,13 @@ serve(async (req) => {
     return jsonResponse({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const identifier = (payload.identifier ?? '').trim();
-  if (!identifier) {
+  const rawIdentifier = (payload.identifier ?? '').trim();
+  if (!rawIdentifier) {
     return jsonResponse({ error: 'identifier is required' }, { status: 400 });
   }
+
+  const isCode = rawIdentifier.length <= 8;
+  const normalizedIdentifier = isCode ? rawIdentifier.toUpperCase() : rawIdentifier;
 
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
     auth: { persistSession: false },
@@ -81,7 +84,6 @@ serve(async (req) => {
     return jsonResponse({ error: 'Player profile not found' }, { status: 403 });
   }
 
-  const isCode = identifier.length <= 8;
   let targetMatchId: string | null = null;
   let privateJoinCode: string | null = null;
   let matchVisibility: MatchVisibility | null = null;
@@ -93,7 +95,7 @@ serve(async (req) => {
   const { data: matchRecord, error: matchError } = await supabase
     .from('matches')
     .select('id, visibility, status, private_join_code, creator_id, opponent_id')
-    .eq(isCode ? 'private_join_code' : 'id', identifier)
+    .eq(isCode ? 'private_join_code' : 'id', normalizedIdentifier)
     .maybeSingle();
 
   if (matchError) {
@@ -105,13 +107,13 @@ serve(async (req) => {
   }
 
   targetMatchId = matchRecord.id as string;
-  privateJoinCode = matchRecord.private_join_code as string | null;
+  privateJoinCode = (matchRecord.private_join_code as string | null)?.toUpperCase() ?? null;
   matchVisibility = matchRecord.visibility as MatchVisibility;
   matchStatus = matchRecord.status as MatchStatus;
   opponentId = matchRecord.opponent_id as string | null;
   creatorId = matchRecord.creator_id as string | null;
 
-  if (matchVisibility === 'private' && identifier !== privateJoinCode) {
+  if (matchVisibility === 'private' && (!isCode || normalizedIdentifier !== privateJoinCode)) {
     return jsonResponse({ error: 'A valid join code is required for this match' }, { status: 403 });
   }
 
@@ -127,9 +129,17 @@ serve(async (req) => {
     return jsonResponse({ error: 'You cannot join your own match' }, { status: 400 });
   }
 
+  const nowIso = new Date().toISOString();
+
   const { data: updated, error: updateError } = await supabase
     .from('matches')
-    .update({ opponent_id: profile.id, status: 'in_progress' })
+    .update({
+      opponent_id: profile.id,
+      status: 'in_progress',
+      // Start the game clock only after an opponent successfully joins
+      clock_updated_at: nowIso,
+      updated_at: nowIso,
+    })
     .eq('id', targetMatchId)
     .is('opponent_id', null)
     .select(MATCH_WITH_PROFILES)

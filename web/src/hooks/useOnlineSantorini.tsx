@@ -4,7 +4,7 @@ import { TypeScriptMoveSelector } from '@/lib/moveSelectorTS';
 import { createBoardViewFromSnapshot, createEmptyMask, type BoardCell } from '@game/boardView';
 import type { LobbyMatch } from './useMatchLobby';
 import type { MatchAction, MatchMoveRecord, SantoriniMoveAction } from '@/types/match';
-import { computeSynchronizedClock, deriveInitialClocks, getIncrementMs, type ClockState } from './clockUtils';
+import { computeSynchronizedClock, deriveInitialClocks, type ClockState } from './clockUtils';
 import { isAiMatch, getPlayerZeroRole } from '@/utils/matchAiDepth';
 import { mapPlayerIndexToRole } from '@/utils/playerRoleMapping';
 import { createCancelMaskFromSelector } from '@/utils/moveSelectorMasks';
@@ -33,7 +33,10 @@ interface PendingLocalMove {
  * Uses the lightweight SantoriniEngine for all game logic.
  */
 
-const TICK_INTERVAL = 250;
+const RESYNC_INTERVAL_MS = 2000;
+const SOFT_RESYNC_THRESHOLD_MS = 150; // ignore tiny jitter
+const HARD_RESYNC_THRESHOLD_MS = 3000; // snap if drift is big
+const MAX_TICK_DELTA_MS = 500; // cap single tick to prevent huge jumps from timing glitches
 
 const toMoveArray = (move: number | number[] | null | undefined): number[] => {
   if (Array.isArray(move)) {
@@ -167,23 +170,16 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
   // Clock state
   const [clock, setClock] = useState<ClockState>(() => deriveInitialClocks(match));
   const [clockEnabled, setClockEnabled] = useState(match?.clock_initial_seconds ? match.clock_initial_seconds > 0 : false);
-  const timerRef = useRef<number | null>(null);
   const lastTickRef = useRef<number | null>(null);
+  const clockWorkerRef = useRef<Worker | null>(null);
   const [placementComplete, setPlacementComplete] = useState<boolean>(
     () => engineRef.current.getPlacementContext() === null,
   );
-  const incrementMs = useMemo(() => getIncrementMs(match), [match?.id, match?.clock_increment_seconds]);
   const cancelTick = useCallback(() => {
-    if (timerRef.current === null) {
-      return;
+    if (clockWorkerRef.current) {
+      clockWorkerRef.current.terminate();
+      clockWorkerRef.current = null;
     }
-    const canUseAnimationFrame = typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function';
-    if (canUseAnimationFrame) {
-      window.cancelAnimationFrame(timerRef.current);
-    } else {
-      clearTimeout(timerRef.current);
-    }
-    timerRef.current = null;
   }, []);
   
   // Sync tracking and locks
@@ -516,6 +512,43 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
     return role !== null && currentTurn === role;
   }, [role, currentTurn]);
 
+  const resyncClock = useCallback(() => {
+    if (!clockEnabled || !match || match.status !== 'in_progress' || !currentTurn) {
+      return;
+    }
+    const lastMove = moves.length > 0 ? moves[moves.length - 1] : null;
+    if (lastMove?.id?.startsWith('optimistic-')) {
+      // Avoid jumping while an optimistic move is awaiting confirmation.
+      return;
+    }
+    const synced = computeSynchronizedClock(match, moves, currentTurn, Date.now());
+    setClock((prev) => {
+      const diffCreator = Math.abs(prev.creatorMs - synced.creatorMs);
+      const diffOpponent = Math.abs(prev.opponentMs - synced.opponentMs);
+      const maxDiff = Math.max(diffCreator, diffOpponent);
+
+      // Small jitter: keep current to avoid visible flicker
+      if (maxDiff <= SOFT_RESYNC_THRESHOLD_MS) {
+        return prev;
+      }
+
+      // Large drift: snap to server value
+      if (maxDiff >= HARD_RESYNC_THRESHOLD_MS) {
+        return synced;
+      }
+
+      // Moderate drift: gently blend to avoid jumps
+      const blend = (current: number, target: number) => {
+        const delta = target - current;
+        return current + Math.round(delta * 0.5);
+      };
+      return {
+        creatorMs: blend(prev.creatorMs, synced.creatorMs),
+        opponentMs: blend(prev.opponentMs, synced.opponentMs),
+      };
+    });
+  }, [clockEnabled, currentTurn, match, moves]);
+
   useEffect(() => {
     if (!match) {
       setClock(deriveInitialClocks(null));
@@ -537,7 +570,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
     }
     const synced = computeSynchronizedClock(match, moves, currentTurn, Date.now());
     setClock(synced);
-    lastTickRef.current = performance.now();
+    lastTickRef.current = Date.now();
   }, [clockEnabled, currentTurn, match, match?.clock_initial_seconds, match?.clock_updated_at, match?.updated_at, moves]);
 
   useEffect(() => {
@@ -582,42 +615,73 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
     cancelTick();
     lastTickRef.current = null;
 
-    if (!clockEnabled || !match || match.status !== 'in_progress') {
-      return;
-    }
+    const shouldRunClock =
+      clockEnabled &&
+      match &&
+      match.status === 'in_progress' &&
+      placementComplete &&
+      Boolean(currentTurn);
 
     // Guard: clocks stay paused while the starting player is still placing workers.
-    const placementContext = engineRef.current.getPlacementContext();
-    if (placementContext) {
-      const placementRole = mapPlayerIndexToRole(placementContext.player, playerZeroRole);
-      if (placementRole === playerZeroRole) {
-        return;
+    if (shouldRunClock) {
+      const placementContext = engineRef.current.getPlacementContext();
+      if (placementContext) {
+        const placementRole = mapPlayerIndexToRole(placementContext.player, playerZeroRole);
+        if (placementRole === playerZeroRole) {
+          return;
+        }
       }
     }
 
-    const side = currentTurn;
-    if (!side) {
+    if (!shouldRunClock || !currentTurn) {
+      // Stop any existing worker
+      if (clockWorkerRef.current) {
+        clockWorkerRef.current.terminate();
+        clockWorkerRef.current = null;
+      }
       return;
     }
 
-    const scheduleFrame = (cb: FrameRequestCallback): number => {
-      if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-        return window.requestAnimationFrame(cb);
-      }
-      return window.setTimeout(() => cb(performance.now()), TICK_INTERVAL);
-    };
-
-    const tick = (timestamp: number) => {
-      setClock((prev) => {
-        const now = typeof timestamp === 'number' ? timestamp : performance.now();
+    if (typeof Worker === 'undefined') {
+      // jsdom/tests fallback: use setInterval
+      const intervalId = window.setInterval(() => {
+        const now = Date.now();
         const last = lastTickRef.current ?? now;
         lastTickRef.current = now;
-        const delta = Math.max(0, Math.round(now - last));
+        const rawDelta = Math.max(0, Math.round(now - last));
+        // Cap delta to prevent huge jumps from timing glitches or clock mismatches
+        const delta = Math.min(rawDelta, MAX_TICK_DELTA_MS);
+        if (delta === 0) return;
+        const side = currentTurn;
+        setClock((prev) => {
+          const next = { ...prev };
+          if (side === 'creator') next.creatorMs = Math.max(0, next.creatorMs - delta);
+          else if (side === 'opponent') next.opponentMs = Math.max(0, next.opponentMs - delta);
+          return next;
+        });
+      }, 100);
+      return () => {
+        window.clearInterval(intervalId);
+        lastTickRef.current = null;
+      };
+    }
 
-        if (delta === 0) {
-          return prev;
-        }
+    // Start / restart worker-based ticking to avoid tab throttling
+    const worker = new Worker(new URL('../workers/clockWorker.ts', import.meta.url), { type: 'module' });
+    clockWorkerRef.current = worker;
+    lastTickRef.current = Date.now();
 
+    worker.onmessage = (event: MessageEvent<{ now: number }>) => {
+      const now = event.data?.now ?? Date.now();
+      const last = lastTickRef.current ?? now;
+      lastTickRef.current = now;
+      const rawDelta = Math.max(0, Math.round(now - last));
+      // Cap delta to prevent huge jumps from timing glitches or clock mismatches
+      const delta = Math.min(rawDelta, MAX_TICK_DELTA_MS);
+      if (delta === 0) return;
+
+      const side = currentTurn;
+      setClock((prev) => {
         const next = { ...prev };
         if (side === 'creator') {
           next.creatorMs = Math.max(0, next.creatorMs - delta);
@@ -626,17 +690,44 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
         }
         return next;
       });
-      timerRef.current = scheduleFrame(tick);
     };
 
-    lastTickRef.current = performance.now();
-    timerRef.current = scheduleFrame(tick);
-
     return () => {
-      cancelTick();
+      if (clockWorkerRef.current) {
+        clockWorkerRef.current.terminate();
+        clockWorkerRef.current = null;
+      }
       lastTickRef.current = null;
     };
   }, [cancelTick, clockEnabled, currentTurn, match?.status, match, placementComplete, playerZeroRole]);
+
+  // Periodic + visibility/focus resync to correct any drift (e.g., background tab throttling)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!clockEnabled || !match || match.status !== 'in_progress') return;
+
+    const intervalId = window.setInterval(() => {
+      resyncClock();
+    }, RESYNC_INTERVAL_MS);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        resyncClock();
+      }
+    };
+    const handleFocus = () => {
+      resyncClock();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [clockEnabled, match, match?.status, resyncClock]);
 
   useEffect(() => {
     return () => {
@@ -742,6 +833,8 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       ? {
           creatorMs: clock.creatorMs,
           opponentMs: clock.opponentMs,
+          creatorEndsAt: Date.now() + clock.creatorMs,
+          opponentEndsAt: Date.now() + clock.opponentMs,
         }
       : undefined;
 
@@ -971,18 +1064,6 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
             });
             setPendingSubmissionCount(pendingLocalMovesRef.current.length);
 
-            if (clockEnabled && incrementMs > 0 && role) {
-              setClock((prev) => {
-                const next = { ...prev };
-                if (role === 'creator') {
-                  next.creatorMs = Math.max(0, next.creatorMs + incrementMs);
-                } else {
-                  next.opponentMs = Math.max(0, next.opponentMs + incrementMs);
-                }
-                return next;
-              });
-            }
-
             debugLog('✅ Placement batch queued for submission', {
               placementActions: batch.actions,
               nextMoveIndex,
@@ -1079,18 +1160,6 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
               snapshotBefore,
             });
             setPendingSubmissionCount(pendingLocalMovesRef.current.length);
-            if (clockEnabled && incrementMs > 0 && role) {
-              setClock((prev) => {
-                const next = { ...prev };
-                if (role === 'creator') {
-                  next.creatorMs = Math.max(0, next.creatorMs + incrementMs);
-                } else if (role === 'opponent') {
-                  next.opponentMs = Math.max(0, next.opponentMs + incrementMs);
-                }
-                return next;
-              });
-            }
-            
             debugLog('✅ Game move queued for submission', { action, nextMoveIndex });
             setPendingMoveVersion(v => v + 1); // Trigger submission effect
           } catch (error) {
@@ -1117,7 +1186,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
         processingMoveRef.current = false;
       }
     },
-    [clockEnabled, currentTurn, incrementMs, isMyTurn, match, moves.length, playerZeroRole, role, selectable, toast, updateEngineState],
+    [clockEnabled, currentTurn, isMyTurn, match, moves.length, playerZeroRole, role, selectable, toast, updateEngineState],
   );
 
   // Game completion detection

@@ -77,4 +77,88 @@ describe('clockUtils', () => {
     const synced = computeSynchronizedClock(baseMatch, [], 'creator', now);
     expect(synced.creatorMs).toBeLessThan(deriveInitialClocks(baseMatch).creatorMs);
   });
+
+  it('keeps full time while waiting for opponent to join', () => {
+    const waitingMatch: LobbyMatch = {
+      ...baseMatch,
+      status: 'waiting_for_opponent',
+      updated_at: new Date('2024-01-01T00:00:00Z').toISOString(),
+    };
+    const now = Date.parse('2024-01-01T00:05:00Z');
+    const synced = computeSynchronizedClock(waitingMatch, [], 'creator', now);
+    const initial = deriveInitialClocks(waitingMatch).creatorMs;
+    expect(synced.creatorMs).toBe(initial);
+    expect(synced.opponentMs).toBe(initial);
+  });
+
+  it('uses endsAt timestamps for smooth countdown when both are present', () => {
+    const match: LobbyMatch = {
+      ...baseMatch,
+      clock_updated_at: '2024-01-01T00:05:00Z',
+      updated_at: '2024-01-01T00:05:00Z',
+    };
+    const now = Date.parse('2024-01-01T00:05:30Z');
+    const moves: MatchMoveRecord<MatchAction>[] = [
+      {
+        id: 'move-1',
+        match_id: match.id,
+        move_index: 0,
+        player_id: match.creator_id,
+        created_at: '2024-01-01T00:05:00Z',
+        action: {
+          kind: 'santorini.move',
+          move: 10,
+          by: 'creator',
+          clocks: {
+            creatorMs: 120000,
+            opponentMs: 180000,
+            // Both endsAt timestamps present - use countdown from these
+            creatorEndsAt: now + 119000, // 119s remaining
+            opponentEndsAt: now + 179000, // 179s remaining
+          },
+        } as SantoriniMoveAction,
+        state_snapshot: emptySnapshot,
+        eval_snapshot: null,
+      },
+    ];
+    const synced = computeSynchronizedClock(match, moves, 'opponent', now);
+    expect(synced.creatorMs).toBe(119000);
+    expect(synced.opponentMs).toBe(179000);
+  });
+
+  it('falls back to elapsed time calculation when only one endsAt is present', () => {
+    const match: LobbyMatch = {
+      ...baseMatch,
+      clock_updated_at: '2024-01-01T00:05:00Z',
+      updated_at: '2024-01-01T00:05:00Z',
+    };
+    const now = Date.parse('2024-01-01T00:05:30Z');
+    const moves: MatchMoveRecord<MatchAction>[] = [
+      {
+        id: 'move-1',
+        match_id: match.id,
+        move_index: 0,
+        player_id: match.creator_id,
+        created_at: '2024-01-01T00:05:00Z',
+        action: {
+          kind: 'santorini.move',
+          move: 10,
+          by: 'creator',
+          clocks: {
+            creatorMs: 120000,
+            opponentMs: 180000,
+            // Only creatorEndsAt present - should NOT zero out opponent clock
+            creatorEndsAt: now + 119000,
+            // opponentEndsAt intentionally missing
+          },
+        } as SantoriniMoveAction,
+        state_snapshot: emptySnapshot,
+        eval_snapshot: null,
+      },
+    ];
+    const synced = computeSynchronizedClock(match, moves, 'opponent', now);
+    // Should fall back to elapsed time calculation, not use partial endsAt
+    expect(synced.creatorMs).toBe(120000); // Preserved from clocks data
+    expect(synced.opponentMs).toBe(150000); // 180000 - 30s elapsed (opponent is active)
+  });
 });

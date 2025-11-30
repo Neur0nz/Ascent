@@ -738,7 +738,9 @@ function ActiveMatchContent({
       if (result) {
         toast({
           title: 'Rematch created',
-          description: `Share code ${result.private_join_code ?? result.id.slice(0, 8)}`,
+          description: result.private_join_code
+            ? `Share code ${result.private_join_code}`
+            : `Share match ID ${result.id}`,
           status: 'success',
         });
       }
