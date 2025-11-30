@@ -183,8 +183,9 @@ function PracticeTabContent({ onShowHistory }: { onShowHistory: () => void }) {
           display="flex"
           justifyContent="center"
           w="100%"
-          minW={{ base: '280px', sm: '360px' }}
-          maxW="960px"
+          maxW={{ base: '100%', md: '960px' }}
+          minW={0}
+          overflow="hidden"
         >
           {loading ? (
             <Flex
@@ -478,7 +479,7 @@ function App() {
         flexDirection="column"
         minH="100vh"
       >
-        <Flex direction="column" flex="1" minH="100vh" bgGradient={appBg} color={appColor}>
+        <Flex direction="column" flex="1" minH="100vh" bgGradient={appBg} color={appColor} overflowX="hidden">
           <HeaderBar
             activeTab={activeTab}
             actions={tabActions}

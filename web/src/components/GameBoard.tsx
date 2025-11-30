@@ -132,7 +132,9 @@ function GameBoard({
   const boardColumns = Math.max(1, board[0]?.length ?? boardRows);
   const gridTemplateColumns = `repeat(${boardColumns}, 1fr)`;
 
-  const boardMaxWidth = useMemo(() => `min(${boardPixels}px, 100vw)`, [boardPixels]);
+  // Use 100% instead of 100vw to prevent horizontal overflow on mobile.
+  // 100vw includes scrollbar width and ignores parent container padding.
+  const boardMaxWidth = useMemo(() => `min(${boardPixels}px, 100%)`, [boardPixels]);
   const approxCellSize = useMemo(() => {
     if (!boardColumns) {
       return boardPixels / 5;
@@ -166,6 +168,7 @@ function GameBoard({
       w="100%"
       maxW="100%"
       mx="auto"
+      overflow="hidden"
     >
       <Flex direction="column" gap={3} w="100%">
         {showBoardSizeControl && boardSizeControlVisible && (

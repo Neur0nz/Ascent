@@ -62,6 +62,15 @@ const styles = {
     '*': {
       WebkitTapHighlightColor: 'transparent',
     },
+    // Prevent horizontal overflow on mobile devices
+    'html, body': {
+      overflowX: 'hidden',
+      maxWidth: '100vw',
+    },
+    '#root': {
+      overflowX: 'hidden',
+      maxWidth: '100%',
+    },
   },
 };
 

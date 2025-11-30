@@ -32,6 +32,8 @@ function OnlineBoardSection({ variant = 'card', containerProps, ...gameBoardProp
       display="flex"
       justifyContent="center"
       w="100%"
+      maxW="100%"
+      overflow="hidden"
       {...variantStyles}
       {...containerProps}
     >
