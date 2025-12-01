@@ -769,8 +769,8 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     }));
     
     setHistory([]);
-    await syncUi();
     await syncPythonFromTypeScript();
+    await syncUi();
   }, [bumpWasmStateVersion, syncPythonFromTypeScript, syncUi, updateButtonsState]);
 
   const initializeStartedRef = useRef(false);
@@ -877,10 +877,10 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       moveSelectorRef.current.reset();
       updateSelectable();
 
-      await syncUi();
       await syncPythonFromTypeScript();
+      await syncUi();
       refreshEvaluation().catch((error) => {
-        console.error('Failed to refresh evaluation after importing state:', error);
+        console.error('Failed to refresh evaluation after AI move:', error);
       });
       return true;
     } catch (error) {
@@ -948,9 +948,9 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         
         console.log('👤 Move applied to TS. New player:', engineRef.current.player);
         
-        // Update UI immediately, then sync Python runtime for AI/eval
-        await syncUi();
+        // Sync to worker first so refreshHistory gets updated state, then update UI
         await syncPythonFromTypeScript();
+        await syncUi();
         refreshEvaluation().catch((error) => {
           console.error('Failed to refresh evaluation after applying move:', error);
         });
@@ -1092,9 +1092,9 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     bumpWasmStateVersion();
     moveSelectorRef.current.reset();
     
-    // Sync UI and Python engine
-    await syncUi();
+    // Sync to worker first so refreshHistory gets updated state, then update UI
     await syncPythonFromTypeScript();
+    await syncUi();
     refreshEvaluation().catch((error) => {
       console.error('Failed to refresh evaluation after undo:', error);
     });
@@ -1114,9 +1114,9 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
     bumpWasmStateVersion();
     moveSelectorRef.current.reset();
     
-    // Sync UI and Python engine
-    await syncUi();
+    // Sync to worker first so refreshHistory gets updated state, then update UI
     await syncPythonFromTypeScript();
+    await syncUi();
     refreshEvaluation().catch((error) => {
       console.error('Failed to refresh evaluation after redo:', error);
     });
