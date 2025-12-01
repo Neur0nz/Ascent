@@ -12,6 +12,14 @@ import { createCancelMaskFromSelector } from '@/utils/moveSelectorMasks';
  * For AI features, use useSantorini.tsx instead.
  */
 
+// Only log in development to reduce console spam in production
+const isDevEnv = typeof import.meta !== 'undefined' ? Boolean(import.meta.env?.DEV) : false;
+const devLog = (...args: unknown[]) => {
+  if (isDevEnv) {
+    console.log(...args);
+  }
+};
+
 function computeSelectable(
   validMoves: boolean[],
   snapshot: SantoriniSnapshot,
@@ -108,7 +116,7 @@ export function useLocalSantorini() {
     (y: number, x: number) => {
       // Prevent overlapping move processing
       if (processingMoveRef.current) {
-        console.log('useLocalSantorini: Move processing in progress, ignoring click');
+        devLog('useLocalSantorini: Move processing in progress, ignoring click');
         return;
       }
 

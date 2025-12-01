@@ -88,6 +88,14 @@ import type {
 export type StartingPlayer = 'creator' | 'opponent' | 'random';
 export type MatchOpponentType = 'human' | 'ai';
 
+// Only log in development to reduce console spam in production
+const isDevEnv = typeof import.meta !== 'undefined' ? Boolean(import.meta.env?.DEV) : false;
+const devLog = (...args: unknown[]) => {
+  if (isDevEnv) {
+    console.log(...args);
+  }
+};
+
 export interface CreateMatchPayload {
   visibility: MatchVisibility;
   rated: boolean;
@@ -675,7 +683,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
       const client = supabase;
       if (!client || !matchId || matchId === LOCAL_MATCH_ID) return;
 
-      console.log('useMatchLobby: Hydrating active match', { matchId, reason });
+      devLog('useMatchLobby: Hydrating active match', { matchId, reason });
 
       hydratingRef.current = true;
       processingMovesRef.current = new Set();
@@ -761,7 +769,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
               status: 'pending',
               dbId: undoData.id,
             };
-            console.log('useMatchLobby: Hydrated pending undo request', { matchId, moveIndex: undoData.move_index, requestedBy: requestedByRole });
+            devLog('useMatchLobby: Hydrated pending undo request', { matchId, moveIndex: undoData.move_index, requestedBy: requestedByRole });
           }
         }
 
@@ -1240,7 +1248,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         'broadcast',
         { event: 'move' },
         (payload: { type: string; event: string; payload: any }) => {
-          console.log('⚡ BROADCAST: Move received instantly!', { 
+          devLog('⚡ BROADCAST: Move received instantly!', { 
             matchId, 
             moveIndex: payload.payload?.move_index,
             from: payload.payload?.player_id === profile?.id ? 'self' : 'opponent',
@@ -1262,13 +1270,13 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
           }
           // Skip optimistic path during hydration to avoid applying on stale state
           if (hydratingRef.current) {
-            console.log('⚡ BROADCAST: Skipping optimistic apply during hydration');
+            devLog('⚡ BROADCAST: Skipping optimistic apply during hydration');
             return;
           }
           
           // Check if we're already processing this move (prevents React setState race condition)
           if (processingMovesRef.current.has(normalizedIndex)) {
-            console.log('⚡ BROADCAST: Move already being processed, skipping duplicate', { 
+            devLog('⚡ BROADCAST: Move already being processed, skipping duplicate', { 
               moveIndex: normalizedIndex 
             });
             return;
@@ -1287,7 +1295,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
             // Check if move already exists (prevent duplicates from race conditions)
             const exists = prev.moves.some((move) => move.move_index === normalizedIndex);
             if (exists) {
-              console.log('⚡ BROADCAST: Move already exists, skipping', { moveIndex: normalizedIndex });
+              devLog('⚡ BROADCAST: Move already exists, skipping', { moveIndex: normalizedIndex });
               processingMovesRef.current.delete(normalizedIndex);
               return prev;
             }
@@ -1341,7 +1349,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
               created_at: new Date().toISOString(),
             };
             
-            console.log('⚡ BROADCAST: Adding optimistic move', { 
+            devLog('⚡ BROADCAST: Adding optimistic move', { 
               moveIndex: moveRecord.move_index,
               totalMoves: prev.moves.length + 1,
               isOptimistic: true
@@ -1413,7 +1421,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
               (move) => move.move_index !== rejectedIndex || !move.id.startsWith('optimistic-')
             );
             
-            console.log('❌ BROADCAST: Removed rejected optimistic move', { 
+            devLog('❌ BROADCAST: Removed rejected optimistic move', { 
               moveIndex: rejectedIndex,
               reason: rejection.error
             });
@@ -1641,7 +1649,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         { event: '*', schema: 'public', table: 'match_moves', filter: `match_id=eq.${matchId}` },
         (payload: RealtimePostgresChangesPayload<MatchMoveRecord>) => {
           const newMove = payload.new as MatchMoveRecord;
-          console.log('✅ DB: Move confirmed in database', { 
+          devLog('✅ DB: Move confirmed in database', { 
             eventType: payload.eventType, 
             matchId, 
             moveId: newMove?.id,
@@ -1674,7 +1682,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
               );
               
               if (optimisticIndex >= 0) {
-                console.log('✅ DB: Replacing optimistic move with confirmed', { 
+                devLog('✅ DB: Replacing optimistic move with confirmed', { 
                   moveIndex: moveRecord.move_index,
                   optimisticId: prev.moves[optimisticIndex].id,
                   confirmedId: moveRecord.id
@@ -1701,11 +1709,11 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
               // Check if confirmed move already exists (shouldn't happen but be safe)
               const exists = prev.moves.some((move) => move.id === moveRecord.id);
               if (exists) {
-                console.log('✅ DB: Move already exists, skipping');
+                devLog('✅ DB: Move already exists, skipping');
                 return prev;
               }
               
-              console.log('✅ DB: Adding confirmed move', { 
+              devLog('✅ DB: Adding confirmed move', { 
                 moveId: moveRecord.id, 
                 moveIndex: moveRecord.move_index,
                 totalMoves: prev.moves.length + 1,
@@ -1843,7 +1851,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
     }
 
     channel.subscribe((status) => {
-        console.log('useMatchLobby: Real-time subscription status', { 
+        devLog('useMatchLobby: Real-time subscription status', { 
           matchId, 
           status,
           channel: channel.topic 
@@ -1859,7 +1867,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
 
         if (status === 'SUBSCRIBED') {
           channelStatusRef.current = 'SUBSCRIBED';
-          console.log('useMatchLobby: Real-time subscription active, refreshing match state', { matchId });
+          devLog('useMatchLobby: Real-time subscription active, refreshing match state', { matchId });
           void hydrateActiveMatch('re-subscribed');
           void sendPresenceUpdate('subscribed');
           if (!presenceHeartbeatRef.current) {
@@ -2209,7 +2217,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
       const broadcastStart = performance.now();
 
       // 1️⃣ BROADCAST FIRST - Instant feedback (50-100ms)!
-      console.log('⚡ Broadcasting move to all players...');
+      devLog('⚡ Broadcasting move to all players...');
       // Reuse the existing subscribed channel instead of creating a new one
       const channel = channelRef.current || client.channel(`match-${match.id}`);
       const actingPlayerId = movePayload.by === 'creator' ? match.creator_id : match.opponent_id;
@@ -2246,7 +2254,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         });
         
         const broadcastElapsed = performance.now() - broadcastStart;
-        console.log(`⚡ Move broadcast in ${broadcastElapsed.toFixed(0)}ms - INSTANT!`);
+        devLog(`⚡ Move broadcast in ${broadcastElapsed.toFixed(0)}ms - INSTANT!`);
       } catch (broadcastError) {
         console.warn('⚡ Broadcast failed (will fall back to DB confirmation)', broadcastError);
         // Continue anyway - DB confirmation will handle it
@@ -2254,7 +2262,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
 
       // 2️⃣ VALIDATE WITH SERVER - keep pending until success
       const validationStart = performance.now();
-      console.log('🔒 Validating move on server...');
+      devLog('🔒 Validating move on server...');
       let rejectionBroadcasted = false;
       try {
         const { error } = await invokeAuthorizedFunction(client, 'submit-move', {
@@ -2269,13 +2277,14 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
 
         if (error) {
           console.error(`❌ Move rejected by server after ${validationElapsed.toFixed(0)}ms!`, error);
-          const rejectionMessage = typeof error.message === 'string' ? error.message : 'Move validation failed';
+          const errorContext = (error as any)?.context?.body;
+          const rejectionMessage = errorContext?.error ?? error.message ?? 'Move validation failed';
           rejectionBroadcasted = true;
           sendRejectionBroadcast(rejectionMessage, 'Failed to broadcast rejection');
           throw new Error(rejectionMessage);
         }
 
-        console.log(`✅ Move validated successfully in ${validationElapsed.toFixed(0)}ms`);
+        devLog(`✅ Move validated successfully in ${validationElapsed.toFixed(0)}ms`);
       } catch (err) {
         const validationElapsed = performance.now() - validationStart;
         if (!rejectionBroadcasted) {
@@ -2286,7 +2295,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         throw err instanceof Error ? err : new Error('Move validation request failed');
       } finally {
         const totalElapsed = performance.now() - broadcastStart;
-        console.log(`⚡ TOTAL time (user perception): ${totalElapsed.toFixed(0)}ms`);
+        devLog(`⚡ TOTAL time (user perception): ${totalElapsed.toFixed(0)}ms`);
       }
     },
     [onlineEnabled, profile, channelRef],

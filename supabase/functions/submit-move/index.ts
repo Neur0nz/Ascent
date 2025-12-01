@@ -352,24 +352,29 @@ async function loadSubmissionContext(
   supabase: ServiceSupabaseClient,
   authUserId: string,
   matchId: string,
+  skipCache: boolean = false,
 ): Promise<SubmissionContext> {
   const now = Date.now();
-  const cachedEntry = matchCache.get(matchId);
-  const cachedParticipant = cachedEntry?.participants?.get(authUserId);
-  if (cachedEntry && cachedParticipant && now - cachedEntry.fetchedAt <= MATCH_CACHE_TTL_MS) {
-    cachedEntry.fetchedAt = now;
-    cachedParticipant.lastSeen = now;
-    const context: SubmissionContext = {
-      match: cachedEntry.match,
-      lastMove: cachedEntry.lastMove,
-      snapshot: cloneSnapshot(cachedEntry.lastSnapshot),
-      lastMoveIndex: cachedEntry.lastMoveIndex,
-      role: cachedParticipant.role,
-      playerId: cachedParticipant.playerId,
-      fromCache: true,
-    };
-    console.log('Cache hit for match', matchId, '- participant', cachedParticipant.role, 'moveIndex', context.lastMoveIndex);
-    return context;
+  
+  // Skip cache entirely if requested (used for AI matches to avoid race conditions)
+  if (!skipCache) {
+    const cachedEntry = matchCache.get(matchId);
+    const cachedParticipant = cachedEntry?.participants?.get(authUserId);
+    if (cachedEntry && cachedParticipant && now - cachedEntry.fetchedAt <= MATCH_CACHE_TTL_MS) {
+      cachedEntry.fetchedAt = now;
+      cachedParticipant.lastSeen = now;
+      const context: SubmissionContext = {
+        match: cachedEntry.match,
+        lastMove: cachedEntry.lastMove,
+        snapshot: cloneSnapshot(cachedEntry.lastSnapshot),
+        lastMoveIndex: cachedEntry.lastMoveIndex,
+        role: cachedParticipant.role,
+        playerId: cachedParticipant.playerId,
+        fromCache: true,
+      };
+      console.log('Cache hit for match', matchId, '- participant', cachedParticipant.role, 'moveIndex', context.lastMoveIndex);
+      return context;
+    }
   }
 
   const { data, error } = await (supabase as any)
@@ -732,6 +737,23 @@ serve(async (req) => {
     return jsonResponse({ error: 'Unable to load match data' }, { status: 404 });
   }
 
+  let { match, lastMove, snapshot, lastMoveIndex, role, playerId } = submissionContext;
+  const isAiMatch = Boolean(match?.is_ai_match) || match?.opponent_id === AI_PLAYER_ID;
+  const playerControlsAi = isAiMatch && match?.creator_id === playerId;
+  
+  // For AI matches, always reload fresh data to avoid race conditions
+  // since the same user submits both player and AI moves in rapid succession
+  if (isAiMatch && submissionContext.fromCache) {
+    console.log('🤖 AI match - bypassing cache for fresh DB state');
+    matchCache.delete(payload.matchId);
+    try {
+      submissionContext = await loadSubmissionContext(supabase, authContext.userId, payload.matchId, true);
+      ({ match, lastMove, snapshot, lastMoveIndex, role, playerId } = submissionContext);
+    } catch (error) {
+      console.warn('Failed to reload fresh state for AI match, continuing with cached data', error);
+    }
+  }
+
   console.log(
     `⏱️ [${(performance.now() - startTime).toFixed(0)}ms] ${
       submissionContext.fromCache
@@ -739,10 +761,6 @@ serve(async (req) => {
         : 'Combined data loaded (profile + match + last move)'
     }`,
   );
-
-  const { match, lastMove, snapshot, lastMoveIndex, role, playerId } = submissionContext;
-  const isAiMatch = Boolean(match?.is_ai_match) || match?.opponent_id === AI_PLAYER_ID;
-  const playerControlsAi = isAiMatch && match?.creator_id === playerId;
 
   if (!role) {
     return jsonResponse({ error: 'You are not a participant in this match' }, { status: 403 });
@@ -905,6 +923,9 @@ serve(async (req) => {
   console.log('Move index validation - payload:', payload.moveIndex, 'expected:', expectedMoveIndex);
   if (typeof payload.moveIndex === 'number' && payload.moveIndex !== expectedMoveIndex) {
     console.error('Move index mismatch - payload:', payload.moveIndex, 'expected:', expectedMoveIndex);
+    // Invalidate cache on conflict so retry gets fresh data
+    matchCache.delete(payload.matchId);
+    console.log('🗑️  Cache invalidated for match', payload.matchId, 'due to move index conflict');
     return jsonResponse({ error: 'Move index out of sequence' }, { status: 409 });
   }
 

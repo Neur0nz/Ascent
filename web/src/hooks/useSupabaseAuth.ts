@@ -47,6 +47,14 @@ function getErrorMessage(error: unknown): string {
   return '';
 }
 
+// Only log in development to reduce console spam in production
+const isDevEnv = typeof import.meta !== 'undefined' ? Boolean(import.meta.env?.DEV) : false;
+const devLog = (...args: unknown[]) => {
+  if (isDevEnv) {
+    console.log(...args);
+  }
+};
+
 function isNetworkError(error: unknown): boolean {
   const message = getErrorMessage(error).toLowerCase();
   return NETWORK_ERROR_TOKENS.some((token) => message.includes(token));
@@ -261,7 +269,7 @@ export function useSupabaseAuth() {
   const profileRef = useRef<PlayerProfile | null>(cachedInitialState?.profile ?? null);
   const [state, setState] = useState<AuthState>(() => {
     if (cachedInitialState) {
-      console.log('Restoring auth state from cache');
+      devLog('Restoring auth state from cache');
       return { session: cachedInitialState.session, profile: cachedInitialState.profile, loading: false, error: null };
     }
     return DEFAULT_STATE;
@@ -300,7 +308,7 @@ export function useSupabaseAuth() {
 
     // Check if we're already loading a profile. If it's for the same user, just wait.
     if (loadingProfileRef.current) {
-      console.log('Profile loading already in progress, waiting...');
+      devLog('Profile loading already in progress, waiting...');
       await loadingProfileRef.current;
       return;
     }
@@ -314,7 +322,7 @@ export function useSupabaseAuth() {
     // Check if we already have a profile for this user
     const cachedProfile = cachedStateRef.current?.profile;
     if (cachedProfile?.auth_user_id === session.user.id && !cachedProfile.id.startsWith('temp_')) {
-      console.log('Using cached profile for this user');
+      devLog('Using cached profile for this user');
       const newState = { session, profile: cachedProfile, loading: false, error: null };
       setState(newState);
       cacheAuthState(session, cachedProfile);
@@ -322,7 +330,7 @@ export function useSupabaseAuth() {
     }
 
     if (state.profile?.auth_user_id === session.user.id && !state.profile.id.startsWith('temp_')) {
-      console.log('Profile already loaded for this user');
+      devLog('Profile already loaded for this user');
       const newState = { session, profile: state.profile, loading: false, error: null };
       setState(newState);
       cacheAuthState(session, state.profile);
@@ -345,7 +353,7 @@ export function useSupabaseAuth() {
     let promiseRef: Promise<void>;
     const run = async () => {
       try {
-        console.log('Loading profile for session user:', session.user.id);
+        devLog('Loading profile for session user:', session.user.id);
         
         // Load profile with retry logic
         let retryCount = 0;
@@ -356,9 +364,9 @@ export function useSupabaseAuth() {
 
         while (retryCount < maxRetries && !profile) {
           try {
-            console.log(`Loading profile for session user: ${session.user.id} (attempt ${retryCount + 1})`);
+            devLog(`Loading profile for session user: ${session.user.id} (attempt ${retryCount + 1})`);
             profile = await ensureProfile(client, session.user, abortController.signal);
-            console.log('✅ Profile loaded successfully');
+            devLog('✅ Profile loaded successfully');
           } catch (error) {
             lastError = error;
             errors.push(error);
@@ -375,7 +383,7 @@ export function useSupabaseAuth() {
             const shouldStopEarly = isNetworkError(error);
 
             if (retryCount < maxRetries && !shouldStopEarly) {
-              console.log(`Retrying profile load in ${PROFILE_RETRY_DELAY}ms... (attempt ${retryCount + 1}/${maxRetries})`);
+              devLog(`Retrying profile load in ${PROFILE_RETRY_DELAY}ms... (attempt ${retryCount + 1}/${maxRetries})`);
               await new Promise((resolve) => setTimeout(resolve, PROFILE_RETRY_DELAY));
             } else {
               console.error('All profile load attempts failed:', error);
@@ -431,7 +439,7 @@ export function useSupabaseAuth() {
         }
       } catch (profileError) {
         if (profileError instanceof Error && profileError.name === 'AbortError') {
-          console.log('Profile load request was aborted');
+          devLog('Profile load request was aborted');
           return;
         }
         if (isInvalidSessionError(profileError) || isPostgrestUnauthorizedError(profileError)) {
@@ -615,7 +623,7 @@ export function useSupabaseAuth() {
     init();
 
     const { data: listener } = client.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
-      console.log('Auth state change:', event, session?.user?.id);
+      devLog('Auth state change:', event, session?.user?.id);
       if (event === 'INITIAL_SESSION') {
         if (session) {
           void loadSessionProfile(session);
@@ -647,7 +655,7 @@ export function useSupabaseAuth() {
       throw new Error('Supabase is not configured.');
     }
     
-    console.log('Refreshing profile...');
+    devLog('Refreshing profile...');
     const {
       data: { session },
       error,
@@ -658,7 +666,7 @@ export function useSupabaseAuth() {
     }
     
     if (!session) {
-      console.log('No session found during refresh');
+      devLog('No session found during refresh');
       setState({ session: null, profile: null, loading: false, error: null });
       return;
     }

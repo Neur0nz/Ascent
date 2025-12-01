@@ -43,6 +43,14 @@ import {
   toFiniteNumber as toFinitePracticeNumber,
 } from '@/lib/practice/valueUtils';
 
+// Only log in development to reduce console spam in production
+const isDevEnv = typeof import.meta !== 'undefined' ? Boolean(import.meta.env?.DEV) : false;
+const devLog = (...args: unknown[]) => {
+  if (isDevEnv) {
+    console.log(...args);
+  }
+};
+
 export interface UseSantoriniOptions {
   evaluationEnabled?: boolean;
   enginePreference?: EnginePreference;
@@ -937,7 +945,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
       const { triggerAi = true } = options;
       await ensureAiIdle();
       
-      console.log('👤 Human applying move:', move, 'Current player:', engineRef.current.player);
+      devLog('👤 Human applying move:', move, 'Current player:', engineRef.current.player);
       
       // Apply move to TypeScript engine (source of truth)
       try {
@@ -946,7 +954,7 @@ function useSantoriniInternal(options: UseSantoriniOptions = {}) {
         bumpWasmStateVersion();
         moveSelectorRef.current.reset();
         
-        console.log('👤 Move applied to TS. New player:', engineRef.current.player);
+        devLog('👤 Move applied to TS. New player:', engineRef.current.player);
         
         // Sync to worker first so refreshHistory gets updated state, then update UI
         await syncPythonFromTypeScript();
