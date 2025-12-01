@@ -356,11 +356,13 @@ async function loadSubmissionContext(
 ): Promise<SubmissionContext> {
   const now = Date.now();
   
+  // Look up cache entry (needed for updating cache later even when skipping reads)
+  const cachedEntry = matchCache.get(matchId);
+  
   // Skip cache entirely if requested (used for AI matches to avoid race conditions)
-  if (!skipCache) {
-    const cachedEntry = matchCache.get(matchId);
-    const cachedParticipant = cachedEntry?.participants?.get(authUserId);
-    if (cachedEntry && cachedParticipant && now - cachedEntry.fetchedAt <= MATCH_CACHE_TTL_MS) {
+  if (!skipCache && cachedEntry) {
+    const cachedParticipant = cachedEntry.participants?.get(authUserId);
+    if (cachedParticipant && now - cachedEntry.fetchedAt <= MATCH_CACHE_TTL_MS) {
       cachedEntry.fetchedAt = now;
       cachedParticipant.lastSeen = now;
       const context: SubmissionContext = {
