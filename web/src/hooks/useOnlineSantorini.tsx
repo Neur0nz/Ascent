@@ -1279,7 +1279,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       // Format the move using unified notation
       const moveValue = Array.isArray(action.move) ? action.move[0] : action.move;
       const moveLabel = typeof moveValue === 'number'
-        ? formatMoveLabel(moveValue, player, boardBefore)
+        ? formatMoveLabel(moveValue, player, boardBefore, move.move_index)
         : 'move';
       
       return {

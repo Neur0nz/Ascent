@@ -92,8 +92,8 @@ function HeaderBar({ activeTab, actions, auth, onNavigateToProfile, onTabChange 
             <Tooltip label="Menu" hasArrow display={{ base: 'block', md: 'none' }}>
               <IconButton
                 aria-label="Open navigation menu"
-                icon={<HamburgerIcon />}
-                size="sm"
+                icon={<HamburgerIcon boxSize={5} />}
+                size="md"
                 variant="ghost"
                 onClick={openDrawer}
                 display={{ base: 'flex', md: 'none' }}

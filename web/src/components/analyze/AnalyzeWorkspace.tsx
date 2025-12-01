@@ -778,10 +778,10 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
         : loaded.match.initial_state;
       const boardBefore = prevSnapshot?.board ?? null;
       
-      // Determine player from action.by (creator=0, opponent=1)
+      // Determine player from action.by using playerZeroRole to map role to player number
       // This correctly handles placement phase where same player moves twice
       const moveBy = action?.kind === 'santorini.move' ? action.by : null;
-      const player = moveBy === 'creator' ? 0 : moveBy === 'opponent' ? 1 : (index % 2);
+      const player = moveBy === playerZeroRole ? 0 : moveBy ? 1 : (index % 2);
       
       // Calculate move details
       let from: [number, number] | undefined;
@@ -789,7 +789,9 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
       let build: [number, number] | null = null;
       
       if (typeof moveValue === 'number') {
-        const isPlacement = moveValue >= 0 && moveValue < BOARD_SIZE * BOARD_SIZE;
+        // Placement phase is first 4 moves (indices 0-3), game phase starts at index 4
+        // Use move_index instead of action value to distinguish - action values 0-24 overlap!
+        const isPlacement = move.move_index < 4;
         
         if (isPlacement) {
           to = [Math.floor(moveValue / BOARD_SIZE), moveValue % BOARD_SIZE];
@@ -835,7 +837,7 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
         build,
       };
     });
-  }, [loaded]);
+  }, [loaded, playerZeroRole]);
 
   // Compute last move info for visual indicator based on current position
   const lastMoveInfo = useMemo(() => {

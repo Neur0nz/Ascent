@@ -76,7 +76,7 @@ import { EMOJIS } from '@components/EmojiPicker';
 import { deriveStartingRole } from '@/utils/matchStartingRole';
 import { SantoriniWorkerClient } from '@/lib/runtime/santoriniWorkerClient';
 import { SANTORINI_CONSTANTS, type SantoriniSnapshot } from '@/lib/santoriniEngine';
-import { findWorkerPosition } from '@/lib/practice/practiceEngine';
+import { findWorkerPosition, applyActionToBoard } from '@/lib/practice/practiceEngine';
 import { useEvaluationJobs, type EvaluationJob } from '@hooks/useEvaluationJobs';
 import type { LastMoveInfo } from '@components/GameBoard';
 import { fetchMatchWithMoves, MIN_EVAL_MOVE_INDEX } from '@/lib/matchAnalysis';
@@ -217,9 +217,12 @@ function ActiveMatchContent({
     if (typeof moveValue !== 'number') return null;
 
     const { BOARD_SIZE, decodeAction, DIRECTIONS, NO_BUILD } = SANTORINI_CONSTANTS;
-    const isPlacement = moveValue >= 0 && moveValue < BOARD_SIZE * BOARD_SIZE;
-    // Creator is always player 0, opponent is always player 1
-    const player = action.by === 'creator' ? 0 : 1;
+    // Placement phase is first 4 moves (indices 0-3), game phase starts at index 4
+    // Use move_index instead of action value to distinguish - action values 0-24 overlap!
+    const isPlacement = lastMoveRecord.move_index < 4;
+    // playerZeroRole determines which role controls player 0 (green) workers
+    const playerZeroRole = getPlayerZeroRole(lobbyMatch);
+    const player = action.by === playerZeroRole ? 0 : 1;
 
     if (isPlacement) {
       // Placement move - only has "to" position
@@ -228,8 +231,25 @@ function ActiveMatchContent({
     }
 
     // Movement action - need previous board state to find origin
+    // First try to get from the previous move's state_snapshot (fast path)
     const prevMoveRecord = typedMoves.length > 1 ? typedMoves[typedMoves.length - 2] : null;
-    const boardBefore = prevMoveRecord?.state_snapshot?.board ?? lobbyMatch?.initial_state?.board ?? null;
+    let boardBefore = prevMoveRecord?.state_snapshot?.board ?? null;
+    
+    // If state_snapshot is missing (optimistic move), replay all moves to compute boardBefore
+    if (!boardBefore && lobbyMatch?.initial_state?.board) {
+      let replayedBoard: number[][][] | null = lobbyMatch.initial_state.board;
+      // Replay all moves except the last one
+      for (let i = 0; i < typedMoves.length - 1 && replayedBoard; i++) {
+        const moveRecord = typedMoves[i];
+        const moveAction = moveRecord.action;
+        const moveNum = Array.isArray(moveAction.move) ? moveAction.move[0] : moveAction.move;
+        if (typeof moveNum !== 'number') continue;
+        const movePlayer = moveAction.by === playerZeroRole ? 0 : 1;
+        replayedBoard = applyActionToBoard(replayedBoard, movePlayer, moveNum);
+      }
+      boardBefore = replayedBoard;
+    }
+    
     if (!boardBefore) return null;
 
     const [workerIndex, _power, moveDirection, buildDirection] = decodeAction(moveValue);
@@ -245,7 +265,7 @@ function ActiveMatchContent({
       : [to[0] + DIRECTIONS[buildDirection][0], to[1] + DIRECTIONS[buildDirection][1]];
 
     return { from, to, build, player };
-  }, [typedMoves, lobbyMatch?.initial_state?.board]);
+  }, [typedMoves, lobbyMatch]);
 
   const ensureAiWorker = useCallback(async () => {
     if (!isAiMatchFlag) {
