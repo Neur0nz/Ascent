@@ -118,6 +118,7 @@ interface PendingSettings {
   displayName: string;
   enginePreference: EnginePreference;
   showCoordinateLabels: boolean;
+  showLastMoveIndicator: boolean;
   autoAnalyzeEnabled: boolean;
   autoAnalyzeDepth: number;
 }
@@ -135,6 +136,7 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
     updateAvatar,
     updateEnginePreference,
     updateCoordinatePreference,
+    updateLastMoveIndicatorPreference,
     updateAutoAnalysisPreference,
     refreshProfile,
   } = auth;
@@ -173,6 +175,7 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
         displayName: profile.display_name,
         enginePreference: profile.engine_preference ?? 'rust',
         showCoordinateLabels: profile.show_coordinate_labels ?? true,
+        showLastMoveIndicator: profile.show_last_move_indicator ?? true,
         autoAnalyzeEnabled: profile.auto_analyze_games ?? false,
         autoAnalyzeDepth: profile.auto_analyze_depth ?? 800,
       });
@@ -213,10 +216,11 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
     const nameChanged = pendingSettings.displayName.trim() !== profile.display_name;
     const engineChanged = pendingSettings.enginePreference !== (profile.engine_preference ?? 'rust');
     const coordsChanged = pendingSettings.showCoordinateLabels !== (profile.show_coordinate_labels ?? true);
+    const lastMoveIndicatorChanged = pendingSettings.showLastMoveIndicator !== (profile.show_last_move_indicator ?? true);
     const autoSettingsChanged =
       pendingSettings.autoAnalyzeEnabled !== (profile.auto_analyze_games ?? false) ||
       pendingSettings.autoAnalyzeDepth !== (profile.auto_analyze_depth ?? 800);
-    return nameChanged || engineChanged || coordsChanged || autoSettingsChanged;
+    return nameChanged || engineChanged || coordsChanged || lastMoveIndicatorChanged || autoSettingsChanged;
   }, [profile, pendingSettings]);
 
   const handleGoogleSignIn = async () => {
@@ -277,6 +281,12 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
       if (pendingSettings.showCoordinateLabels !== (profile.show_coordinate_labels ?? true)) {
         changesAttempted++;
         await updateCoordinatePreference(pendingSettings.showCoordinateLabels);
+        changesSucceeded++;
+      }
+
+      if (pendingSettings.showLastMoveIndicator !== (profile.show_last_move_indicator ?? true)) {
+        changesAttempted++;
+        await updateLastMoveIndicatorPreference(pendingSettings.showLastMoveIndicator);
         changesSucceeded++;
       }
 
@@ -844,6 +854,24 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
                 isChecked={pendingSettings.showCoordinateLabels}
                 onChange={(event) =>
                   setPendingSettings({ ...pendingSettings, showCoordinateLabels: event.target.checked })
+                }
+                colorScheme="teal"
+              />
+            </FormControl>
+            <FormControl display="flex" alignItems="center" justifyContent="space-between">
+              <Box>
+                <FormLabel htmlFor="last-move-indicator-toggle" mb="0">
+                  Highlight last move
+                </FormLabel>
+                <FormHelperText color={helperText} mt={1}>
+                  Show subtle outlines on cells from the most recent move.
+                </FormHelperText>
+              </Box>
+              <Switch
+                id="last-move-indicator-toggle"
+                isChecked={pendingSettings.showLastMoveIndicator}
+                onChange={(event) =>
+                  setPendingSettings({ ...pendingSettings, showLastMoveIndicator: event.target.checked })
                 }
                 colorScheme="teal"
               />

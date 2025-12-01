@@ -179,13 +179,13 @@ function PracticeTabContent({ onShowHistory }: { onShowHistory: () => void }) {
         w="100%"
       >
         <Box
-          flex="1 1 0"
+          flex="1 1 auto"
           display="flex"
           justifyContent="center"
           w="100%"
           maxW={{ base: '100%', md: '960px' }}
-          minW={0}
-          overflow="hidden"
+          minW={{ base: '280px', sm: '320px', md: 0 }}
+          overflow="visible"
         >
           {loading ? (
             <Flex
@@ -461,7 +461,10 @@ function App() {
   }
 
   return (
-    <BoardPreferencesProvider value={{ showCoordinateLabels: auth.profile?.show_coordinate_labels ?? true }}>
+    <BoardPreferencesProvider value={{
+      showCoordinateLabels: auth.profile?.show_coordinate_labels ?? true,
+      showLastMoveIndicator: auth.profile?.show_last_move_indicator ?? true,
+    }}>
       <MatchLobbyProvider profile={auth.profile}>
       <MatchLobbySideEffects
         profileId={auth.profile?.id ?? null}

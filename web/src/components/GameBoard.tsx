@@ -18,6 +18,18 @@ import type { ButtonsState } from '@hooks/useSantorini';
 import { useBoardPreferences } from '@hooks/useBoardPreferences';
 import type { BoardCell } from '@game/boardView';
 
+/** Represents the cells involved in the last move for visual indicators */
+export interface LastMoveInfo {
+  /** Where the worker moved from (y, x) */
+  from?: [number, number] | null;
+  /** Where the worker moved to (y, x) */
+  to?: [number, number] | null;
+  /** Where the worker built (y, x) */
+  build?: [number, number] | null;
+  /** Which player made the move (0 or 1) for styling */
+  player?: number;
+}
+
 export interface GameBoardProps {
   board: BoardCell[][];
   selectable: boolean[][];
@@ -37,6 +49,8 @@ export interface GameBoardProps {
   isTurnActive?: boolean;
   turnHighlightColor?: string;
   showCoordinates?: boolean;
+  /** Information about the last move to display visual indicators */
+  lastMove?: LastMoveInfo | null;
 }
 
 const getColumnLabel = (index: number) => {
@@ -68,8 +82,9 @@ function GameBoard({
   isTurnActive = false,
   turnHighlightColor,
   showCoordinates,
+  lastMove,
 }: GameBoardProps) {
-  const { showCoordinateLabels: contextCoordinatePreference } = useBoardPreferences();
+  const { showCoordinateLabels: contextCoordinatePreference, showLastMoveIndicator } = useBoardPreferences();
   const coordinateOverlayEnabled =
     typeof showCoordinates === 'boolean' ? showCoordinates : contextCoordinatePreference;
   const cellBg = useColorModeValue('gray.50', 'gray.700');
@@ -87,6 +102,10 @@ function GameBoard({
     '0 0 4px rgba(255, 255, 255, 0.8)',
     '0 0 4px rgba(0, 0, 0, 0.9)',
   );
+  // Last move indicator colors - subtle but visible outlines
+  const lastMoveFromColor = useColorModeValue('rgba(160, 174, 192, 0.7)', 'rgba(160, 174, 192, 0.5)'); // gray
+  const lastMoveToColor = useColorModeValue('rgba(56, 178, 172, 0.8)', 'rgba(129, 230, 217, 0.6)'); // teal
+  const lastMoveBuildColor = useColorModeValue('rgba(237, 137, 54, 0.7)', 'rgba(251, 211, 141, 0.5)'); // orange
   const boardSizeControlVisible = useBreakpointValue({ base: false, md: true });
   const [boardPixels, setBoardPixels] = useState<number>(() => {
     if (typeof window === 'undefined') {
@@ -161,6 +180,16 @@ function GameBoard({
   const responsiveBorderWidth = useBreakpointValue({ base: '0px', md: isTurnActive ? '2px' : '0px' });
   const responsiveFrameBg = useBreakpointValue({ base: 'transparent', md: boardFrameBg });
 
+  // Helper to determine last move indicator type for a cell
+  const getLastMoveIndicator = (y: number, x: number): 'from' | 'to' | 'build' | null => {
+    if (!showLastMoveIndicator || !lastMove) return null;
+    // Check in reverse priority order (build < to < from for overlaps)
+    if (lastMove.build && lastMove.build[0] === y && lastMove.build[1] === x) return 'build';
+    if (lastMove.to && lastMove.to[0] === y && lastMove.to[1] === x) return 'to';
+    if (lastMove.from && lastMove.from[0] === y && lastMove.from[1] === x) return 'from';
+    return null;
+  };
+
   return (
     <Flex
       direction="column"
@@ -196,7 +225,13 @@ function GameBoard({
             </Text>
           </Flex>
         )}
-        <AspectRatio ratio={1} w="100%" maxW={boardMaxWidth} mx="auto">
+        <AspectRatio
+          ratio={1}
+          w="100%"
+          minW={{ base: '280px', sm: '320px' }}
+          maxW={boardMaxWidth}
+          mx="auto"
+        >
           <Flex
             direction="column"
             w="100%"
@@ -226,6 +261,14 @@ function GameBoard({
                   const rowLabel = String(y + 1);
                   const isBottomRow = y === boardRows - 1;
                   const isRightmostColumn = x === boardColumns - 1;
+                  const lastMoveType = getLastMoveIndicator(y, x);
+                  const lastMoveOutlineColor = lastMoveType === 'from'
+                    ? lastMoveFromColor
+                    : lastMoveType === 'to'
+                      ? lastMoveToColor
+                      : lastMoveType === 'build'
+                        ? lastMoveBuildColor
+                        : undefined;
                   return (
                     <GridItem key={`${y}-${x}`}>
                       <AspectRatio ratio={1} w="100%">
@@ -244,8 +287,9 @@ function GameBoard({
                           onMouseLeave={() => onCellLeave(y, x)}
                           cursor={canClick ? 'pointer' : 'default'}
                           borderRadius="lg"
-                          borderWidth="1px"
-                          borderColor={defaultBorderColor}
+                          borderWidth={lastMoveOutlineColor ? '2px' : '1px'}
+                          borderColor={lastMoveOutlineColor ?? defaultBorderColor}
+                          boxShadow={lastMoveOutlineColor ? `inset 0 0 0 1px ${lastMoveOutlineColor}` : undefined}
                           bg={
                             isSetupSelectable
                               ? setupSelectableBg

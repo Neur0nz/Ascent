@@ -306,8 +306,8 @@ function createLocalMatch(): LobbyMatch {
 const TRACKED_MATCH_STATUSES: MatchStatus[] = ['waiting_for_opponent', 'in_progress'];
 
 const MATCH_WITH_PROFILES =
-  '*, creator:creator_id (id, auth_user_id, display_name, avatar_url, rating, games_played, created_at, updated_at, engine_preference, show_coordinate_labels), '
-  + 'opponent:opponent_id (id, auth_user_id, display_name, avatar_url, rating, games_played, created_at, updated_at, engine_preference, show_coordinate_labels)';
+  '*, creator:creator_id (id, auth_user_id, display_name, avatar_url, rating, games_played, created_at, updated_at, engine_preference, show_coordinate_labels, show_last_move_indicator), '
+  + 'opponent:opponent_id (id, auth_user_id, display_name, avatar_url, rating, games_played, created_at, updated_at, engine_preference, show_coordinate_labels, show_last_move_indicator)';
 
 function normalizeAction(action: unknown): MatchAction {
   if (typeof action === 'object' && action !== null) {

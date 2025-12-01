@@ -2,10 +2,12 @@ import { createContext, useContext, type ReactNode } from 'react';
 
 export interface BoardPreferences {
   showCoordinateLabels: boolean;
+  showLastMoveIndicator: boolean;
 }
 
 const BoardPreferencesContext = createContext<BoardPreferences>({
   showCoordinateLabels: true,
+  showLastMoveIndicator: true,
 });
 
 export interface BoardPreferencesProviderProps {

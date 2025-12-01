@@ -29,6 +29,7 @@ export interface PlayerProfile {
   updated_at: string;
   engine_preference: EnginePreference;
   show_coordinate_labels: boolean;
+  show_last_move_indicator: boolean;
   auto_analyze_games: boolean;
   auto_analyze_depth: number | null;
 }

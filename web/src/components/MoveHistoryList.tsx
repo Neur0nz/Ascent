@@ -7,7 +7,6 @@ import {
   PopoverBody,
   PopoverContent,
   PopoverTrigger,
-  Portal,
   SimpleGrid,
   Stack,
   Tag,
@@ -206,38 +205,57 @@ const MoveHistoryListItem = memo(function MoveHistoryListItem({
   return (
     <Popover
       isOpen={isHovered && !isDisabled}
-      placement="left"
+      placement="auto"
       trigger="hover"
       isLazy
       lazyBehavior="unmount"
-      gutter={8}
+      gutter={12}
+      modifiers={[
+        {
+          name: 'preventOverflow',
+          options: {
+            boundary: 'viewport',
+            padding: 8,
+          },
+        },
+        {
+          name: 'flip',
+          options: {
+            fallbackPlacements: ['left', 'right', 'top', 'bottom'],
+          },
+        },
+      ]}
     >
       <PopoverTrigger>{content}</PopoverTrigger>
-      <Portal>
-        <PopoverContent w="auto" bg={popoverBg} shadow="lg">
-          <PopoverArrow bg={popoverBg} />
-          <PopoverBody p={2}>
-            <Stack spacing={1}>
-              <Text fontSize="xs" fontWeight="semibold" textAlign="center">
-                After {item.label}
-              </Text>
-              <MiniBoardPreview
-                board={item.board ?? null}
-                from={item.from}
-                to={item.to}
-                build={item.build}
-              />
-              {item.to && (
-                <HStack spacing={2} justify="center" fontSize="2xs" color={mutedText}>
-                  {item.from && <Text>From: {coordinateLabel(item.from)}</Text>}
-                  <Text>To: {coordinateLabel(item.to)}</Text>
-                  {item.build && <Text>Build: {coordinateLabel(item.build)}</Text>}
-                </HStack>
-              )}
-            </Stack>
-          </PopoverBody>
-        </PopoverContent>
-      </Portal>
+      <PopoverContent 
+        w="auto" 
+        bg={popoverBg} 
+        shadow="xl"
+        borderRadius="lg"
+        maxW="200px"
+      >
+        <PopoverArrow bg={popoverBg} />
+        <PopoverBody p={3}>
+          <Stack spacing={2}>
+            <Text fontSize="xs" fontWeight="bold" textAlign="center" color={mutedText}>
+              After {item.label}
+            </Text>
+            <MiniBoardPreview
+              board={item.board ?? null}
+              from={item.from}
+              to={item.to}
+              build={item.build}
+            />
+            {item.to && (
+              <HStack spacing={2} justify="center" fontSize="2xs" color={mutedText} flexWrap="wrap">
+                {item.from && <Text>From: {coordinateLabel(item.from)}</Text>}
+                <Text>To: {coordinateLabel(item.to)}</Text>
+                {item.build && <Text>Build: {coordinateLabel(item.build)}</Text>}
+              </HStack>
+            )}
+          </Stack>
+        </PopoverBody>
+      </PopoverContent>
     </Popover>
   );
 });
