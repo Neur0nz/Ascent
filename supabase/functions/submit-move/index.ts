@@ -29,6 +29,66 @@ interface SubmitMoveRequest {
   action?: SupportedAction;
 }
 
+// Structured error codes for client-side handling
+// Format: CATEGORY_SPECIFIC_ERROR
+const ErrorCode = {
+  // Authentication errors (401)
+  AUTH_MISSING_TOKEN: 'AUTH_MISSING_TOKEN',
+  AUTH_INVALID_TOKEN: 'AUTH_INVALID_TOKEN',
+  AUTH_UNAUTHORIZED: 'AUTH_UNAUTHORIZED',
+  
+  // Request validation errors (400)
+  REQUEST_INVALID_JSON: 'REQUEST_INVALID_JSON',
+  REQUEST_MISSING_MATCH_ID: 'REQUEST_MISSING_MATCH_ID',
+  REQUEST_MISSING_ACTION: 'REQUEST_MISSING_ACTION',
+  REQUEST_UNSUPPORTED_ACTION: 'REQUEST_UNSUPPORTED_ACTION',
+  REQUEST_INVALID_MOVE_INDEX: 'REQUEST_INVALID_MOVE_INDEX',
+  
+  // Authorization errors (403)
+  MATCH_NOT_PARTICIPANT: 'MATCH_NOT_PARTICIPANT',
+  MATCH_NOT_YOUR_TURN: 'MATCH_NOT_YOUR_TURN',
+  
+  // Match state errors (409)
+  MATCH_NOT_STARTED: 'MATCH_NOT_STARTED',
+  MATCH_ALREADY_ENDED: 'MATCH_ALREADY_ENDED',
+  MATCH_AI_NOT_READY: 'MATCH_AI_NOT_READY',
+  MOVE_OUT_OF_SEQUENCE: 'MOVE_OUT_OF_SEQUENCE',
+  MOVE_INDEX_MISMATCH: 'MOVE_INDEX_MISMATCH',
+  
+  // Undo-specific errors (409)
+  UNDO_NO_MOVES: 'UNDO_NO_MOVES',
+  UNDO_MOVE_NOT_FOUND: 'UNDO_MOVE_NOT_FOUND',
+  UNDO_INVALID_MOVE_TYPE: 'UNDO_INVALID_MOVE_TYPE',
+  
+  // Game logic errors (422)
+  GAME_INVALID_MOVE: 'GAME_INVALID_MOVE',
+  GAME_ALREADY_OVER: 'GAME_ALREADY_OVER',
+  
+  // Not found errors (404)
+  MATCH_NOT_FOUND: 'MATCH_NOT_FOUND',
+  
+  // Server errors (500)
+  SERVER_STATE_CORRUPTED: 'SERVER_STATE_CORRUPTED',
+  SERVER_STATE_UNAVAILABLE: 'SERVER_STATE_UNAVAILABLE',
+  SERVER_STORAGE_FAILED: 'SERVER_STORAGE_FAILED',
+  SERVER_UNDO_FAILED: 'SERVER_UNDO_FAILED',
+} as const;
+
+type ErrorCodeType = typeof ErrorCode[keyof typeof ErrorCode];
+
+function errorResponse(
+  code: ErrorCodeType,
+  message: string,
+  status: number,
+  details?: Record<string, unknown>,
+): Response {
+  return jsonResponse({
+    error: message,
+    code,
+    ...(details && { details }),
+  }, { status });
+}
+
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 const APP_BASE_URL = Deno.env.get('APP_BASE_URL') ?? null;
@@ -678,11 +738,11 @@ serve(async (req) => {
 
   const authHeader = req.headers.get('Authorization');
   if (!authHeader) {
-    return jsonResponse({ error: 'Missing authorization token' }, { status: 401 });
+    return errorResponse(ErrorCode.AUTH_MISSING_TOKEN, 'Missing authorization token', 401);
   }
   const token = authHeader.replace('Bearer ', '').trim();
   if (!token) {
-    return jsonResponse({ error: 'Invalid authorization token' }, { status: 401 });
+    return errorResponse(ErrorCode.AUTH_INVALID_TOKEN, 'Invalid authorization token', 401);
   }
 
   let payload: SubmitMoveRequest;
@@ -690,16 +750,16 @@ serve(async (req) => {
     payload = (await req.json()) as SubmitMoveRequest;
   } catch (error) {
     console.error('Failed to parse submit-move payload', error);
-    return jsonResponse({ error: 'Invalid JSON body' }, { status: 400 });
+    return errorResponse(ErrorCode.REQUEST_INVALID_JSON, 'Invalid request format', 400);
   }
   
   console.log(`⏱️ [${(performance.now() - startTime).toFixed(0)}ms] Payload parsed`);
 
   if (!payload?.matchId || typeof payload.matchId !== 'string') {
-    return jsonResponse({ error: 'Missing match identifier' }, { status: 400 });
+    return errorResponse(ErrorCode.REQUEST_MISSING_MATCH_ID, 'Match identifier is required', 400);
   }
   if (!payload.action) {
-    return jsonResponse({ error: 'Missing action payload' }, { status: 400 });
+    return errorResponse(ErrorCode.REQUEST_MISSING_ACTION, 'Move action is required', 400);
   }
 
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
@@ -712,10 +772,10 @@ serve(async (req) => {
     authContext = await getAuthUserId(supabase, token);
   } catch (error) {
     if (error instanceof HttpError) {
-      return jsonResponse({ error: error.message }, { status: error.status });
+      return errorResponse(ErrorCode.AUTH_UNAUTHORIZED, error.message, error.status);
     }
     console.error('Failed to authenticate request token', error);
-    return jsonResponse({ error: 'Unauthorized' }, { status: 401 });
+    return errorResponse(ErrorCode.AUTH_UNAUTHORIZED, 'Authentication failed', 401);
   }
   console.log(
     `⏱️ [${(performance.now() - startTime).toFixed(0)}ms] Auth verified${authContext.fromCache ? ' (cached)' : ''}`,
@@ -733,10 +793,10 @@ serve(async (req) => {
     submissionContext = await loadSubmissionContext(supabase, authContext.userId, payload.matchId);
   } catch (error) {
     if (error instanceof HttpError) {
-      return jsonResponse({ error: error.message }, { status: error.status });
+      return errorResponse(ErrorCode.MATCH_NOT_FOUND, error.message, error.status);
     }
     console.error('Failed to load move submission data', error);
-    return jsonResponse({ error: 'Unable to load match data' }, { status: 404 });
+    return errorResponse(ErrorCode.MATCH_NOT_FOUND, 'Match not found or inaccessible', 404);
   }
 
   let { match, lastMove, snapshot, lastMoveIndex, role, playerId } = submissionContext;
@@ -765,20 +825,20 @@ serve(async (req) => {
   );
 
   if (!role) {
-    return jsonResponse({ error: 'You are not a participant in this match' }, { status: 403 });
+    return errorResponse(ErrorCode.MATCH_NOT_PARTICIPANT, 'You are not a participant in this match', 403);
   }
 
   if (!match.opponent_id) {
-    return jsonResponse({ error: 'Match has not been joined yet' }, { status: 409 });
+    return errorResponse(ErrorCode.MATCH_NOT_STARTED, 'Match has not started - waiting for opponent', 409);
   }
 
   if (match.status === 'completed' || match.status === 'abandoned') {
-    return jsonResponse({ error: 'Match can no longer accept moves' }, { status: 409 });
+    return errorResponse(ErrorCode.MATCH_ALREADY_ENDED, 'This match has already ended', 409);
   }
 
   if (!match.initial_state) {
     console.error('Match is missing initial state snapshot');
-    return jsonResponse({ error: 'Match state is unavailable' }, { status: 500 });
+    return errorResponse(ErrorCode.SERVER_STATE_UNAVAILABLE, 'Match state is unavailable', 500);
   }
 
   if (payload.action.kind === 'undo.reject') {
@@ -787,7 +847,7 @@ serve(async (req) => {
 
   if (payload.action.kind === 'undo.accept') {
     if (!lastMove) {
-      return jsonResponse({ error: 'No moves available to undo' }, { status: 409 });
+      return errorResponse(ErrorCode.UNDO_NO_MOVES, 'No moves available to undo', 409);
     }
     const targetIndex =
       typeof payload.action.moveIndex === 'number'
@@ -796,10 +856,10 @@ serve(async (req) => {
           ? payload.moveIndex
           : lastMove.move_index;
     if (!Number.isInteger(targetIndex) || targetIndex < 0) {
-      return jsonResponse({ error: 'Invalid move index for undo' }, { status: 400 });
+      return errorResponse(ErrorCode.REQUEST_INVALID_MOVE_INDEX, 'Invalid move index for undo', 400);
     }
     if (targetIndex > lastMove.move_index) {
-      return jsonResponse({ error: 'Move index mismatch' }, { status: 409 });
+      return errorResponse(ErrorCode.MOVE_INDEX_MISMATCH, 'Move index does not match current game state', 409);
     }
 
     const { data: rewindMoves, error: rewindError } = await supabase
@@ -811,20 +871,20 @@ serve(async (req) => {
 
     if (rewindError) {
       console.error('Failed to load moves for undo', rewindError);
-      return jsonResponse({ error: 'Unable to load moves to undo' }, { status: 500 });
+      return errorResponse(ErrorCode.SERVER_UNDO_FAILED, 'Unable to process undo request', 500);
     }
     if (!Array.isArray(rewindMoves) || rewindMoves.length === 0) {
-      return jsonResponse({ error: 'Move to undo not found' }, { status: 404 });
+      return errorResponse(ErrorCode.UNDO_MOVE_NOT_FOUND, 'Move to undo was not found', 404);
     }
 
     const targetMove = rewindMoves.find((move) => move.move_index === targetIndex) ?? null;
     if (!targetMove) {
-      return jsonResponse({ error: 'Move to undo not found' }, { status: 404 });
+      return errorResponse(ErrorCode.UNDO_MOVE_NOT_FOUND, 'Move to undo was not found', 404);
     }
 
     const targetActionKind = (targetMove.action as { kind?: string } | null)?.kind ?? 'santorini.move';
     if (targetActionKind !== 'santorini.move') {
-      return jsonResponse({ error: 'Only standard moves can be undone' }, { status: 409 });
+      return errorResponse(ErrorCode.UNDO_INVALID_MOVE_TYPE, 'Only standard moves can be undone', 409);
     }
 
     const { data: previousMoves, error: previousError } = await supabase
@@ -837,7 +897,7 @@ serve(async (req) => {
 
     if (previousError) {
       console.error('Failed to load previous move snapshot', previousError);
-      return jsonResponse({ error: 'Unable to load previous game state' }, { status: 500 });
+      return errorResponse(ErrorCode.SERVER_UNDO_FAILED, 'Unable to load previous game state', 500);
     }
 
     const previousMove = Array.isArray(previousMoves) && previousMoves.length > 0 ? previousMoves[0] : null;
@@ -845,7 +905,7 @@ serve(async (req) => {
     const undoClockUpdatedAt = new Date().toISOString();
 
     if (deleteIds.length === 0) {
-      return jsonResponse({ error: 'No moves available to undo' }, { status: 409 });
+      return errorResponse(ErrorCode.UNDO_NO_MOVES, 'No moves available to undo', 409);
     }
 
     const { error: deleteError } = await supabase
@@ -855,7 +915,7 @@ serve(async (req) => {
 
     if (deleteError) {
       console.error('Failed to delete moves during undo', deleteError);
-      return jsonResponse({ error: 'Failed to remove moves' }, { status: 500 });
+      return errorResponse(ErrorCode.SERVER_UNDO_FAILED, 'Failed to process undo', 500);
     }
 
     const undoUpdatePayload: Record<string, unknown> = { clock_updated_at: undoClockUpdatedAt };
@@ -901,7 +961,7 @@ serve(async (req) => {
   }
 
   if (payload.action.kind !== 'santorini.move') {
-    return jsonResponse({ error: 'Unsupported action payload' }, { status: 400 });
+    return errorResponse(ErrorCode.REQUEST_UNSUPPORTED_ACTION, 'Unsupported action type', 400);
   }
 
   const moveAction = payload.action as SantoriniMoveAction;
@@ -919,7 +979,7 @@ serve(async (req) => {
     console.log('Engine ready - current player:', engine.player, 'next move index:', expectedMoveIndex);
   } catch (error) {
     console.error('Failed to build engine from snapshot', error);
-    return jsonResponse({ error: 'Match state snapshot is corrupted' }, { status: 500 });
+    return errorResponse(ErrorCode.SERVER_STATE_CORRUPTED, 'Match state is corrupted', 500);
   }
 
   console.log('Move index validation - payload:', payload.moveIndex, 'expected:', expectedMoveIndex);
@@ -928,7 +988,12 @@ serve(async (req) => {
     // Invalidate cache on conflict so retry gets fresh data
     matchCache.delete(payload.matchId);
     console.log('🗑️  Cache invalidated for match', payload.matchId, 'due to move index conflict');
-    return jsonResponse({ error: 'Move index out of sequence' }, { status: 409 });
+    return errorResponse(
+      ErrorCode.MOVE_OUT_OF_SEQUENCE,
+      'Move is out of sync with game state',
+      409,
+      { expected: expectedMoveIndex, received: payload.moveIndex },
+    );
   }
 
   const placementContext = engine.getPlacementContext();
@@ -937,10 +1002,10 @@ serve(async (req) => {
   const actingPlayerId = actingRole === 'creator' ? match.creator_id : match.opponent_id;
   if (!playerControlsAi) {
     if (role !== actingRole) {
-      return jsonResponse({ error: actingRole === 'creator' ? "It is the creator's turn" : "It is the opponent's turn" }, { status: 403 });
+      return errorResponse(ErrorCode.MATCH_NOT_YOUR_TURN, 'It is not your turn', 403);
     }
   } else if (!actingPlayerId) {
-    return jsonResponse({ error: 'AI opponent is not fully initialized' }, { status: 409 });
+    return errorResponse(ErrorCode.MATCH_AI_NOT_READY, 'AI opponent is not ready', 409);
   }
 
   const movesToApply = Array.isArray(moveAction.move) ? moveAction.move : [moveAction.move];
@@ -969,11 +1034,14 @@ serve(async (req) => {
     console.error('Move sequence was:', movesToApply, 'Player:', actingPlayerIndex);
     console.error('Engine player:', engine.player);
     const blocked = recordIllegalMoveAttempt(authContext.userId);
-    const status = blocked ? 429 : 422;
-    const message = blocked
-      ? 'Too many illegal moves detected. Please wait before trying again.'
-      : 'Illegal move';
-    return jsonResponse({ error: message }, { status });
+    if (blocked) {
+      return errorResponse(
+        ErrorCode.GAME_INVALID_MOVE,
+        'Too many invalid moves - please wait before retrying',
+        429,
+      );
+    }
+    return errorResponse(ErrorCode.GAME_INVALID_MOVE, 'Invalid move for current game state', 422);
   }
 
   const computedClocks = computeServerClocks(match, lastMove, actingPlayerIndex, snapshot.metadata);
@@ -1005,7 +1073,7 @@ serve(async (req) => {
 
   if (insertError || !insertedMove) {
     console.error('Failed to persist move', insertError);
-    return jsonResponse({ error: 'Failed to store move' }, { status: 500 });
+    return errorResponse(ErrorCode.SERVER_STORAGE_FAILED, 'Failed to save move', 500);
   }
 
   clearIllegalMovePenalties(authContext.userId);
