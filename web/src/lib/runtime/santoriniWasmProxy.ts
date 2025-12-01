@@ -512,13 +512,14 @@ export class SantoriniWasmProxy {
     return this.history.length;
   }
 
-  get_history_snapshot(): Array<{ player: number; action: number | null; description: string }> {
+  get_history_snapshot(): Array<{ player: number; action: number | null; description: string; board: number[][][] }> {
     return [...this.history]
       .reverse()
       .map((entry) => ({
         player: entry.player,
         action: entry.action ?? null,
         description: entry.action == null ? '' : moveToString(entry.action, entry.player, entry.board),
+        board: cloneBoard(entry.board),
       }));
   }
 

@@ -504,6 +504,7 @@ def get_history_snapshot():
     snapshot = []
     for state in reversed(history):
         entry_player = int(state[0])
+        entry_board = state[1]
         entry_action = state[2]
 
         action_value = int(entry_action) if entry_action is not None else None
@@ -514,11 +515,15 @@ def get_history_snapshot():
             except Exception:
                 description = ""
 
+        # Convert numpy board to nested list for JS serialization
+        board_list = entry_board.tolist() if hasattr(entry_board, 'tolist') else entry_board
+
         snapshot.append(
             {
                 "player": entry_player,
                 "action": action_value,
                 "description": description,
+                "board": board_list,
             }
         )
 

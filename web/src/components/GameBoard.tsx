@@ -102,10 +102,10 @@ function GameBoard({
     '0 0 4px rgba(255, 255, 255, 0.8)',
     '0 0 4px rgba(0, 0, 0, 0.9)',
   );
-  // Last move indicator colors - very subtle, soft outlines
-  const lastMoveFromColor = useColorModeValue('rgba(160, 174, 192, 0.45)', 'rgba(160, 174, 192, 0.35)'); // soft gray
-  const lastMoveToColor = useColorModeValue('rgba(56, 178, 172, 0.5)', 'rgba(129, 230, 217, 0.4)'); // soft teal
-  const lastMoveBuildColor = useColorModeValue('rgba(237, 137, 54, 0.45)', 'rgba(251, 211, 141, 0.35)'); // soft orange
+  // Last move indicator colors - noticeable but not overwhelming
+  const lastMoveFromColor = useColorModeValue('rgba(113, 128, 150, 0.8)', 'rgba(160, 174, 192, 0.7)'); // gray (where piece was)
+  const lastMoveToColor = useColorModeValue('rgba(49, 151, 149, 0.85)', 'rgba(129, 230, 217, 0.75)'); // teal (where piece moved to)
+  const lastMoveBuildColor = useColorModeValue('rgba(221, 107, 32, 0.8)', 'rgba(246, 173, 85, 0.7)'); // orange (where built)
   const boardSizeControlVisible = useBreakpointValue({ base: false, md: true });
   const [boardPixels, setBoardPixels] = useState<number>(() => {
     if (typeof window === 'undefined') {
@@ -180,10 +180,10 @@ function GameBoard({
   const responsiveBorderWidth = useBreakpointValue({ base: '0px', md: isTurnActive ? '2px' : '0px' });
   const responsiveFrameBg = useBreakpointValue({ base: 'transparent', md: boardFrameBg });
 
-  // Helper to determine last move indicator type for a cell
+  // Helper to determine last move indicator type for a cell.
+  // Priority: build > to > from (if a cell matches multiple, show the newer action).
   const getLastMoveIndicator = (y: number, x: number): 'from' | 'to' | 'build' | null => {
     if (!showLastMoveIndicator || !lastMove) return null;
-    // Check in reverse priority order (build < to < from for overlaps)
     if (lastMove.build && lastMove.build[0] === y && lastMove.build[1] === x) return 'build';
     if (lastMove.to && lastMove.to[0] === y && lastMove.to[1] === x) return 'to';
     if (lastMove.from && lastMove.from[0] === y && lastMove.from[1] === x) return 'from';
@@ -287,9 +287,9 @@ function GameBoard({
                           onMouseLeave={() => onCellLeave(y, x)}
                           cursor={canClick ? 'pointer' : 'default'}
                           borderRadius="lg"
-                          borderWidth="1px"
+                          borderWidth={lastMoveOutlineColor ? '2px' : '1px'}
                           borderColor={lastMoveOutlineColor ?? defaultBorderColor}
-                          boxShadow={lastMoveOutlineColor ? `inset 0 0 3px ${lastMoveOutlineColor}` : undefined}
+                          boxShadow={lastMoveOutlineColor ? `inset 0 0 6px 1px ${lastMoveOutlineColor}` : undefined}
                           bg={
                             isSetupSelectable
                               ? setupSelectableBg

@@ -19,8 +19,8 @@ export interface PracticeSnapshotPayload {
 export interface HistorySnapshotEntry {
   player?: number;
   action?: number | null;
-  boardBefore?: number[][][] | null;
-  boardAfter?: number[][][] | null;
+  /** Board state BEFORE this move was made */
+  board?: number[][][] | null;
   phase?: 'placement' | 'move' | 'unknown';
   description?: string;
 }

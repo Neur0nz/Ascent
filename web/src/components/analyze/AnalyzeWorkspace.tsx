@@ -66,6 +66,7 @@ import { SantoriniEngine, SANTORINI_CONSTANTS, type SantoriniSnapshot } from '@/
 import { useSantorini } from '@hooks/useSantorini';
 import type { MatchMoveRecord, MatchRecord, MatchRole, SantoriniMoveAction, PlayerProfile, SantoriniStateSnapshot } from '@/types/match';
 import { getMatchAiDepth, getOppositeRole, getPlayerZeroRole, isAiMatch } from '@/utils/matchAiDepth';
+import { findWorkerPosition } from '@/lib/practice/practiceEngine';
 import { describeMatch } from '@/utils/matchDescription';
 import type { EvaluationSeriesPoint } from '@/types/evaluation';
 import type { SupabaseAuthState } from '@hooks/useSupabaseAuth';
@@ -760,18 +761,6 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
     if (!loaded) return [];
     
     const { BOARD_SIZE, decodeAction, DIRECTIONS, NO_BUILD } = SANTORINI_CONSTANTS;
-    
-    // Helper to find worker position on a board
-    const findWorkerPosition = (board: number[][][], workerId: number): [number, number] | null => {
-      for (let y = 0; y < board.length; y++) {
-        for (let x = 0; x < board[y].length; x++) {
-          if (board[y][x][0] === workerId) {
-            return [y, x];
-          }
-        }
-      }
-      return null;
-    };
 
     return loaded.moves.map((move, index) => {
       const action = move.action;
@@ -789,8 +778,10 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
         : loaded.match.initial_state;
       const boardBefore = prevSnapshot?.board ?? null;
       
-      // Determine the player based on move index (alternating players)
-      const player = index % 2;
+      // Determine player from action.by (creator=0, opponent=1)
+      // This correctly handles placement phase where same player moves twice
+      const moveBy = action?.kind === 'santorini.move' ? action.by : null;
+      const player = moveBy === 'creator' ? 0 : moveBy === 'opponent' ? 1 : (index % 2);
       
       // Calculate move details
       let from: [number, number] | undefined;

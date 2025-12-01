@@ -218,11 +218,13 @@ function ActiveMatchContent({
 
     const { BOARD_SIZE, decodeAction, DIRECTIONS, NO_BUILD } = SANTORINI_CONSTANTS;
     const isPlacement = moveValue >= 0 && moveValue < BOARD_SIZE * BOARD_SIZE;
+    // Creator is always player 0, opponent is always player 1
+    const player = action.by === 'creator' ? 0 : 1;
 
     if (isPlacement) {
       // Placement move - only has "to" position
       const to: [number, number] = [Math.floor(moveValue / BOARD_SIZE), moveValue % BOARD_SIZE];
-      return { from: null, to, build: null, player: action.by === 'creator' ? 0 : 1 };
+      return { from: null, to, build: null, player };
     }
 
     // Movement action - need previous board state to find origin
@@ -231,7 +233,6 @@ function ActiveMatchContent({
     if (!boardBefore) return null;
 
     const [workerIndex, _power, moveDirection, buildDirection] = decodeAction(moveValue);
-    const player = action.by === 'creator' ? 0 : 1;
     const workerId = (workerIndex + 1) * (player === 0 ? 1 : -1);
     const origin = findWorkerPosition(boardBefore, workerId);
     if (!origin) return null;
