@@ -102,10 +102,10 @@ function GameBoard({
     '0 0 4px rgba(255, 255, 255, 0.8)',
     '0 0 4px rgba(0, 0, 0, 0.9)',
   );
-  // Last move indicator colors - subtle but visible outlines
-  const lastMoveFromColor = useColorModeValue('rgba(160, 174, 192, 0.7)', 'rgba(160, 174, 192, 0.5)'); // gray
-  const lastMoveToColor = useColorModeValue('rgba(56, 178, 172, 0.8)', 'rgba(129, 230, 217, 0.6)'); // teal
-  const lastMoveBuildColor = useColorModeValue('rgba(237, 137, 54, 0.7)', 'rgba(251, 211, 141, 0.5)'); // orange
+  // Last move indicator colors - very subtle, soft outlines
+  const lastMoveFromColor = useColorModeValue('rgba(160, 174, 192, 0.45)', 'rgba(160, 174, 192, 0.35)'); // soft gray
+  const lastMoveToColor = useColorModeValue('rgba(56, 178, 172, 0.5)', 'rgba(129, 230, 217, 0.4)'); // soft teal
+  const lastMoveBuildColor = useColorModeValue('rgba(237, 137, 54, 0.45)', 'rgba(251, 211, 141, 0.35)'); // soft orange
   const boardSizeControlVisible = useBreakpointValue({ base: false, md: true });
   const [boardPixels, setBoardPixels] = useState<number>(() => {
     if (typeof window === 'undefined') {
@@ -287,9 +287,9 @@ function GameBoard({
                           onMouseLeave={() => onCellLeave(y, x)}
                           cursor={canClick ? 'pointer' : 'default'}
                           borderRadius="lg"
-                          borderWidth={lastMoveOutlineColor ? '2px' : '1px'}
+                          borderWidth="1px"
                           borderColor={lastMoveOutlineColor ?? defaultBorderColor}
-                          boxShadow={lastMoveOutlineColor ? `inset 0 0 0 1px ${lastMoveOutlineColor}` : undefined}
+                          boxShadow={lastMoveOutlineColor ? `inset 0 0 3px ${lastMoveOutlineColor}` : undefined}
                           bg={
                             isSetupSelectable
                               ? setupSelectableBg

@@ -67,7 +67,7 @@ const mockProfile: PlayerProfile = {
   updated_at: new Date().toISOString(),
   engine_preference: 'rust',
   show_coordinate_labels: true,
-  show_last_move_indicator: true,
+  show_last_move_indicator: false,
   auto_analyze_games: false,
   auto_analyze_depth: 800,
 };

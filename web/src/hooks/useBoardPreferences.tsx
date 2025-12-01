@@ -7,7 +7,7 @@ export interface BoardPreferences {
 
 const BoardPreferencesContext = createContext<BoardPreferences>({
   showCoordinateLabels: true,
-  showLastMoveIndicator: true,
+  showLastMoveIndicator: false,
 });
 
 export interface BoardPreferencesProviderProps {

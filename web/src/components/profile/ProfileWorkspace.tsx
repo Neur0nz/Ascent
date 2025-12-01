@@ -175,7 +175,7 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
         displayName: profile.display_name,
         enginePreference: profile.engine_preference ?? 'rust',
         showCoordinateLabels: profile.show_coordinate_labels ?? true,
-        showLastMoveIndicator: profile.show_last_move_indicator ?? true,
+        showLastMoveIndicator: profile.show_last_move_indicator ?? false,
         autoAnalyzeEnabled: profile.auto_analyze_games ?? false,
         autoAnalyzeDepth: profile.auto_analyze_depth ?? 800,
       });
@@ -216,7 +216,7 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
     const nameChanged = pendingSettings.displayName.trim() !== profile.display_name;
     const engineChanged = pendingSettings.enginePreference !== (profile.engine_preference ?? 'rust');
     const coordsChanged = pendingSettings.showCoordinateLabels !== (profile.show_coordinate_labels ?? true);
-    const lastMoveIndicatorChanged = pendingSettings.showLastMoveIndicator !== (profile.show_last_move_indicator ?? true);
+    const lastMoveIndicatorChanged = pendingSettings.showLastMoveIndicator !== (profile.show_last_move_indicator ?? false);
     const autoSettingsChanged =
       pendingSettings.autoAnalyzeEnabled !== (profile.auto_analyze_games ?? false) ||
       pendingSettings.autoAnalyzeDepth !== (profile.auto_analyze_depth ?? 800);
@@ -284,7 +284,7 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
         changesSucceeded++;
       }
 
-      if (pendingSettings.showLastMoveIndicator !== (profile.show_last_move_indicator ?? true)) {
+      if (pendingSettings.showLastMoveIndicator !== (profile.show_last_move_indicator ?? false)) {
         changesAttempted++;
         await updateLastMoveIndicatorPreference(pendingSettings.showLastMoveIndicator);
         changesSucceeded++;

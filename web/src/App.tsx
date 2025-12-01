@@ -463,7 +463,7 @@ function App() {
   return (
     <BoardPreferencesProvider value={{
       showCoordinateLabels: auth.profile?.show_coordinate_labels ?? true,
-      showLastMoveIndicator: auth.profile?.show_last_move_indicator ?? true,
+      showLastMoveIndicator: auth.profile?.show_last_move_indicator ?? false,
     }}>
       <MatchLobbyProvider profile={auth.profile}>
       <MatchLobbySideEffects
@@ -487,6 +487,7 @@ function App() {
             actions={tabActions}
             auth={auth}
             onNavigateToProfile={() => setActiveTab('profile')}
+            onTabChange={handleTabChange}
           />
           <Flex flex="1" py={{ base: 6, md: 8 }}>
             <Container maxW="7xl" flex="1" px={{ base: 3, md: 6 }}>

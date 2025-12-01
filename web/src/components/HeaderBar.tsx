@@ -1,6 +1,12 @@
 import { ReactNode, useMemo } from 'react';
 import {
   Box,
+  Drawer,
+  DrawerBody,
+  DrawerCloseButton,
+  DrawerContent,
+  DrawerHeader,
+  DrawerOverlay,
   Flex,
   Heading,
   HStack,
@@ -10,11 +16,12 @@ import {
   TabList,
   Text,
   Tooltip,
+  useDisclosure,
   VStack,
   useColorMode,
   useColorModeValue,
 } from '@chakra-ui/react';
-import { MoonIcon, SunIcon } from '@chakra-ui/icons';
+import { HamburgerIcon, MoonIcon, SunIcon } from '@chakra-ui/icons';
 import { LayoutGroup, motion } from 'framer-motion';
 import AuthJourney from '@components/auth/AuthJourney';
 import { useSurfaceTokens } from '@/theme/useSurfaceTokens';
@@ -27,6 +34,7 @@ interface HeaderBarProps {
   actions?: ReactNode;
   auth: SupabaseAuthState;
   onNavigateToProfile: () => void;
+  onTabChange?: (index: number) => void;
 }
 
 export const NAV_TABS: ReadonlyArray<{ key: AppTab; label: string; helper: string }> = [
@@ -38,8 +46,9 @@ export const NAV_TABS: ReadonlyArray<{ key: AppTab; label: string; helper: strin
   { key: 'profile', label: 'Profile', helper: 'Your stats' },
 ];
 
-function HeaderBar({ activeTab, actions, auth, onNavigateToProfile }: HeaderBarProps) {
+function HeaderBar({ activeTab, actions, auth, onNavigateToProfile, onTabChange }: HeaderBarProps) {
   const { colorMode, toggleColorMode } = useColorMode();
+  const { isOpen: isDrawerOpen, onOpen: openDrawer, onClose: closeDrawer } = useDisclosure();
   const headingColor = useColorModeValue('gray.900', 'white');
   const descriptionColor = useColorModeValue('gray.600', 'whiteAlpha.700');
   const helperMuted = useColorModeValue('gray.600', 'whiteAlpha.700');
@@ -48,8 +57,16 @@ function HeaderBar({ activeTab, actions, auth, onNavigateToProfile }: HeaderBarP
   const tabSelected = useColorModeValue('teal.50', 'teal.900');
   const tabSelectedColor = useColorModeValue('teal.800', 'teal.100');
   const tabHelperColor = useColorModeValue('gray.600', 'whiteAlpha.700');
+  const drawerBg = useColorModeValue('white', 'gray.800');
+  const drawerItemBg = useColorModeValue('gray.50', 'whiteAlpha.100');
+  const drawerItemHover = useColorModeValue('teal.50', 'teal.900');
   const { headerGradient, headerBorder, headerAccent } = useSurfaceTokens();
   const MotionBox = motion.create(Box);
+
+  const handleMobileNavClick = (index: number) => {
+    onTabChange?.(index);
+    closeDrawer();
+  };
 
   const activeTabDetails = useMemo(() => NAV_TABS.find((tab) => tab.key === activeTab), [activeTab]);
 
@@ -70,25 +87,41 @@ function HeaderBar({ activeTab, actions, auth, onNavigateToProfile }: HeaderBarP
           align={{ base: 'flex-start', lg: 'center' }}
           gap={{ base: 2, md: 4 }}
         >
-          <VStack align="flex-start" spacing={1}>
-            <Heading 
-              as="h1" 
-              size={{ base: 'md', md: 'lg' }} 
-              letterSpacing="tight" 
-              color={headingColor}
-            >
-              Ascent
-            </Heading>
-            <Text fontSize={{ base: 'sm', md: 'md' }} color={helperMuted}>
-              Play Santorini online or practice against AI
-            </Text>
-          </VStack>
+          <HStack spacing={3} align="center" w={{ base: '100%', lg: 'auto' }}>
+            {/* Hamburger menu for mobile */}
+            <Tooltip label="Menu" hasArrow display={{ base: 'block', md: 'none' }}>
+              <IconButton
+                aria-label="Open navigation menu"
+                icon={<HamburgerIcon />}
+                size="sm"
+                variant="ghost"
+                onClick={openDrawer}
+                display={{ base: 'flex', md: 'none' }}
+              />
+            </Tooltip>
+            <VStack align="flex-start" spacing={1} flex="1">
+              <Heading 
+                as="h1" 
+                size={{ base: 'md', md: 'lg' }} 
+                letterSpacing="tight" 
+                color={headingColor}
+              >
+                Ascent
+              </Heading>
+              <Text fontSize={{ base: 'sm', md: 'md' }} color={helperMuted} display={{ base: 'none', sm: 'block' }}>
+                Play Santorini online or practice against AI
+              </Text>
+            </VStack>
+          </HStack>
           <Spacer display={{ base: 'none', md: 'block' }} />
           <HStack
             spacing={3}
             align="center"
-            w={{ base: '100%', lg: 'auto' }}
-            justify={{ base: 'flex-end', lg: 'flex-end' }}
+            w={{ base: 'auto', lg: 'auto' }}
+            justify="flex-end"
+            position={{ base: 'absolute', lg: 'relative' }}
+            right={{ base: 3, lg: 'auto' }}
+            top={{ base: 4, lg: 'auto' }}
           >
             {actions && <Box display={{ base: 'flex', md: 'none' }}>{actions}</Box>}
             <AuthJourney auth={auth} onNavigateToProfile={onNavigateToProfile} />
@@ -103,10 +136,12 @@ function HeaderBar({ activeTab, actions, auth, onNavigateToProfile }: HeaderBarP
             </Tooltip>
           </HStack>
         </Flex>
+        {/* Desktop TabList - hidden on mobile */}
         <Flex
           direction={{ base: 'column-reverse', md: 'row' }}
           align={{ base: 'stretch', md: 'center' }}
           gap={{ base: 3, md: 4 }}
+          display={{ base: 'none', md: 'flex' }}
         >
           <LayoutGroup>
             <TabList
@@ -186,6 +221,55 @@ function HeaderBar({ activeTab, actions, auth, onNavigateToProfile }: HeaderBarP
             {actions && <HStack spacing={2} display={{ base: 'none', md: 'flex' }}>{actions}</HStack>}
           </HStack>
         </Flex>
+
+        {/* Mobile: Current tab indicator */}
+        <Box display={{ base: 'block', md: 'none' }} mt={1}>
+          <Text fontSize="sm" fontWeight="medium" color={tabSelectedColor}>
+            {activeTabDetails?.label}
+          </Text>
+        </Box>
+
+        {/* Mobile Navigation Drawer */}
+        <Drawer isOpen={isDrawerOpen} placement="left" onClose={closeDrawer}>
+          <DrawerOverlay />
+          <DrawerContent bg={drawerBg}>
+            <DrawerCloseButton />
+            <DrawerHeader borderBottomWidth="1px">
+              <Heading size="md" color={headingColor}>Navigation</Heading>
+            </DrawerHeader>
+            <DrawerBody p={0}>
+              <VStack spacing={0} align="stretch">
+                {NAV_TABS.map((tab, index) => {
+                  const hidden = tab.key === 'profile';
+                  const isActive = activeTab === tab.key;
+                  if (hidden) return null;
+                  return (
+                    <Box
+                      key={tab.key}
+                      as="button"
+                      w="100%"
+                      textAlign="left"
+                      px={4}
+                      py={4}
+                      bg={isActive ? drawerItemHover : 'transparent'}
+                      color={isActive ? tabSelectedColor : descriptionColor}
+                      borderLeftWidth="4px"
+                      borderLeftColor={isActive ? headerAccent : 'transparent'}
+                      transition="all 0.15s ease-in-out"
+                      _hover={{ bg: drawerItemBg }}
+                      onClick={() => handleMobileNavClick(index)}
+                    >
+                      <Text fontWeight="semibold" fontSize="md">{tab.label}</Text>
+                      <Text fontSize="sm" color={tabHelperColor} mt={0.5}>
+                        {tab.helper}
+                      </Text>
+                    </Box>
+                  );
+                })}
+              </VStack>
+            </DrawerBody>
+          </DrawerContent>
+        </Drawer>
       </Flex>
     </Box>
   );

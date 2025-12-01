@@ -74,3 +74,4 @@ comment on function public.get_move_submission_data is
   'Returns match data, last move, and player role for the submit-move edge function. '
   'Includes all match fields (clock_initial_seconds, clock_increment_seconds, etc.) for proper clock handling.';
 
+
