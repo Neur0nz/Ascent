@@ -7,13 +7,13 @@ import {
   PopoverBody,
   PopoverContent,
   PopoverTrigger,
-  SimpleGrid,
   Stack,
   Tag,
   TagLabel,
   Text,
   useColorModeValue,
 } from '@chakra-ui/react';
+import { renderCellSvg } from '@game/svg';
 
 const COORD_LABELS = ['A', 'B', 'C', 'D', 'E'] as const;
 
@@ -24,16 +24,20 @@ const coordinateLabel = (position?: [number, number] | null): string => {
   return `${COORD_LABELS[x]}${y + 1}`;
 };
 
-const workerSymbol = (worker: number, level: number): string => {
-  if (worker === 0) {
-    return level > 0 ? `L${level}` : '·';
-  }
-  const playerPrefix = worker > 0 ? 'B' : 'R';
-  const index = Math.abs(worker) === 1 ? '1' : '2';
-  return `${playerPrefix}${index}`;
+// SVG cache for mini board cells - shared across all instances
+const miniSvgCache = new Map<string, string>();
+
+const getMiniCellSvg = (level: number, worker: number): string => {
+  const key = `mini-${level}:${worker}`;
+  const cached = miniSvgCache.get(key);
+  if (cached) return cached;
+  
+  const svg = renderCellSvg({ levels: level, worker }, { playerZeroRole: 'creator' });
+  miniSvgCache.set(key, svg);
+  return svg;
 };
 
-// Mini board preview component - optimized for hover use
+// Mini board preview component - optimized for hover use with actual SVG rendering
 const MiniBoardPreview = memo(function MiniBoardPreview({
   board,
   from,
@@ -45,15 +49,77 @@ const MiniBoardPreview = memo(function MiniBoardPreview({
   to?: [number, number];
   build?: [number, number] | null;
 }) {
-  const cellBg = useColorModeValue('gray.100', 'gray.700');
-  const cellColor = useColorModeValue('gray.800', 'whiteAlpha.900');
-  const highlightTo = useColorModeValue('teal.500', 'teal.300');
-  const highlightFrom = useColorModeValue('orange.500', 'orange.300');
-  const highlightBuild = useColorModeValue('purple.500', 'purple.400');
-  const gridBg = useColorModeValue('gray.50', 'gray.800');
-  const borderColor = useColorModeValue('gray.200', 'whiteAlpha.200');
+  const cellBg = useColorModeValue('#E2E8F0', '#4A5568'); // gray.200 / gray.600
+  const highlightTo = useColorModeValue('#319795', '#4FD1C5'); // teal.600 / teal.300
+  const highlightFrom = useColorModeValue('#DD6B20', '#F6AD55'); // orange.600 / orange.300
+  const highlightBuild = useColorModeValue('#805AD5', '#B794F4'); // purple.600 / purple.300
+  const gridBg = useColorModeValue('#F7FAFC', '#1A202C'); // gray.50 / gray.900
+  const borderColor = useColorModeValue('#E2E8F0', '#4A5568'); // gray.200 / gray.600
+  const buildingColor = useColorModeValue('#1A202C', '#E2E8F0'); // gray.900 / gray.200
 
-  if (!board) {
+  // Generate the entire board SVG in one go for performance
+  const boardSvg = useMemo(() => {
+    if (!board) return null;
+    
+    const cellSize = 28;
+    const gap = 2;
+    const padding = 4;
+    const totalSize = cellSize * 5 + gap * 4 + padding * 2;
+    
+    let svg = `<svg width="${totalSize}" height="${totalSize}" viewBox="0 0 ${totalSize} ${totalSize}" xmlns="http://www.w3.org/2000/svg">`;
+    
+    // Background
+    svg += `<rect width="${totalSize}" height="${totalSize}" rx="6" fill="${gridBg}"/>`;
+    
+    // Border
+    svg += `<rect x="0.5" y="0.5" width="${totalSize - 1}" height="${totalSize - 1}" rx="6" fill="none" stroke="${borderColor}" stroke-width="1"/>`;
+    
+    // Cells
+    for (let y = 0; y < 5; y++) {
+      for (let x = 0; x < 5; x++) {
+        const cell = board[y]?.[x];
+        if (!cell) continue;
+        
+        const worker = cell[0];
+        const level = cell[1];
+        const isFrom = from && from[0] === y && from[1] === x;
+        const isTo = to && to[0] === y && to[1] === x;
+        const isBuild = build && build[0] === y && build[1] === x;
+        
+        const cellX = padding + x * (cellSize + gap);
+        const cellY = padding + y * (cellSize + gap);
+        
+        // Cell background
+        let bgColor = cellBg;
+        if (isTo) bgColor = highlightTo;
+        else if (isFrom) bgColor = highlightFrom;
+        else if (isBuild) bgColor = highlightBuild;
+        
+        svg += `<rect x="${cellX}" y="${cellY}" width="${cellSize}" height="${cellSize}" rx="3" fill="${bgColor}"/>`;
+        
+        // Cell content (building levels + worker)
+        if (level > 0 || worker !== 0) {
+          const cellSvg = getMiniCellSvg(level, worker);
+          // Extract the inner content and transform it to fit the cell
+          const innerContent = cellSvg
+            .replace(/<svg[^>]*>/, '')
+            .replace(/<\/svg>/, '');
+          
+          // Scale factor: original is 240x240, we want it to fit in cellSize
+          const scale = (cellSize - 4) / 240;
+          const offsetX = cellX + 2;
+          const offsetY = cellY + 2;
+          
+          svg += `<g transform="translate(${offsetX}, ${offsetY}) scale(${scale})" style="color: ${buildingColor}">${innerContent}</g>`;
+        }
+      }
+    }
+    
+    svg += '</svg>';
+    return svg;
+  }, [board, from, to, build, cellBg, highlightTo, highlightFrom, highlightBuild, gridBg, borderColor, buildingColor]);
+
+  if (!board || !boardSvg) {
     return (
       <Text fontSize="xs" color="gray.500" textAlign="center" py={2}>
         Board preview unavailable
@@ -62,44 +128,17 @@ const MiniBoardPreview = memo(function MiniBoardPreview({
   }
 
   return (
-    <SimpleGrid
-      columns={5}
-      spacing="2px"
-      p={1}
-      borderWidth="1px"
-      borderColor={borderColor}
-      borderRadius="md"
-      bg={gridBg}
-      w="140px"
-    >
-      {board.map((row, y) =>
-        row.map((cell, x) => {
-          const worker = cell[0];
-          const level = cell[1];
-          const isFrom = from && from[0] === y && from[1] === x;
-          const isTo = to && to[0] === y && to[1] === x;
-          const isBuild = build && build[0] === y && build[1] === x;
-          const background = isTo ? highlightTo : isFrom ? highlightFrom : isBuild ? highlightBuild : cellBg;
-          const color = isTo || isFrom || isBuild ? 'white' : cellColor;
-          return (
-            <Box
-              key={`${y}-${x}`}
-              borderRadius="sm"
-              textAlign="center"
-              py={1}
-              bg={background}
-              color={color}
-              minW="24px"
-              minH="24px"
-            >
-              <Text fontWeight="bold" fontSize="2xs" lineHeight="1">
-                {workerSymbol(worker, level)}
-              </Text>
-            </Box>
-          );
-        }),
-      )}
-    </SimpleGrid>
+    <Box
+      w="160px"
+      h="160px"
+      dangerouslySetInnerHTML={{ __html: boardSvg }}
+      sx={{
+        '& svg': {
+          width: '100%',
+          height: '100%',
+        },
+      }}
+    />
   );
 });
 
@@ -232,7 +271,7 @@ const MoveHistoryListItem = memo(function MoveHistoryListItem({
         bg={popoverBg} 
         shadow="xl"
         borderRadius="lg"
-        maxW="200px"
+        maxW="220px"
       >
         <PopoverArrow bg={popoverBg} />
         <PopoverBody p={3}>
@@ -339,5 +378,5 @@ function MoveHistoryList({
 export default memo(MoveHistoryList);
 
 // Export the mini board preview for use in other components
-export { MiniBoardPreview, coordinateLabel, workerSymbol };
+export { MiniBoardPreview, coordinateLabel };
 
