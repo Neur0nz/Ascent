@@ -778,10 +778,10 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
         : loaded.match.initial_state;
       const boardBefore = prevSnapshot?.board ?? null;
       
-      // Determine player from action.by using playerZeroRole to map role to player number
+      // Determine player from action.by (creator=0, opponent=1)
       // This correctly handles placement phase where same player moves twice
       const moveBy = action?.kind === 'santorini.move' ? action.by : null;
-      const player = moveBy === playerZeroRole ? 0 : moveBy ? 1 : (index % 2);
+      const player = moveBy === 'creator' ? 0 : moveBy === 'opponent' ? 1 : (index % 2);
       
       // Calculate move details
       let from: [number, number] | undefined;
