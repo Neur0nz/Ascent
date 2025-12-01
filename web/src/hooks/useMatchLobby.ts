@@ -1944,7 +1944,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
 
       const opponentType: MatchOpponentType = payload.opponentType === 'ai' ? 'ai' : 'human';
       const aiDepth = opponentType === 'ai'
-        ? Math.max(10, Math.min(5000, Math.round(payload.aiDepth ?? 200)))
+        ? Math.max(1, Math.min(5000, Math.round(payload.aiDepth ?? 200)))
         : null;
 
       const { data, error } = await invokeAuthorizedFunction(client, 'create-match', {
@@ -2351,7 +2351,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
       const baseAiDepth = getMatchAiDepth(currentMatch);
       const aiDepth =
         opponentType === 'ai'
-          ? Math.max(10, Math.min(5000, baseAiDepth ?? 200))
+          ? Math.max(1, Math.min(5000, baseAiDepth ?? 200))
           : null;
 
       const { data, error } = await invokeAuthorizedFunction(client, 'create-match', {

@@ -116,7 +116,7 @@ serve(async (req) => {
   const initialMinutes = normalizeNumber(payload.clockInitialMinutes, 10);
   const incrementSeconds = normalizeNumber(payload.clockIncrementSeconds, 5);
   const aiDepth = opponentType === 'ai'
-    ? Math.max(10, Math.min(5000, Math.round(normalizeNumber(payload.aiDepth, DEFAULT_AI_DEPTH))))
+    ? Math.max(1, Math.min(5000, Math.round(normalizeNumber(payload.aiDepth, DEFAULT_AI_DEPTH))))
     : null;
   const opponentId = opponentType === 'ai' ? AI_PLAYER_ID : null;
   const isAiMatch = opponentType === 'ai';

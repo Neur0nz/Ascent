@@ -103,7 +103,7 @@ function MatchCreationModal({
   const [opponentType, setOpponentType] = useState<MatchOpponentType>('human');
   const [aiDepth, setAiDepth] = useState(200);
   const isAiMatch = opponentType === 'ai';
-  const MIN_AI_DEPTH = 10;
+  const MIN_AI_DEPTH = 1;
   const MAX_AI_DEPTH = 5000;
   const toast = useToast();
   const { mutedText } = useSurfaceTokens();

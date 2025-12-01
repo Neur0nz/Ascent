@@ -59,7 +59,7 @@ import { ChevronLeftIcon, ChevronRightIcon, ArrowBackIcon, ArrowForwardIcon } fr
 import { MdShare } from 'react-icons/md';
 import GameBoard from '@components/GameBoard';
 import EvaluationPanel from '@components/EvaluationPanel';
-import MoveHistoryList, { type MoveHistoryItem } from '@components/MoveHistoryList';
+import MoveHistoryList, { type MoveHistoryItem, MiniBoardPreview } from '@components/MoveHistoryList';
 import { supabase } from '@/lib/supabaseClient';
 import { fetchMatchWithMoves, MIN_EVAL_MOVE_INDEX } from '@/lib/matchAnalysis';
 import { SantoriniEngine, SANTORINI_CONSTANTS, type SantoriniSnapshot } from '@/lib/santoriniEngine';
@@ -889,35 +889,52 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
           ? timestamp.toLocaleString()
           : null;
 
+      // Get board state for this move from moveHistoryItems
+      const moveItem = point.moveIndex >= 0 ? moveHistoryItems[point.moveIndex] : null;
+      const boardState = moveItem?.board ?? null;
+
       return (
         <Box
           bg={tooltipBg}
-          borderRadius="md"
+          borderRadius="lg"
           px={3.5}
-          py={2.5}
+          py={3}
           borderWidth="1px"
           borderColor={cardBorder}
-          boxShadow="lg"
+          boxShadow="xl"
           color={chartAxisColor}
+          maxW="220px"
         >
-          <Text fontWeight="semibold" fontSize="sm">
-            {point.moveIndex === -1 ? 'Initial position' : `Move ${point.moveNumber}`}
-          </Text>
-          <Text fontSize="sm" color={evaluationLineColor} fontWeight="semibold">
-            {point.label}
-          </Text>
-          <Text fontSize="xs" color={mutedText}>
-            {point.playerLabel}
-          </Text>
-          {timestampLabel && (
-            <Text fontSize="xs" color={mutedText}>
-              {timestampLabel}
-            </Text>
-          )}
+          <Stack spacing={2}>
+            <Box>
+              <Text fontWeight="semibold" fontSize="sm">
+                {point.moveIndex === -1 ? 'Initial position' : `Move ${point.moveNumber}`}
+              </Text>
+              <Text fontSize="sm" color={evaluationLineColor} fontWeight="semibold">
+                {point.label}
+              </Text>
+              <Text fontSize="xs" color={mutedText}>
+                {point.playerLabel}
+              </Text>
+              {timestampLabel && (
+                <Text fontSize="xs" color={mutedText}>
+                  {timestampLabel}
+                </Text>
+              )}
+            </Box>
+            {boardState && (
+              <MiniBoardPreview
+                board={boardState}
+                from={moveItem?.from}
+                to={moveItem?.to}
+                build={moveItem?.build}
+              />
+            )}
+          </Stack>
         </Box>
       );
     },
-    [cardBorder, chartAxisColor, evaluationLineColor, mutedText, tooltipBg],
+    [cardBorder, chartAxisColor, evaluationLineColor, moveHistoryItems, mutedText, tooltipBg],
   );
 
   const handleShareEvaluationGraph = useCallback(async () => {
