@@ -14,15 +14,10 @@ import {
   useColorModeValue,
 } from '@chakra-ui/react';
 import { renderCellSvg } from '@game/svg';
+import { formatCoordinate } from '@/lib/moveNotation';
 
-const COORD_LABELS = ['A', 'B', 'C', 'D', 'E'] as const;
-
-const coordinateLabel = (position?: [number, number] | null): string => {
-  if (!position) return '—';
-  const [y, x] = position;
-  if (y < 0 || x < 0 || y >= 5 || x >= 5) return '—';
-  return `${COORD_LABELS[x]}${y + 1}`;
-};
+// Re-export formatCoordinate as coordinateLabel for backwards compatibility
+const coordinateLabel = formatCoordinate;
 
 // SVG cache for mini board cells - shared across all instances
 const miniSvgCache = new Map<string, string>();

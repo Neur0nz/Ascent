@@ -132,6 +132,7 @@ function PracticeTabContent({ onShowHistory }: { onShowHistory: () => void }) {
     gameMode,
     difficulty,
     nextPlayer,
+    history,
   } = useSantorini();
   const [, startInitializeTransition] = useTransition();
   const creditColor = useColorModeValue('gray.600', 'whiteAlpha.700');
@@ -151,6 +152,18 @@ function PracticeTabContent({ onShowHistory }: { onShowHistory: () => void }) {
     return false;
   })();
   const practiceTurnColor = nextPlayer === 0 ? 'green.400' : 'red.400';
+
+  // Memoize last move info for visual indicator
+  const lastMoveInfo = useMemo(() => {
+    if (history.length === 0) return null;
+    const last = history[history.length - 1];
+    return {
+      from: last.from ?? null,
+      to: last.to ?? null,
+      build: last.build ?? null,
+      player: last.player,
+    };
+  }, [history]);
 
   useEffect(() => {
     // Initialize game engine in background without blocking urgent UI updates
@@ -211,6 +224,7 @@ function PracticeTabContent({ onShowHistory }: { onShowHistory: () => void }) {
               redo={redo}
               isTurnActive={isHumanTurn}
               turnHighlightColor={practiceTurnColor}
+              lastMove={lastMoveInfo}
             />
           )}
         </Box>

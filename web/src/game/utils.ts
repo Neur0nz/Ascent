@@ -1,4 +1,4 @@
-import { DIRECTIONS_CHAR, GAME_CONSTANTS } from './constants';
+import { GAME_CONSTANTS } from './constants';
 
 export function encodeDirection(oldX: number, oldY: number, newX: number, newY: number): number {
   const diffX = newX - oldX;
@@ -10,13 +10,6 @@ export function encodeDirection(oldX: number, oldY: number, newX: number, newY: 
     (diffY + GAME_CONSTANTS.DIRECTION_OFFSET) * GAME_CONSTANTS.DIRECTION_MULTIPLIER +
     (diffX + GAME_CONSTANTS.DIRECTION_OFFSET)
   );
-}
-
-export function moveToString(move: number, subject = 'One'): string {
-  const [worker, moveDirection, buildDirection] = decodeMove(move);
-  let description = `${subject} moved worker ${worker} ${DIRECTIONS_CHAR[moveDirection]}`;
-  description += ` then build ${DIRECTIONS_CHAR[buildDirection]} [${move}]`;
-  return description;
 }
 
 export function decodeMove(move: number): [number, number, number] {

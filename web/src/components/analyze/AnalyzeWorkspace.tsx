@@ -74,6 +74,7 @@ import { useEvaluationJobs } from '@hooks/useEvaluationJobs';
 import { orientEvaluationToCreator } from '@/utils/evaluationPerspective';
 import { getLastAnalyzedMatch, rememberLastAnalyzedMatch } from '@/utils/analysisStorage';
 import { showEvaluationStartedToast } from '@/utils/analysisNotifications';
+import { formatMoveLabel as formatMoveNotation } from '@/lib/moveNotation';
 
 interface LoadedAnalysis {
   match: MatchRecord;
@@ -99,14 +100,7 @@ const toMoveArray = (move: number | number[] | null | undefined): number[] => {
   return typeof move === 'number' && Number.isInteger(move) && move >= 0 ? [move] : [];
 };
 
-const formatMoveLabel = (action: SantoriniMoveAction | null | undefined): string => {
-  if (!action || action.kind !== 'santorini.move') {
-    return 'Move';
-  }
-  const moveValue = action.move;
-  const moveText = Array.isArray(moveValue) ? moveValue.join(', ') : moveValue;
-  return `Move ${moveText}`;
-};
+// formatMoveLabel imported from @/lib/moveNotation as formatMoveNotation
 
 
 const clampValue = (value: number, domain: [number, number]): number =>
@@ -785,9 +779,15 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
         ? (Array.isArray(action.move) ? action.move[0] : action.move)
         : null;
       
-      // Get board from state_snapshot if available
+      // Get board from state_snapshot if available (board AFTER this move)
       const stateSnapshot = move.state_snapshot;
       const board = stateSnapshot?.board ?? null;
+      
+      // Get board state BEFORE this move (needed for coordinate-based labels)
+      const prevSnapshot = index > 0
+        ? loaded.moves[index - 1]?.state_snapshot
+        : loaded.match.initial_state;
+      const boardBefore = prevSnapshot?.board ?? null;
       
       // Determine the player based on move index (alternating players)
       const player = index % 2;
@@ -802,27 +802,20 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
         
         if (isPlacement) {
           to = [Math.floor(moveValue / BOARD_SIZE), moveValue % BOARD_SIZE];
-        } else {
-          // Movement action - need the board state before this move to find origin
-          const prevSnapshot = index > 0
-            ? loaded.moves[index - 1]?.state_snapshot
-            : loaded.match.initial_state;
-          const boardBefore = prevSnapshot?.board ?? null;
+        } else if (boardBefore) {
+          // Movement action - decode using the board state before this move
+          const [workerIndex, _power, moveDirection, buildDirection] = decodeAction(moveValue);
+          const workerId = (workerIndex + 1) * (player === 0 ? 1 : -1);
+          const origin = findWorkerPosition(boardBefore, workerId);
           
-          if (boardBefore) {
-            const [workerIndex, _power, moveDirection, buildDirection] = decodeAction(moveValue);
-            const workerId = (workerIndex + 1) * (player === 0 ? 1 : -1);
-            const origin = findWorkerPosition(boardBefore, workerId);
+          if (origin) {
+            from = origin;
+            const moveDelta = DIRECTIONS[moveDirection];
+            to = [origin[0] + moveDelta[0], origin[1] + moveDelta[1]];
             
-            if (origin) {
-              from = origin;
-              const moveDelta = DIRECTIONS[moveDirection];
-              to = [origin[0] + moveDelta[0], origin[1] + moveDelta[1]];
-              
-              if (buildDirection !== NO_BUILD) {
-                const buildDelta = DIRECTIONS[buildDirection];
-                build = [to[0] + buildDelta[0], to[1] + buildDelta[1]];
-              }
+            if (buildDirection !== NO_BUILD) {
+              const buildDelta = DIRECTIONS[buildDirection];
+              build = [to[0] + buildDelta[0], to[1] + buildDelta[1]];
             }
           }
         }
@@ -834,10 +827,15 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
         second: '2-digit',
       });
 
+      // Use unified move notation for the label
+      const moveLabel = typeof moveValue === 'number'
+        ? formatMoveNotation(moveValue, player, boardBefore)
+        : 'Move';
+
       return {
         id: move.id,
         index,
-        label: `${index + 1}. ${formatMoveLabel(action as SantoriniMoveAction | undefined)}`,
+        label: `${index + 1}. ${moveLabel}`,
         player,
         timestamp,
         board,
@@ -847,6 +845,19 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
       };
     });
   }, [loaded]);
+
+  // Compute last move info for visual indicator based on current position
+  const lastMoveInfo = useMemo(() => {
+    if (currentIndex < 0 || moveHistoryItems.length === 0) return null;
+    const currentMove = moveHistoryItems[currentIndex];
+    if (!currentMove) return null;
+    return {
+      from: currentMove.from ?? null,
+      to: currentMove.to ?? null,
+      build: currentMove.build ?? null,
+      player: currentMove.player,
+    };
+  }, [moveHistoryItems, currentIndex]);
 
   const canStepBack = currentIndex > -1;
   const canStepForward = loaded ? currentIndex < loaded.moves.length - 1 : false;
@@ -1187,6 +1198,7 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
                       redo={santorini.redo}
                       showPrimaryControls={false}
                       undoDisabledOverride={replaying}
+                      lastMove={lastMoveInfo}
                     />
                     {isExploring && (
                       <Button

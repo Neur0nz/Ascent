@@ -2,11 +2,10 @@ import { GAME_CONSTANTS } from '@game/constants';
 import { SANTORINI_CONSTANTS } from '@/lib/santoriniEngine';
 import {
   applyActionToBoard,
-  formatCoordinate,
   normalizeBoardPayload,
-  nextPlacementWorkerId,
   findWorkerPosition,
 } from '@/lib/practice/practiceEngine';
+import { formatMoveVerbose, decodeMove } from '@/lib/moveNotation';
 
 export type MoveSummary = {
   description: string;
@@ -40,13 +39,13 @@ export function summarizeHistoryEntries(snapshot: Array<Record<string, unknown>>
       } satisfies MoveSummary;
     }
 
+    // Use unified move notation for description
+    const description = formatMoveVerbose(actionValue, player, boardBefore);
+
+    // Placement actions
     if (actionValue >= 0 && actionValue < GAME_CONSTANTS.BOARD_SIZE * GAME_CONSTANTS.BOARD_SIZE) {
       const targetY = Math.floor(actionValue / GAME_CONSTANTS.BOARD_SIZE);
       const targetX = actionValue % GAME_CONSTANTS.BOARD_SIZE;
-      const workerId = boardBefore ? nextPlacementWorkerId(player, boardBefore) : player === 0 ? 1 : -1;
-      const workerLabel = workerId === 1 || workerId === -1 ? 'Worker 1' : 'Worker 2';
-      const playerLabel = player === 0 ? 'Green' : 'Red';
-      const description = `${playerLabel} ${workerLabel} placed on ${formatCoordinate([targetY, targetX])}.`;
       return {
         description,
         player,
@@ -60,39 +59,17 @@ export function summarizeHistoryEntries(snapshot: Array<Record<string, unknown>>
       } satisfies MoveSummary;
     }
 
-    const [workerIndex, _power, moveDirection, buildDirection] = SANTORINI_CONSTANTS.decodeAction(actionValue);
-    const workerId = (workerIndex + 1) * (player === 0 ? 1 : -1);
-    const origin = boardBefore ? findWorkerPosition(boardBefore, workerId) ?? undefined : undefined;
-    const moveDelta = SANTORINI_CONSTANTS.DIRECTIONS[moveDirection];
-    const destination = origin ? ([origin[0] + moveDelta[0], origin[1] + moveDelta[1]] as [number, number]) : undefined;
-    const build =
-      buildDirection === SANTORINI_CONSTANTS.NO_BUILD || !destination
-        ? null
-        : ([
-            destination[0] + SANTORINI_CONSTANTS.DIRECTIONS[buildDirection][0],
-            destination[1] + SANTORINI_CONSTANTS.DIRECTIONS[buildDirection][1],
-          ] as [number, number]);
-    const workerLabel = workerIndex === 0 ? 'Worker 1' : 'Worker 2';
-    const playerLabel = player === 0 ? 'Green' : 'Red';
-    const fromLabel = formatCoordinate(origin);
-    const toLabel = formatCoordinate(destination);
-    const buildLabel = build ? formatCoordinate(build) : null;
-    const descriptionParts = [`${playerLabel} ${workerLabel} moved`];
-    if (fromLabel !== '—') {
-      descriptionParts.push(`from ${fromLabel}`);
-    }
-    descriptionParts.push(`to ${toLabel}`);
-    if (buildLabel && buildLabel !== '—') {
-      descriptionParts.push(`and built ${buildLabel}`);
-    }
-    const description = descriptionParts.join(' ') + '.';
+    // Regular move actions - decode to get coordinates
+    const decoded = decodeMove(actionValue, player, boardBefore);
+    const { from, to, build } = decoded;
+
     return {
       description,
       player,
       action: actionValue,
       phase: 'move',
-      from: origin,
-      to: destination,
+      from: from ?? undefined,
+      to: to ?? undefined,
       build,
       boardBefore,
       boardAfter,

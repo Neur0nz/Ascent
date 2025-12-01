@@ -69,6 +69,9 @@ import ConnectionIndicator from '@components/play/ConnectionIndicator';
 import type { SantoriniMoveAction, MatchStatus, EnginePreference, MatchAction } from '@/types/match';
 import MyMatchesPanel from './MyMatchesPanel';
 import { useSurfaceTokens } from '@/theme/useSurfaceTokens';
+import { SANTORINI_CONSTANTS } from '@/lib/santoriniEngine';
+import { findWorkerPosition } from '@/lib/practice/practiceEngine';
+import type { LastMoveInfo } from '@components/GameBoard';
 import { deriveStartingRole } from '@/utils/matchStartingRole';
 import { getOppositeRole, getPlayerZeroRole, isAiMatch } from '@/utils/matchAiDepth';
 import { isSantoriniMoveAction } from '@/utils/matchActions';
@@ -679,6 +682,43 @@ function ActiveMatchContent({
     onSubmitMove: onSubmitMove,
     onGameComplete: handleGameComplete,
   });
+
+  // Compute last move info for visual indicator
+  const lastMoveInfo: LastMoveInfo | null = useMemo(() => {
+    if (typedMoves.length === 0) return null;
+    const lastMoveRecord = typedMoves[typedMoves.length - 1];
+    const action = lastMoveRecord.action;
+    const moveValue = Array.isArray(action.move) ? action.move[0] : action.move;
+    if (typeof moveValue !== 'number') return null;
+
+    const { BOARD_SIZE, decodeAction, DIRECTIONS, NO_BUILD } = SANTORINI_CONSTANTS;
+    const isPlacement = moveValue >= 0 && moveValue < BOARD_SIZE * BOARD_SIZE;
+
+    if (isPlacement) {
+      const to: [number, number] = [Math.floor(moveValue / BOARD_SIZE), moveValue % BOARD_SIZE];
+      return { from: null, to, build: null, player: action.by === 'creator' ? 0 : 1 };
+    }
+
+    const prevMoveRecord = typedMoves.length > 1 ? typedMoves[typedMoves.length - 2] : null;
+    const boardBefore = prevMoveRecord?.state_snapshot?.board ?? lobbyMatch?.initial_state?.board ?? null;
+    if (!boardBefore) return null;
+
+    const [workerIndex, _power, moveDirection, buildDirection] = decodeAction(moveValue);
+    const player = action.by === 'creator' ? 0 : 1;
+    const workerId = (workerIndex + 1) * (player === 0 ? 1 : -1);
+    const origin = findWorkerPosition(boardBefore, workerId);
+    if (!origin) return null;
+
+    const from: [number, number] = origin;
+    const moveDelta = DIRECTIONS[moveDirection];
+    const to: [number, number] = [origin[0] + moveDelta[0], origin[1] + moveDelta[1]];
+    const build: [number, number] | null = buildDirection === NO_BUILD
+      ? null
+      : [to[0] + DIRECTIONS[buildDirection][0], to[1] + DIRECTIONS[buildDirection][1]];
+
+    return { from, to, build, player };
+  }, [typedMoves, lobbyMatch?.initial_state?.board]);
+
   const creatorName = lobbyMatch?.creator?.display_name ?? 'Creator';
   const aiMatch = isAiMatch(lobbyMatch);
   const opponentName = lobbyMatch?.opponent?.display_name
@@ -890,6 +930,7 @@ function ActiveMatchContent({
                   undoIsLoading={requestingUndo}
                   isTurnActive={isMyTurn}
                   turnHighlightColor={turnGlowColor}
+                  lastMove={lastMoveInfo}
                 />
                 {undoBanner}
                 <Stack
@@ -988,7 +1029,7 @@ function ActiveMatchContent({
                               Move {santorini.history.length - index}
                             </Text>
                             <Text fontSize="sm" color={mutedText}>
-                              {entry.description || `Action ${entry.action}`}
+                              {entry.description || 'Move played'}
                             </Text>
                           </Box>
                         ))}

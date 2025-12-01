@@ -111,6 +111,7 @@ export interface UndoRequestState {
   requestedAt: string;
   status: 'pending' | 'accepted' | 'rejected' | 'applied';
   respondedBy?: 'creator' | 'opponent';
+  dbId?: string;
 }
 
 export interface AbortRequestState {
@@ -680,7 +681,11 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
       processingMovesRef.current = new Set();
 
       try {
-        const [{ data: matchData, error: matchError }, { data: movesData, error: movesError }] = await Promise.all([
+        const [
+          { data: matchData, error: matchError },
+          { data: movesData, error: movesError },
+          { data: undoData, error: undoError },
+        ] = await Promise.all([
           client
             .from('matches')
             .select(MATCH_WITH_PROFILES)
@@ -691,6 +696,14 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
             .select('*')
             .eq('match_id', matchId)
             .order('move_index', { ascending: true }),
+          client
+            .from('undo_requests')
+            .select('id, match_id, requested_by, move_index, requested_at, status')
+            .eq('match_id', matchId)
+            .eq('status', 'pending')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle(),
         ]);
 
         if (matchError) {
@@ -698,6 +711,9 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         }
         if (movesError) {
           console.error('useMatchLobby: Failed to refresh match moves', movesError);
+        }
+        if (undoError) {
+          console.error('useMatchLobby: Failed to refresh undo requests', undoError);
         }
 
         const record = matchError ? null : ((matchData ?? null) as MatchRecord & Partial<LobbyMatch> | null);
@@ -727,15 +743,46 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
                 })
                 .filter((move): move is MatchMoveRecord<MatchAction> => Boolean(move));
 
+        // Convert database undo request to UndoRequestState
+        let hydratedUndoRequest: UndoRequestState | null = null;
+        if (undoData && record) {
+          const requestedByRole =
+            undoData.requested_by === record.creator_id
+              ? 'creator'
+              : undoData.requested_by === record.opponent_id
+                ? 'opponent'
+                : null;
+          if (requestedByRole) {
+            hydratedUndoRequest = {
+              matchId,
+              moveIndex: undoData.move_index,
+              requestedBy: requestedByRole,
+              requestedAt: undoData.requested_at,
+              status: 'pending',
+              dbId: undoData.id,
+            };
+            console.log('useMatchLobby: Hydrated pending undo request', { matchId, moveIndex: undoData.move_index, requestedBy: requestedByRole });
+          }
+        }
+
         setState((prev) => {
           if (prev.activeMatchId !== matchId) {
             return prev;
+          }
+          const nextUndoRequests = { ...prev.undoRequests };
+          if (hydratedUndoRequest) {
+            // Only update if we don't already have this request or if our local state is stale
+            const existing = nextUndoRequests[matchId];
+            if (!existing || existing.status !== 'pending' || existing.dbId !== hydratedUndoRequest.dbId) {
+              nextUndoRequests[matchId] = hydratedUndoRequest;
+            }
           }
           return {
             ...prev,
             activeMatch: hydratedMatch ?? prev.activeMatch,
             joinCode: record?.private_join_code ?? prev.joinCode,
             moves: mappedMoves ?? prev.moves,
+            undoRequests: nextUndoRequests,
           };
         });
 
@@ -1382,6 +1429,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
           const data = payload.payload ?? {};
           const moveIndexRaw = normalizeMoveIndex(data.move_index);
           const requestedByRole = data.requested_by_role === 'creator' ? 'creator' : data.requested_by_role === 'opponent' ? 'opponent' : null;
+          const dbId = typeof data.undo_request_id === 'string' ? data.undo_request_id : undefined;
           if (requestedByRole === null) {
             console.warn('⚠️ Received undo-request with unknown role', data);
             return;
@@ -1394,6 +1442,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
               requestedBy: requestedByRole,
               requestedAt: data.requested_at ?? new Date().toISOString(),
               status: 'pending',
+              dbId,
             };
             return {
               ...prev,
@@ -2409,9 +2458,10 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
       if (!onlineEnabled) {
         throw new Error('Online play is not enabled.');
       }
+      const client = supabase;
       const channel = channelRef.current;
       const match = state.activeMatch;
-      if (!channel || !match || state.sessionMode !== 'online') {
+      if (!client || !channel || !match || state.sessionMode !== 'online') {
         throw new Error('No active online match to request undo.');
       }
       if (!profile) {
@@ -2444,12 +2494,32 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         throw new Error('Undo request already pending.');
       }
       const requestedAt = new Date().toISOString();
+
+      // Persist undo request to database so it survives connection drops
+      const { data: insertedRequest, error: insertError } = await client
+        .from('undo_requests')
+        .insert({
+          match_id: match.id,
+          requested_by: profile.id,
+          move_index: targetMoveIndex,
+          requested_at: requestedAt,
+          status: 'pending',
+        })
+        .select('id')
+        .single();
+
+      if (insertError) {
+        console.error('Failed to persist undo request', insertError);
+        throw new Error('Failed to create undo request.');
+      }
+
       const payload = {
         match_id: match.id,
         move_index: targetMoveIndex,
         requested_by_role: role,
         requested_by_user_id: profile.id,
         requested_at: requestedAt,
+        undo_request_id: insertedRequest?.id,
       };
       setState((prev) => ({
         ...prev,
@@ -2461,6 +2531,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
             requestedBy: role,
             requestedAt,
             status: 'pending',
+            dbId: insertedRequest?.id,
           },
         },
       }));
@@ -2471,16 +2542,8 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
           payload,
         });
       } catch (error) {
-        setState((prev) => {
-          const existing = prev.undoRequests[match.id];
-          if (!existing || existing.requestedAt !== requestedAt) {
-            return prev;
-          }
-          const nextUndo = { ...prev.undoRequests };
-          delete nextUndo[match.id];
-          return { ...prev, undoRequests: nextUndo };
-        });
-        throw error;
+        // Broadcast failed but DB record exists - opponent can still see it on reconnect
+        console.warn('Broadcast failed for undo request, but DB record exists', error);
       }
     },
     [onlineEnabled, profile, state.activeMatch, state.moves.length, state.sessionMode, state.undoRequests],
@@ -2551,6 +2614,38 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
         } | null;
       }
       const respondedAt = new Date().toISOString();
+
+      // Update undo request in database
+      if (client && pending.dbId) {
+        const { error: updateError } = await client
+          .from('undo_requests')
+          .update({
+            status: accepted ? 'accepted' : 'rejected',
+            responded_by: profile.id,
+            responded_at: respondedAt,
+            updated_at: respondedAt,
+          })
+          .eq('id', pending.dbId);
+        if (updateError) {
+          console.warn('Failed to update undo request in database', updateError);
+        }
+      } else if (client) {
+        // Fallback: update by match_id if we don't have dbId
+        const { error: updateError } = await client
+          .from('undo_requests')
+          .update({
+            status: accepted ? 'accepted' : 'rejected',
+            responded_by: profile.id,
+            responded_at: respondedAt,
+            updated_at: respondedAt,
+          })
+          .eq('match_id', match.id)
+          .eq('status', 'pending');
+        if (updateError) {
+          console.warn('Failed to update undo request in database (fallback)', updateError);
+        }
+      }
+
       await channel.send({
         type: 'broadcast',
         event: 'undo-response',

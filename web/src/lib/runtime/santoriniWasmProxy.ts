@@ -1,6 +1,7 @@
 import type { SantoriniBoard as SantoriniBoardWasm, SantoriniMcts as SantoriniMctsWasm } from '@wasm/santorini_wasm';
 import { SANTORINI_CONSTANTS, type SantoriniSnapshot } from '@/lib/santoriniEngine';
 import { cloneBoardGrid, normalizeBoardPayload } from '@/lib/practice/practiceEngine';
+import { formatMoveForEvaluation } from '@/lib/moveNotation';
 import type { SantoriniStateSnapshot } from '@/types/match';
 
 const BOARD_SIZE = SANTORINI_CONSTANTS.BOARD_SIZE;
@@ -9,8 +10,6 @@ const INIT_PLACEMENT_ACTIONS = BOARD_SIZE * BOARD_SIZE;
 const DIRECTIONS = SANTORINI_CONSTANTS.DIRECTIONS;
 const NO_MOVE = SANTORINI_CONSTANTS.NO_MOVE;
 const NO_BUILD = SANTORINI_CONSTANTS.NO_BUILD;
-
-const DIRECTION_SYMBOLS = ['↖', '↑', '↗', '←', 'Ø', '→', '↙', '↓', '↘'] as const;
 
 type PredictorFn = (board: Int8Array, validMask: Uint8Array) => Promise<{ pi: number[]; v: number }>;
 
@@ -99,20 +98,12 @@ function deserializeHistory(payload: unknown): HistoryEntry[] {
   return restored;
 }
 
-function directionToSymbol(direction: number): string {
-  return DIRECTION_SYMBOLS[direction] ?? 'Ø';
-}
-
-function moveToString(action: number, player: number): string {
-  if (action < INIT_PLACEMENT_ACTIONS) {
-    const y = Math.floor(action / BOARD_SIZE);
-    const x = action % BOARD_SIZE;
-    const column = String.fromCharCode('A'.charCodeAt(0) + x);
-    return `Place worker at ${column}${y + 1}`;
-  }
-  const [worker, _power, moveDirection, buildDirection] = SANTORINI_CONSTANTS.decodeAction(action);
-  const workerLabel = player === 0 ? `worker ${worker + 1}` : `worker ${worker + 1}`;
-  return `Move ${workerLabel} ${directionToSymbol(moveDirection)} then build ${directionToSymbol(buildDirection)}`;
+/**
+ * Format a move for display using the unified notation system.
+ * Uses coordinate-based format when board context is available.
+ */
+function moveToString(action: number, player: number, board?: number[][][] | null): string {
+  return formatMoveForEvaluation(action, player, board);
 }
 
 function computeEndArray(score: number | undefined): [number, number] {
@@ -339,6 +330,7 @@ export class SantoriniWasmProxy {
 
   list_current_moves(limit = 10): Array<{ action: number; prob: number; text: string }> {
     if (!this.lastPolicy) return [];
+    const currentBoard = this.boardArray;
     return this.lastPolicy
       .map((prob, action) => ({ action, prob }))
       .filter((entry) => entry.prob > 0)
@@ -347,7 +339,7 @@ export class SantoriniWasmProxy {
       .map(({ action, prob }) => ({
         action,
         prob,
-        text: moveToString(action, this.player),
+        text: moveToString(action, this.player, currentBoard),
       }));
   }
 
@@ -380,6 +372,7 @@ export class SantoriniWasmProxy {
           .slice(0, limit);
 
         const results = [];
+        const currentBoard = this.boardArray;
 
         for (const { action, prob } of rankedActions) {
           const tempBoard = new this.BoardCtor();
@@ -398,7 +391,7 @@ export class SantoriniWasmProxy {
           results.push({
             action,
             prob,
-            text: moveToString(action, originalPlayer),
+            text: moveToString(action, originalPlayer, currentBoard),
             eval: evalAfter,
             delta: evalAfter - baseEval,
           });
@@ -525,7 +518,7 @@ export class SantoriniWasmProxy {
       .map((entry) => ({
         player: entry.player,
         action: entry.action ?? null,
-        description: entry.action == null ? '' : moveToString(entry.action, entry.player),
+        description: entry.action == null ? '' : moveToString(entry.action, entry.player, entry.board),
       }));
   }
 

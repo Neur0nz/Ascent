@@ -9,6 +9,7 @@ import { isAiMatch, getPlayerZeroRole } from '@/utils/matchAiDepth';
 import { mapPlayerIndexToRole } from '@/utils/playerRoleMapping';
 import { createCancelMaskFromSelector } from '@/utils/moveSelectorMasks';
 import { isSantoriniMoveAction } from '@/utils/matchActions';
+import { formatMoveLabel } from '@/lib/moveNotation';
 import { useToast } from '@chakra-ui/react';
 import { GameOutcomeToast } from '@/components/GameOutcomeToast';
 
@@ -1257,21 +1258,36 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
     const creatorName = match?.creator?.display_name ?? 'Creator';
     const opponentName = match?.opponent?.display_name ?? (matchIsAi ? 'Santorini AI' : 'Opponent');
     const greenRole = playerZeroRole;
-    return moves
+    const initialBoard = match?.initial_state?.board ?? null;
+    
+    const sortedMoves = moves
       .filter((move) => isSantoriniMoveAction(move.action))
-      .sort((a, b) => a.move_index - b.move_index)
-      .map((move, index) => {
-        const action = move.action as SantoriniMoveAction;
-        const actorRole = action.by === 'creator' ? 'creator' : 'opponent';
-        const actorName = actorRole === 'creator' ? creatorName : opponentName;
-        const colorLabel = actorRole === greenRole ? 'Green' : 'Red';
-        const moveDescriptor = toMoveArray(action.move).join(', ');
-        return {
-          action: action.move,
-          description: `${index + 1}. ${actorName} (${colorLabel}) played ${moveDescriptor || 'action'}`,
-        };
-      });
-  }, [match?.creator?.display_name, match?.opponent?.display_name, moves, playerZeroRole, matchIsAi]);
+      .sort((a, b) => a.move_index - b.move_index);
+    
+    return sortedMoves.map((move, index) => {
+      const action = move.action as SantoriniMoveAction;
+      const actorRole = action.by === 'creator' ? 'creator' : 'opponent';
+      const actorName = actorRole === 'creator' ? creatorName : opponentName;
+      const colorLabel = actorRole === greenRole ? 'Green' : 'Red';
+      const player = actorRole === greenRole ? 0 : 1;
+      
+      // Get board state BEFORE this move for coordinate-based formatting
+      const boardBefore = index > 0
+        ? sortedMoves[index - 1]?.state_snapshot?.board ?? null
+        : initialBoard;
+      
+      // Format the move using unified notation
+      const moveValue = Array.isArray(action.move) ? action.move[0] : action.move;
+      const moveLabel = typeof moveValue === 'number'
+        ? formatMoveLabel(moveValue, player, boardBefore)
+        : 'move';
+      
+      return {
+        action: action.move,
+        description: `${index + 1}. ${actorName} (${colorLabel}): ${moveLabel}`,
+      };
+    });
+  }, [match?.creator?.display_name, match?.opponent?.display_name, match?.initial_state?.board, moves, playerZeroRole, matchIsAi]);
 
   return {
     board,

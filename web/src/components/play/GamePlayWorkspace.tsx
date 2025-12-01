@@ -75,8 +75,10 @@ import { useSurfaceTokens } from '@/theme/useSurfaceTokens';
 import { EMOJIS } from '@components/EmojiPicker';
 import { deriveStartingRole } from '@/utils/matchStartingRole';
 import { SantoriniWorkerClient } from '@/lib/runtime/santoriniWorkerClient';
-import type { SantoriniSnapshot } from '@/lib/santoriniEngine';
+import { SANTORINI_CONSTANTS, type SantoriniSnapshot } from '@/lib/santoriniEngine';
+import { findWorkerPosition } from '@/lib/practice/practiceEngine';
 import { useEvaluationJobs, type EvaluationJob } from '@hooks/useEvaluationJobs';
+import type { LastMoveInfo } from '@components/GameBoard';
 import { fetchMatchWithMoves, MIN_EVAL_MOVE_INDEX } from '@/lib/matchAnalysis';
 import { describeMatch } from '@/utils/matchDescription';
 import { supabase } from '@/lib/supabaseClient';
@@ -205,6 +207,45 @@ function ActiveMatchContent({
     onSubmitMove: onSubmitMove,
     onGameComplete: handleGameComplete,
   });
+
+  // Compute last move info for visual indicator
+  const lastMoveInfo: LastMoveInfo | null = useMemo(() => {
+    if (typedMoves.length === 0) return null;
+    const lastMoveRecord = typedMoves[typedMoves.length - 1];
+    const action = lastMoveRecord.action;
+    const moveValue = Array.isArray(action.move) ? action.move[0] : action.move;
+    if (typeof moveValue !== 'number') return null;
+
+    const { BOARD_SIZE, decodeAction, DIRECTIONS, NO_BUILD } = SANTORINI_CONSTANTS;
+    const isPlacement = moveValue >= 0 && moveValue < BOARD_SIZE * BOARD_SIZE;
+
+    if (isPlacement) {
+      // Placement move - only has "to" position
+      const to: [number, number] = [Math.floor(moveValue / BOARD_SIZE), moveValue % BOARD_SIZE];
+      return { from: null, to, build: null, player: action.by === 'creator' ? 0 : 1 };
+    }
+
+    // Movement action - need previous board state to find origin
+    const prevMoveRecord = typedMoves.length > 1 ? typedMoves[typedMoves.length - 2] : null;
+    const boardBefore = prevMoveRecord?.state_snapshot?.board ?? lobbyMatch?.initial_state?.board ?? null;
+    if (!boardBefore) return null;
+
+    const [workerIndex, _power, moveDirection, buildDirection] = decodeAction(moveValue);
+    const player = action.by === 'creator' ? 0 : 1;
+    const workerId = (workerIndex + 1) * (player === 0 ? 1 : -1);
+    const origin = findWorkerPosition(boardBefore, workerId);
+    if (!origin) return null;
+
+    const from: [number, number] = origin;
+    const moveDelta = DIRECTIONS[moveDirection];
+    const to: [number, number] = [origin[0] + moveDelta[0], origin[1] + moveDelta[1]];
+    const build: [number, number] | null = buildDirection === NO_BUILD
+      ? null
+      : [to[0] + DIRECTIONS[buildDirection][0], to[1] + DIRECTIONS[buildDirection][1]];
+
+    return { from, to, build, player };
+  }, [typedMoves, lobbyMatch?.initial_state?.board]);
+
   const ensureAiWorker = useCallback(async () => {
     if (!isAiMatchFlag) {
       return null;
@@ -1232,6 +1273,7 @@ function ActiveMatchContent({
             undoIsLoading={requestingUndo}
             isTurnActive={isMyTurn}
             turnHighlightColor={turnGlowColor}
+            lastMove={lastMoveInfo}
           />
 
           {undoBanner}
