@@ -27,6 +27,12 @@ export interface PushPayload {
   tag?: string;
   data?: Record<string, unknown>;
   requireInteraction?: boolean;
+  /** Re-alert user even if a notification with same tag exists */
+  renotify?: boolean;
+  /** Vibration pattern in milliseconds [vibrate, pause, vibrate, ...] */
+  vibrate?: number[];
+  /** Push urgency: 'very-low' | 'low' | 'normal' | 'high' */
+  urgency?: 'very-low' | 'low' | 'normal' | 'high';
 }
 
 export type PushSendResult =
@@ -103,6 +109,8 @@ export const sendPushNotification = async (
   }
 
   try {
+    // Use urgency header for push priority (high = wake device immediately)
+    const urgency = payload.urgency ?? 'high';
     await webpush.sendNotification(
       {
         endpoint: subscription.endpoint,
@@ -114,6 +122,7 @@ export const sendPushNotification = async (
       serializedPayload,
       {
         TTL: 3600,
+        urgency,
       },
     );
     return { delivered: true };

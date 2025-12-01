@@ -81,6 +81,44 @@ export const removePushSubscription = async (profile: PlayerProfile | null): Pro
   await deleteStoredSubscription(existing.endpoint, profile?.auth_user_id ?? null);
 };
 
+/**
+ * Clears all notifications related to a specific match.
+ * This should be called when the user navigates to view the match,
+ * so old notifications don't persist and cause confusion.
+ */
+export const clearMatchNotifications = async (matchId: string): Promise<void> => {
+  if (!matchId) {
+    return;
+  }
+
+  // Use the Service Worker notification API to close notifications by tag
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+    return;
+  }
+
+  try {
+    const registration = await getServiceWorkerRegistration();
+    if (!registration) {
+      return;
+    }
+
+    // Get all notifications from the service worker
+    const notifications = await registration.getNotifications();
+
+    // Close notifications that match the match ID
+    // Tags used: match-{matchId}-move, match-{matchId}-join, match-{matchId}-ping
+    const matchTagPrefix = `match-${matchId}-`;
+    for (const notification of notifications) {
+      if (notification.tag?.startsWith(matchTagPrefix)) {
+        notification.close();
+      }
+    }
+  } catch (error) {
+    // Silently fail - clearing notifications is best-effort
+    console.warn('pushNotifications: failed to clear match notifications', error);
+  }
+};
+
 export const syncPushSubscription = async ({ permission, profile }: SyncOptions): Promise<void> => {
   const supabaseClient = supabase;
 

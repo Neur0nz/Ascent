@@ -693,9 +693,11 @@ function ActiveMatchContent({
       if (isCreator) {
         const opponentName = lobbyMatch.opponent?.display_name ?? 'Opponent';
         if (notificationsSupported && notificationPermission === 'granted' && isPageBackgrounded()) {
-          showNotification('Opponent joined your game', {
-            body: `${opponentName} just joined. Your match is ready.`,
+          showNotification('⚔️ Game On!', {
+            body: `${opponentName} joined — your match is ready to play!`,
             id: `match-${lobbyMatch.id}-join`,
+            renotify: true,
+            requireInteraction: true,
           });
         } else {
           toast({
@@ -756,9 +758,11 @@ function ActiveMatchContent({
           ? opponentDisplayName
           : 'Opponent';
     if (notificationsSupported && notificationPermission === 'granted' && isPageBackgrounded()) {
-      showNotification('Your turn', {
-        body: `${opponentName} made their move.`,
+      showNotification('🎯 Your Turn!', {
+        body: `${opponentName} made a move — tap to play!`,
         id: `match-${lobbyMatch.id}-move`,
+        renotify: true,
+        requireInteraction: true,
       });
     }
   }, [
@@ -1739,12 +1743,11 @@ function WaitingForOpponentState({
   isCancelling?: boolean;
 }) {
   const { cardBg, cardBorder, mutedText, accentHeading } = useSurfaceTokens();
-  const gradientBg = useColorModeValue('linear(to-r, teal.50, green.50)', 'linear(to-r, teal.900, green.900)');
-  const linkBackground = useColorModeValue('white', 'whiteAlpha.100');
+  const codeHighlightBg = useColorModeValue('teal.50', 'teal.900');
+  const codeHighlightBorder = useColorModeValue('teal.200', 'teal.700');
   const shareableJoinCode = match.private_join_code ?? joinCode ?? null;
   const joinKey = shareableJoinCode ?? match.id;
   const joinLink = joinKey ? buildMatchJoinLink(joinKey) : '';
-  const { hasCopied: hasCopiedCode, onCopy: onCopyCode } = useClipboard(shareableJoinCode ?? '');
   const { hasCopied: hasCopiedLink, onCopy: onCopyLink } = useClipboard(joinLink);
   const hasJoinCode = Boolean(shareableJoinCode);
   const hasJoinLink = Boolean(joinLink);
@@ -1764,168 +1767,210 @@ function WaitingForOpponentState({
     });
     setSharing(false);
   }, [hasJoinLink, joinLink, joinKey, onCopyLink, toast]);
+
+  // Build match badges
+  const badges: Array<{ label: string; colorScheme: string; tooltip?: string }> = [
+    {
+      label: 'Pending',
+      colorScheme: 'yellow',
+      tooltip: 'Waiting for an opponent to join',
+    },
+    {
+      label: match.rated ? 'Rated' : 'Casual',
+      colorScheme: match.rated ? 'purple' : 'gray',
+      tooltip: match.rated ? 'This match affects ladder ratings' : 'No rating impact',
+    },
+  ];
+
+  if (match.clock_initial_seconds > 0 || match.clock_increment_seconds > 0) {
+    const minutes = Math.max(1, Math.round(match.clock_initial_seconds / 60));
+    badges.push({
+      label: `${minutes}+${match.clock_increment_seconds}`,
+      colorScheme: 'teal',
+      tooltip: 'Time control (minutes + increment)',
+    });
+  } else {
+    badges.push({
+      label: 'No clock',
+      colorScheme: 'gray',
+      tooltip: 'Unlimited time',
+    });
+  }
+
+  badges.push({
+    label: match.visibility === 'public' ? 'Public' : 'Private',
+    colorScheme: match.visibility === 'public' ? 'green' : 'orange',
+    tooltip: match.visibility === 'public' ? 'Visible in public lobbies' : 'Invite only',
+  });
+
+  const hostName = match.creator?.display_name ?? 'You';
+  const createdTime = match.created_at
+    ? new Date(match.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : null;
   
   return (
-    <Stack spacing={6}>
-      <Card bg={cardBg} borderWidth="2px" borderColor="teal.400" boxShadow="lg">
-        <CardBody py={8}>
-          <Center>
-            <Stack spacing={6} align="center" textAlign="center" maxW="lg">
-              <Spinner 
-                size="xl" 
-                color="teal.500" 
-                thickness="4px"
-                speed="0.8s"
-              />
-              <Stack spacing={2}>
-                <Heading size="lg" color={accentHeading}>
-                  Waiting for opponent...
-                </Heading>
-                <Text fontSize="lg" color={mutedText}>
-                  Your game is ready. We're waiting for an opponent to join.
-                </Text>
-              </Stack>
-              
-              {hasJoinCode && (
-                <Card bgGradient={gradientBg} borderWidth="1px" borderColor={cardBorder} w="100%" maxW="md">
-                  <CardBody>
-                    <Stack spacing={3} align="center">
-                      <Badge
-                        colorScheme={match.visibility === 'public' ? 'green' : 'orange'}
-                        fontSize="md"
-                        px={4}
-                        py={2}
-                        borderRadius="full"
-                      >
-                        {match.visibility === 'public' ? 'Public lobby' : 'Invite code ready'}
-                      </Badge>
-                      <Text fontSize="sm" color={mutedText}>
-                        Share this join code with your friend:
-                      </Text>
-                      <Heading 
-                        size="2xl" 
-                        fontFamily="mono" 
-                        letterSpacing="wider"
-                        color={accentHeading}
-                        textAlign="center"
-                        wordBreak="break-word"
-                        w="100%"
-                      >
-                        {shareableJoinCode}
-                      </Heading>
-                    </Stack>
-                  </CardBody>
-                </Card>
-              )}
-              
-              {hasJoinLink && (
-                <Stack spacing={2} align="center" w="100%" maxW="md">
-                  <Text fontSize="sm" color={mutedText}>
-                    Or send them this link:
-                  </Text>
-                  <Box
-                    w="100%"
-                    px={4}
-                    py={2}
-                    borderWidth="1px"
-                    borderColor={cardBorder}
-                    borderRadius="md"
-                    fontFamily="mono"
-                    fontSize="sm"
-                    wordBreak="break-all"
-                    bg={linkBackground}
-                  >
-                    {joinLink}
-                  </Box>
-                </Stack>
-              )}
-              
-              <Wrap spacing={3} justify="center" color={mutedText} fontSize="sm">
-                <WrapItem>
-                  <Text>✓ Game settings configured</Text>
-                </WrapItem>
-                <WrapItem>
-                  <Text>✓ Board initialized</Text>
-                </WrapItem>
-                <WrapItem>
-                  <Text>✓ Ready to start</Text>
-                </WrapItem>
-              </Wrap>
+    <Box
+      borderWidth="1px"
+      borderColor={cardBorder}
+      borderRadius="xl"
+      bg={cardBg}
+      overflow="hidden"
+      transition="border-color 0.2s ease, box-shadow 0.2s ease"
+      _hover={{ borderColor: 'teal.400', boxShadow: 'lg' }}
+    >
+      {/* Header with spinner accent */}
+      <Box
+        px={5}
+        py={4}
+        borderBottomWidth="1px"
+        borderBottomColor={cardBorder}
+        position="relative"
+        overflow="hidden"
+      >
+        <HStack spacing={4}>
+          <Box position="relative">
+            <Avatar
+              name={hostName}
+              src={match.creator?.avatar_url ?? undefined}
+              size="lg"
+              borderWidth="3px"
+              borderColor="teal.400"
+            />
+            <Box
+              position="absolute"
+              bottom="-2px"
+              right="-2px"
+              bg={cardBg}
+              borderRadius="full"
+              p="2px"
+            >
+              <Spinner size="xs" color="teal.400" thickness="2px" speed="1s" />
+            </Box>
+          </Box>
+          <Stack spacing={1} flex="1" minW={0}>
+            <Text fontSize="xs" fontWeight="semibold" color={mutedText} textTransform="uppercase" letterSpacing="0.08em">
+              Your Match
+            </Text>
+            <Heading size="md" color={accentHeading} isTruncated>
+              Waiting for opponent
+            </Heading>
+            <Text fontSize="sm" color={mutedText}>
+              {match.visibility === 'public'
+                ? 'Listed in public lobbies — anyone can join'
+                : 'Share the code below to invite a friend'}
+            </Text>
+          </Stack>
+        </HStack>
+      </Box>
 
-              {(hasJoinCode || (canCancel && onCancel)) && (
-                <Wrap spacing={3} justify="center" w="100%">
-                  {hasJoinCode && (
-                    <WrapItem>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        colorScheme={hasCopiedCode ? 'teal' : 'gray'}
-                        onClick={onCopyCode}
-                      >
-                        {hasCopiedCode ? 'Code copied' : 'Copy code'}
-                      </Button>
-                    </WrapItem>
-                  )}
-                  {hasJoinLink && (
-                    <>
-                      <WrapItem>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          colorScheme={hasCopiedLink ? 'teal' : 'gray'}
-                          onClick={onCopyLink}
-                        >
-                          {hasCopiedLink ? 'Link copied' : 'Copy invite link'}
-                        </Button>
-                      </WrapItem>
-                      <WrapItem>
-                        <Button
-                          size="sm"
-                          variant="solid"
-                          colorScheme="teal"
-                          leftIcon={<MdShare />}
-                          onClick={() => void handleShare()}
-                          isLoading={sharing}
-                          isDisabled={sharing}
-                        >
-                          Share invite
-                        </Button>
-                      </WrapItem>
-                    </>
-                  )}
-                  {canCancel && onCancel && (
-                    <WrapItem>
-                      <Tooltip label="Removes this game so you can start a new one" hasArrow>
-                        <Button
-                          size="sm"
-                          colorScheme="red"
-                          variant="ghost"
-                          onClick={onCancel}
-                          isLoading={isCancelling}
-                        >
-                          Cancel match
-                        </Button>
-                      </Tooltip>
-                    </WrapItem>
-                  )}
-                </Wrap>
-              )}
-              {canCancel && onCancel && (
-                <Text fontSize="xs" color={mutedText}>
-                  Cancelling removes this lobby so you can post a fresh game.
-                </Text>
-              )}
-              
-              <Text fontSize="xs" color={mutedText} fontStyle="italic">
-                {match.visibility === 'public'
-                  ? 'This game is visible in the public lobby and also joinable by code.'
-                  : 'Only players with the code can join.'}
+      {/* Join Code Section */}
+      {hasJoinCode && (
+        <Box
+          px={5}
+          py={4}
+          bg={codeHighlightBg}
+          borderBottomWidth="1px"
+          borderBottomColor={codeHighlightBorder}
+        >
+          <Flex
+            direction={{ base: 'column', sm: 'row' }}
+            align={{ base: 'stretch', sm: 'center' }}
+            justify="space-between"
+            gap={3}
+          >
+            <Stack spacing={0} flex="1">
+              <Text fontSize="xs" fontWeight="semibold" color={mutedText} textTransform="uppercase" letterSpacing="0.05em">
+                Join Code
+              </Text>
+              <Text
+                fontSize="2xl"
+                fontWeight="bold"
+                fontFamily="mono"
+                letterSpacing="0.15em"
+                color={accentHeading}
+              >
+                {shareableJoinCode}
               </Text>
             </Stack>
-          </Center>
-        </CardBody>
-      </Card>
-    </Stack>
+            <Wrap spacing={2} justify={{ base: 'flex-start', sm: 'flex-end' }}>
+              <WrapItem>
+                <Tooltip label={hasCopiedLink ? 'Copied!' : 'Copy invite link to clipboard'} hasArrow>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    colorScheme={hasCopiedLink ? 'teal' : 'gray'}
+                    onClick={onCopyLink}
+                    isDisabled={!hasJoinLink}
+                  >
+                    {hasCopiedLink ? 'Link copied' : 'Copy link'}
+                  </Button>
+                </Tooltip>
+              </WrapItem>
+              <WrapItem>
+                <Tooltip label="Share via system share sheet" hasArrow>
+                  <Button
+                    size="sm"
+                    colorScheme="teal"
+                    leftIcon={<MdShare />}
+                    onClick={() => void handleShare()}
+                    isLoading={sharing}
+                    isDisabled={!hasJoinLink || sharing}
+                  >
+                    Share
+                  </Button>
+                </Tooltip>
+              </WrapItem>
+            </Wrap>
+          </Flex>
+        </Box>
+      )}
+
+      {/* Badges and Meta */}
+      <Box px={5} py={4}>
+        <Stack spacing={4}>
+          <Wrap spacing={2}>
+            {badges.map((badge, idx) => (
+              <WrapItem key={idx}>
+                <Tooltip label={badge.tooltip} hasArrow isDisabled={!badge.tooltip}>
+                  <Badge
+                    colorScheme={badge.colorScheme}
+                    variant="subtle"
+                    borderRadius="full"
+                    px={3}
+                    py={1}
+                    fontSize="xs"
+                    fontWeight="semibold"
+                  >
+                    {badge.label}
+                  </Badge>
+                </Tooltip>
+              </WrapItem>
+            ))}
+          </Wrap>
+
+          <Text fontSize="xs" color={mutedText}>
+            Hosted by {hostName}
+            {createdTime && ` • Created at ${createdTime}`}
+          </Text>
+
+          {canCancel && onCancel && (
+            <Flex justify="flex-end">
+              <Tooltip label="Cancel this match to create a new one" hasArrow>
+                <Button
+                  size="sm"
+                  colorScheme="red"
+                  variant="ghost"
+                  onClick={onCancel}
+                  isLoading={isCancelling}
+                >
+                  Cancel match
+                </Button>
+              </Tooltip>
+            </Flex>
+          )}
+        </Stack>
+      </Box>
+    </Box>
   );
 }
 
@@ -2243,9 +2288,9 @@ function GamePlayWorkspace({
     if (!autoAnalyzeEnabled) {
       return;
     }
-    if (sessionMode !== 'online') {
-      return;
-    }
+    // Note: Don't gate on sessionMode here - when a game ends via resignation,
+    // sessionMode may become null before this effect runs, but we still want
+    // to trigger auto-analysis for the completed match.
     if (!supabase) {
       return;
     }
@@ -2320,7 +2365,6 @@ function GamePlayWorkspace({
     lobby.lastCompletedMatch,
     resolvedAutoAnalyzeDepth,
     supabase,
-    sessionMode,
     startJob,
     workspaceToast,
   ]);

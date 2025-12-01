@@ -85,6 +85,24 @@ registerRoute(
   }),
 );
 
+/**
+ * Clears all notifications related to a specific match.
+ * Called when a user views the match so stale notifications don't persist.
+ */
+const clearNotificationsForMatch = async (matchId: string): Promise<void> => {
+  try {
+    const notifications = await self.registration.getNotifications();
+    const matchTagPrefix = `match-${matchId}-`;
+    for (const notification of notifications) {
+      if (notification.tag?.startsWith(matchTagPrefix)) {
+        notification.close();
+      }
+    }
+  } catch (error) {
+    console.warn('service-worker: failed to clear match notifications', error);
+  }
+};
+
 self.addEventListener('message', (event: ExtendableMessageEvent) => {
   const data = event.data;
   if (!isRecord(data)) {
@@ -109,7 +127,15 @@ self.addEventListener('message', (event: ExtendableMessageEvent) => {
     return;
   }
 
+  const previousState = clientMatchState.get(sourceId);
   clientMatchState.set(sourceId, { matchId, visible, focused, timestamp });
+
+  // Clear notifications when user becomes visible on a match
+  // This handles the case where user clicks notification or navigates to Play tab
+  const wasNotVisible = !previousState?.visible || previousState?.matchId !== matchId;
+  if (visible && wasNotVisible) {
+    void clearNotificationsForMatch(matchId);
+  }
 });
 
 const shouldSuppressNotification = async (matchId: string | null): Promise<boolean> => {
@@ -237,6 +263,9 @@ self.addEventListener('push', (event: PushEvent) => {
         ? (payloadData.actions as NotificationOptions['actions'])
         : undefined;
 
+      // Default vibration pattern: attention-grabbing short-long-short
+      const defaultVibrate = [200, 100, 400, 100, 200];
+
       const options: NotificationOptions & {
         data?: Record<string, unknown>;
         renotify?: boolean;
@@ -249,7 +278,7 @@ self.addEventListener('push', (event: PushEvent) => {
         renotify: Boolean(payloadData.renotify),
         icon,
         badge,
-        vibrate: vibrate ?? [100, 50, 100],
+        vibrate: vibrate ?? defaultVibrate,
         actions,
       };
 

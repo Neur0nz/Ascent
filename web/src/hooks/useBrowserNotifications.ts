@@ -5,6 +5,10 @@ type NotificationPermissionState = NotificationPermission | 'unsupported';
 
 export interface BrowserNotificationOptions extends NotificationOptions {
   id?: string;
+  /** Re-alert user even if notification with same tag exists */
+  renotify?: boolean;
+  /** Vibration pattern in milliseconds */
+  vibrate?: number[];
 }
 
 export interface UseBrowserNotificationsResult {
@@ -140,6 +144,11 @@ export function useBrowserNotifications(): UseBrowserNotificationsResult {
         baseOptions.data = { ...(baseOptions.data as Record<string, unknown>), focusUrl };
       }
 
+      // Default vibration pattern for attention: short-pause-long-pause-short
+      if (!baseOptions.vibrate) {
+        (baseOptions as NotificationOptions & { vibrate?: number[] }).vibrate = [200, 100, 400, 100, 200];
+      }
+
       const showWithWindowNotification = () => {
         try {
           const notification = new Notification(title, baseOptions);
@@ -177,8 +186,10 @@ export function useBrowserNotifications(): UseBrowserNotificationsResult {
         showWithWindowNotification();
       }
 
+      // Trigger device vibration for additional attention
       if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-        navigator.vibrate?.(50);
+        // Attention pattern: short-pause-long-pause-short
+        navigator.vibrate?.([200, 100, 400, 100, 200]);
       }
     },
     [isSupported, permission, resolveServiceWorkerRegistration],

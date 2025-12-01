@@ -193,9 +193,8 @@ function PracticeTabContent({ onShowHistory }: { onShowHistory: () => void }) {
               justify="center"
               h={{ base: '300px', sm: '400px', md: '500px', lg: '600px' }}
               w="100%"
-              maxW="960px"
-              minH={{ base: '300px', sm: '360px' }}
-              minW={{ base: '280px', sm: '360px' }}
+              maxW={{ base: '100%', md: '960px' }}
+              minH={{ base: '280px', sm: '360px' }}
             >
               <Spinner size="xl" color="teal.300" thickness="4px" />
             </Flex>

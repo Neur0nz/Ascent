@@ -198,11 +198,17 @@ serve(async (req) => {
     const senderName = senderProfile.display_name ?? 'Your opponent';
     const focusUrl = APP_FOCUS_BASE_URL ? `${APP_FOCUS_BASE_URL}#play` : null;
     const payload = {
-      title: `${senderName} pinged you`,
-      body: 'Jump back into Santorini to continue your match.',
+      title: `👋 ${senderName} is waiting!`,
+      body: 'Your opponent is ready — tap to continue your match.',
       tag: `match-${match.id}-ping`,
       data: focusUrl ? { matchId: match.id, focusUrl } : { matchId: match.id },
       requireInteraction: true,
+      // Re-alert user even if previous ping notification exists
+      renotify: true,
+      // Attention-grabbing vibration pattern
+      vibrate: [200, 100, 200, 100, 400],
+      // High urgency for pings
+      urgency: 'high' as const,
     };
 
     const results = await Promise.allSettled(

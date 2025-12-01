@@ -59,9 +59,10 @@ import { ChevronLeftIcon, ChevronRightIcon, ArrowBackIcon, ArrowForwardIcon } fr
 import { MdShare } from 'react-icons/md';
 import GameBoard from '@components/GameBoard';
 import EvaluationPanel from '@components/EvaluationPanel';
+import MoveHistoryList, { type MoveHistoryItem } from '@components/MoveHistoryList';
 import { supabase } from '@/lib/supabaseClient';
 import { fetchMatchWithMoves, MIN_EVAL_MOVE_INDEX } from '@/lib/matchAnalysis';
-import { SantoriniEngine, type SantoriniSnapshot } from '@/lib/santoriniEngine';
+import { SantoriniEngine, SANTORINI_CONSTANTS, type SantoriniSnapshot } from '@/lib/santoriniEngine';
 import { useSantorini } from '@hooks/useSantorini';
 import type { MatchMoveRecord, MatchRecord, MatchRole, SantoriniMoveAction, PlayerProfile, SantoriniStateSnapshot } from '@/types/match';
 import { getMatchAiDepth, getOppositeRole, getPlayerZeroRole, isAiMatch } from '@/utils/matchAiDepth';
@@ -760,6 +761,93 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
 
   const evaluationDomain: [number, number] = [-1, 1];
 
+  // Convert loaded moves to MoveHistoryItem format for the new component
+  const moveHistoryItems: MoveHistoryItem[] = useMemo(() => {
+    if (!loaded) return [];
+    
+    const { BOARD_SIZE, decodeAction, DIRECTIONS, NO_BUILD } = SANTORINI_CONSTANTS;
+    
+    // Helper to find worker position on a board
+    const findWorkerPosition = (board: number[][][], workerId: number): [number, number] | null => {
+      for (let y = 0; y < board.length; y++) {
+        for (let x = 0; x < board[y].length; x++) {
+          if (board[y][x][0] === workerId) {
+            return [y, x];
+          }
+        }
+      }
+      return null;
+    };
+
+    return loaded.moves.map((move, index) => {
+      const action = move.action;
+      const moveValue = action?.kind === 'santorini.move'
+        ? (Array.isArray(action.move) ? action.move[0] : action.move)
+        : null;
+      
+      // Get board from state_snapshot if available
+      const stateSnapshot = move.state_snapshot;
+      const board = stateSnapshot?.board ?? null;
+      
+      // Determine the player based on move index (alternating players)
+      const player = index % 2;
+      
+      // Calculate move details
+      let from: [number, number] | undefined;
+      let to: [number, number] | undefined;
+      let build: [number, number] | null = null;
+      
+      if (typeof moveValue === 'number') {
+        const isPlacement = moveValue >= 0 && moveValue < BOARD_SIZE * BOARD_SIZE;
+        
+        if (isPlacement) {
+          to = [Math.floor(moveValue / BOARD_SIZE), moveValue % BOARD_SIZE];
+        } else {
+          // Movement action - need the board state before this move to find origin
+          const prevSnapshot = index > 0
+            ? loaded.moves[index - 1]?.state_snapshot
+            : loaded.match.initial_state;
+          const boardBefore = prevSnapshot?.board ?? null;
+          
+          if (boardBefore) {
+            const [workerIndex, _power, moveDirection, buildDirection] = decodeAction(moveValue);
+            const workerId = (workerIndex + 1) * (player === 0 ? 1 : -1);
+            const origin = findWorkerPosition(boardBefore, workerId);
+            
+            if (origin) {
+              from = origin;
+              const moveDelta = DIRECTIONS[moveDirection];
+              to = [origin[0] + moveDelta[0], origin[1] + moveDelta[1]];
+              
+              if (buildDirection !== NO_BUILD) {
+                const buildDelta = DIRECTIONS[buildDirection];
+                build = [to[0] + buildDelta[0], to[1] + buildDelta[1]];
+              }
+            }
+          }
+        }
+      }
+      
+      const timestamp = new Date(move.created_at).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+
+      return {
+        id: move.id,
+        index,
+        label: `${index + 1}. ${formatMoveLabel(action as SantoriniMoveAction | undefined)}`,
+        player,
+        timestamp,
+        board,
+        from,
+        to,
+        build,
+      };
+    });
+  }, [loaded]);
+
   const canStepBack = currentIndex > -1;
   const canStepForward = loaded ? currentIndex < loaded.moves.length - 1 : false;
   const cardBg = useColorModeValue('white', 'whiteAlpha.100');
@@ -1135,66 +1223,17 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
                       <Heading size="sm" mb={3}>
                         Move history
                       </Heading>
-                      <Stack spacing={2} maxH="400px" overflowY="auto" pr={2}>
-                        {/* Initial position */}
-                        <Box
-                          borderWidth="2px"
-                          borderColor={currentIndex === -1 ? highlightBorder : cardBorder}
-                          bg={currentIndex === -1 ? highlightBg : 'transparent'}
-                          borderRadius="md"
-                          px={3}
-                          py={2}
-                          cursor={replaying ? 'not-allowed' : 'pointer'}
-                          onClick={() => {
-                            if (!replaying) {
-                              goToStart();
-                            }
-                          }}
-                          transition="all 0.2s"
-                          _hover={{ borderColor: highlightBorder }}
-                        >
-                          <Text fontWeight={currentIndex === -1 ? 'bold' : 'semibold'} fontSize="sm">
-                            0. Initial position
-                          </Text>
-                        </Box>
-
-                        {/* Move list */}
-                        {loaded.moves.map((move, index) => {
-                          const isSelected = currentIndex === index;
-                          return (
-                            <Box
-                              key={move.id}
-                              borderWidth="2px"
-                              borderColor={isSelected ? highlightBorder : cardBorder}
-                              bg={isSelected ? highlightBg : 'transparent'}
-                              borderRadius="md"
-                              px={3}
-                              py={2}
-                              cursor={replaying ? 'not-allowed' : 'pointer'}
-                              onClick={() => {
-                                if (!replaying) {
-                                  void goToMove(index);
-                                }
-                              }}
-                              transition="all 0.2s"
-                              _hover={{ borderColor: highlightBorder }}
-                            >
-                              <HStack justify="space-between" align="center">
-                                <Text fontWeight={isSelected ? 'bold' : 'semibold'} fontSize="sm">
-                                  {index + 1}. {formatMoveLabel(move.action as SantoriniMoveAction | undefined)}
-                                </Text>
-                                <Text fontSize="xs" color={helperText}>
-                                  {new Date(move.created_at).toLocaleTimeString([], { 
-                                    hour: '2-digit', 
-                                    minute: '2-digit',
-                                    second: '2-digit',
-                                  })}
-                                </Text>
-                              </HStack>
-                            </Box>
-                          );
-                        })}
-                      </Stack>
+                      <MoveHistoryList
+                        items={moveHistoryItems}
+                        currentIndex={currentIndex}
+                        onSelectMove={(index) => void goToMove(index)}
+                        disabled={replaying}
+                        maxHeight="400px"
+                        showPlayerTags={true}
+                        showPreviewOnHover={true}
+                        includeInitialPosition={true}
+                        onSelectInitialPosition={goToStart}
+                      />
                     </Box>
                   </Stack>
                 </Box>

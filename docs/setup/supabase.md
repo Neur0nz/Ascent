@@ -171,7 +171,82 @@ create policy "Participants can read moves"
 
 > **Tip:** You can expose completed games for spectators by adjusting the `select` policies to allow everyone to read rows where `status = 'completed'`.
 
-## 5. Enable Realtime on the tables
+## 5. Add required SQL functions
+
+The edge functions rely on a helper RPC to load match data efficiently. Run this SQL to create the function:
+
+```sql
+create or replace function public.get_move_submission_data(
+  p_auth_user_id uuid,
+  p_match_id uuid
+)
+returns table (
+  match_data jsonb,
+  last_move_data jsonb,
+  player_id uuid,
+  player_role text
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_player_id uuid;
+  v_player_role text;
+  v_match_record record;
+  v_last_move record;
+begin
+  -- Find the player profile for the auth user
+  select id into v_player_id
+  from public.players
+  where auth_user_id = p_auth_user_id
+  limit 1;
+
+  if v_player_id is null then
+    raise exception 'Player profile not found for auth user';
+  end if;
+
+  -- Fetch the match
+  select * into v_match_record
+  from public.matches
+  where id = p_match_id;
+
+  if v_match_record is null then
+    raise exception 'Match not found';
+  end if;
+
+  -- Determine player role
+  if v_match_record.creator_id = v_player_id then
+    v_player_role := 'creator';
+  elsif v_match_record.opponent_id = v_player_id then
+    v_player_role := 'opponent';
+  else
+    raise exception 'User is not a participant in this match';
+  end if;
+
+  -- Fetch the last move for this match
+  select * into v_last_move
+  from public.match_moves
+  where match_id = p_match_id
+  order by move_index desc
+  limit 1;
+
+  -- Return all data including clock_increment_seconds
+  return query select
+    to_jsonb(v_match_record) as match_data,
+    case when v_last_move is null then null else to_jsonb(v_last_move) end as last_move_data,
+    v_player_id as player_id,
+    v_player_role as player_role;
+end;
+$$;
+
+grant execute on function public.get_move_submission_data(uuid, uuid) to authenticated;
+grant execute on function public.get_move_submission_data(uuid, uuid) to service_role;
+```
+
+This function returns the full match record as JSON, which includes `clock_increment_seconds` needed for proper clock increment support.
+
+## 6. Enable Realtime on the tables
 Supabase needs to broadcast changes from `matches` and `match_moves` so the lobby and the clocks update instantly. Depending on
 your project, the Replication UI may not be available, so follow whichever path you see in the dashboard:
 
@@ -184,10 +259,10 @@ your project, the Replication UI may not be available, so follow whichever path 
   alter publication supabase_realtime add table public.matches;
   alter publication supabase_realtime add table public.match_moves;
   ```
-1. Navigate to **Database → Replication → Realtime**.
-2. Add `public.matches` and `public.match_moves` to the enabled tables. The lobby and in-game updates depend on these realtime streams.
 
-## 6. Configure the web app
+The lobby and in-game updates depend on these realtime streams.
+
+## 7. Configure the web app
 1. Create `web/.env.local` and fill in the values you copied earlier:
 
    ```bash
@@ -205,7 +280,7 @@ your project, the Replication UI may not be available, so follow whichever path 
 
 3. Open the Play tab. If you are not signed in yet, the page shows the **Sign in to play** card. Enter an email address to receive a magic link. Clicking the link creates your `players` row automatically and unlocks the lobby.
 
-## 7. (Optional) Service role automation
+## 8. (Optional) Service role automation
 If you later add rating updates or scheduled tasks, create SQL functions that run with the service role and call them from backend jobs. For the current frontend-only prototype no extra functions are required.
 
 After completing these steps the Practice, Play, and Analysis workspaces should function end-to-end with your Supabase project.

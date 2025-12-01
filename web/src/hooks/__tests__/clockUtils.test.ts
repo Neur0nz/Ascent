@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { LobbyMatch } from '../useMatchLobby';
 import type { MatchMoveRecord, MatchAction, SantoriniMoveAction, SantoriniStateSnapshot } from '@/types/match';
-import { computeSynchronizedClock, deriveInitialClocks } from '../clockUtils';
+import { computeSynchronizedClock, deriveInitialClocks, getIncrementMs } from '../clockUtils';
 
 const emptySnapshot: SantoriniStateSnapshot = {
   version: 1,
@@ -160,5 +160,54 @@ describe('clockUtils', () => {
     // Should fall back to elapsed time calculation, not use partial endsAt
     expect(synced.creatorMs).toBe(120000); // Preserved from clocks data
     expect(synced.opponentMs).toBe(150000); // 180000 - 30s elapsed (opponent is active)
+  });
+
+  it('getIncrementMs returns increment in milliseconds', () => {
+    // Default match has 5 second increment
+    expect(getIncrementMs(baseMatch)).toBe(5000);
+  });
+
+  it('getIncrementMs returns 0 when no increment is set', () => {
+    const noIncrementMatch = { ...baseMatch, clock_increment_seconds: 0 };
+    expect(getIncrementMs(noIncrementMatch)).toBe(0);
+  });
+
+  it('getIncrementMs returns 0 for null match', () => {
+    expect(getIncrementMs(null)).toBe(0);
+  });
+
+  it('properly reads clocks with increment already applied by server', () => {
+    // Scenario: Creator made a move, spent 10s thinking, got 5s increment
+    // Initial: 300s each
+    // After move: creator has 300 - 10 + 5 = 295s, opponent has 300s
+    const match: LobbyMatch = {
+      ...baseMatch,
+      clock_updated_at: '2024-01-01T00:00:10Z',
+      updated_at: '2024-01-01T00:00:10Z',
+    };
+    const moves: MatchMoveRecord<MatchAction>[] = [
+      {
+        id: 'move-1',
+        match_id: match.id,
+        move_index: 0,
+        player_id: match.creator_id,
+        created_at: '2024-01-01T00:00:10Z',
+        action: {
+          kind: 'santorini.move',
+          move: 10,
+          by: 'creator',
+          // Server applied: initial(300s) - elapsed(10s) + increment(5s) = 295s for creator
+          clocks: { creatorMs: 295000, opponentMs: 300000 },
+        } as SantoriniMoveAction,
+        state_snapshot: emptySnapshot,
+        eval_snapshot: null,
+      },
+    ];
+    // Check clocks right after the move (no additional elapsed time)
+    const now = Date.parse('2024-01-01T00:00:10Z');
+    const synced = computeSynchronizedClock(match, moves, 'opponent', now);
+    // Creator's clock should be preserved (295s), opponent's clock hasn't started ticking yet
+    expect(synced.creatorMs).toBe(295000);
+    expect(synced.opponentMs).toBe(300000);
   });
 });

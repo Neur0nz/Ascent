@@ -616,12 +616,19 @@ async function notifyOpponentOfTurn(options: {
   }
 
   const focusUrl = APP_FOCUS_BASE_URL ? `${APP_FOCUS_BASE_URL}#play` : null;
+  const opponentName = actor?.display_name ?? 'Your opponent';
   const payload = {
-    title: 'Your turn in Santorini',
-    body: actor?.display_name ? `${actor.display_name} just made a move.` : 'Your opponent just made a move.',
+    title: '🎯 Your Turn!',
+    body: `${opponentName} made a move — tap to play!`,
     tag: `match-${match.id}-move`,
     data: focusUrl ? { focusUrl, matchId: match.id } : { matchId: match.id },
     requireInteraction: true,
+    // Re-alert even if notification with same tag exists (for rapid back-and-forth games)
+    renotify: true,
+    // Attention-grabbing vibration pattern: short-pause-long-pause-short
+    vibrate: [200, 100, 400, 100, 200],
+    // High urgency to wake device immediately
+    urgency: 'high' as const,
   };
 
   const results = await Promise.allSettled(

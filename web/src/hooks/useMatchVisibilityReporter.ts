@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { clearMatchNotifications } from '@/lib/pushNotifications';
 
 interface MatchVisibilityMessage {
   type: 'santorini:match-visibility';
@@ -141,6 +142,7 @@ export const useMatchVisibilityReporter = (matchId: string | null): void => {
       if (cancelled) {
         return;
       }
+      const wasNotVisible = !lastVisibilityRef.current?.visible;
       if (
         lastVisibilityRef.current &&
         lastVisibilityRef.current.visible === visible &&
@@ -156,6 +158,12 @@ export const useMatchVisibilityReporter = (matchId: string | null): void => {
         focused,
         timestamp: Date.now(),
       });
+
+      // Clear any pending notifications for this match when the user views it
+      // This prevents stale "your turn" notifications from persisting
+      if (visible && wasNotVisible && matchId) {
+        void clearMatchNotifications(matchId);
+      }
     };
 
     const handleVisibilityChange = () => {
@@ -163,6 +171,10 @@ export const useMatchVisibilityReporter = (matchId: string | null): void => {
       const focused = computeFocus();
       sendVisibility(visible, focused);
     };
+
+    // Clear any pending notifications for this match when entering the view
+    // This handles the case where user clicks a notification or navigates to Play tab
+    void clearMatchNotifications(matchId);
 
     handleVisibilityChange();
     window.addEventListener('focus', handleVisibilityChange);
