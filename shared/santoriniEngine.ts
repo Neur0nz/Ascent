@@ -609,6 +609,9 @@ export class SantoriniEngine {
   }
 
   private getNextPlacement(): PlacementContext | null {
+    if (this.round > 0) {
+      return null;
+    }
     const hasWorker = (id: number) => this.findWorker(id) !== null;
     const playerOrder: Array<0 | 1> = [this.initialStartingPlayer, (1 - this.initialStartingPlayer) as 0 | 1];
     for (const player of playerOrder) {
