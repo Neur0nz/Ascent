@@ -70,6 +70,7 @@ export type SantoriniMoveAction = {
   kind: 'santorini.move';
   move: number | number[];
   by: 'creator' | 'opponent';
+  isPlacement?: boolean; // Explicitly indicates if this is a placement action
   clocks?: {
     creatorMs: number;
     opponentMs: number;

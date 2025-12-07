@@ -8,6 +8,7 @@ interface SantoriniMoveAction {
   kind: 'santorini.move';
   move: number | number[];
   by?: 'creator' | 'opponent';
+  isPlacement?: boolean;
   clocks?: { creatorMs?: number; opponentMs?: number } | null;
 }
 

@@ -125,7 +125,7 @@ export function formatPlacement(
   board?: number[][][] | null,
   options: MoveFormatOptions = {}
 ): string {
-  const { includePlayer = false, verbose = false, moveIndex } = options;
+  const { includePlayer = false, verbose = false, moveIndex = undefined } = options;
 
   const targetY = Math.floor(action / BOARD_SIZE);
   const targetX = action % BOARD_SIZE;
@@ -239,13 +239,10 @@ export function formatMove(
   board?: number[][][] | null,
   options: MoveFormatOptions = {}
 ): string {
-  const { includePlayer = false, verbose = false, moveIndex } = options;
+  const { includePlayer = false, verbose = false } = options;
+  const moveIndex = options.moveIndex; // Access directly
 
-  // Placement phase is first 4 moves (indices 0-3), game phase starts at index 4
-  // If moveIndex is provided, use it; otherwise fall back to action value check (less reliable)
-  const isPlacement = typeof moveIndex === 'number'
-    ? moveIndex < 4
-    : action >= 0 && action < BOARD_SIZE * BOARD_SIZE;
+  const isPlacement = typeof moveIndex === 'number' && moveIndex < 4;
 
   // Handle placement actions
   if (isPlacement) {
