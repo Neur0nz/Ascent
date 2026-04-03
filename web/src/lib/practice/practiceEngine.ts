@@ -1,5 +1,7 @@
 import { GAME_CONSTANTS } from '@game/constants';
 import { SANTORINI_CONSTANTS } from '@/lib/santoriniEngine';
+import { formatCoordinate, findWorkerPosition } from '@/lib/moveNotation';
+export { formatCoordinate, findWorkerPosition };
 
 /**
  * Lightweight helpers shared by the practice hook when it needs to reason
@@ -7,17 +9,8 @@ import { SANTORINI_CONSTANTS } from '@/lib/santoriniEngine';
  * `useSantorini` focused on React state instead of array shuffling.
  */
 
-const COLUMN_LABELS = ['A', 'B', 'C', 'D', 'E'] as const;
-
 const inBounds = (y: number, x: number): boolean =>
   y >= 0 && y < GAME_CONSTANTS.BOARD_SIZE && x >= 0 && x < GAME_CONSTANTS.BOARD_SIZE;
-
-export const formatCoordinate = (position?: [number, number] | null): string => {
-  if (!position) return '—';
-  const [y, x] = position;
-  if (!inBounds(y, x)) return '—';
-  return `${COLUMN_LABELS[x]}${y + 1}`;
-};
 
 export const normalizeBoardPayload = (payload: unknown): number[][][] | null => {
   if (!Array.isArray(payload) || payload.length !== GAME_CONSTANTS.BOARD_SIZE) {
@@ -41,17 +34,6 @@ export const normalizeBoardPayload = (payload: unknown): number[][][] | null => 
 
 export const cloneBoardGrid = (board: number[][][]): number[][][] =>
   board.map((row) => row.map((cell) => cell.slice() as number[]));
-
-export const findWorkerPosition = (board: number[][][], workerId: number): [number, number] | null => {
-  for (let y = 0; y < GAME_CONSTANTS.BOARD_SIZE; y += 1) {
-    for (let x = 0; x < GAME_CONSTANTS.BOARD_SIZE; x += 1) {
-      if (board[y][x][0] === workerId) {
-        return [y, x];
-      }
-    }
-  }
-  return null;
-};
 
 export const nextPlacementWorkerId = (player: number, board: number[][][]): number => {
   const ids = player === 0 ? [1, 2] : [-1, -2];

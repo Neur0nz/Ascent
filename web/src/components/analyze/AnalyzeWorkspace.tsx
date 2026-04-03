@@ -857,7 +857,6 @@ function AnalyzeWorkspace({ auth, pendingJobId = null, onPendingJobConsumed }: A
   const cardBg = useColorModeValue('white', 'whiteAlpha.100');
   const cardBorder = useColorModeValue('gray.200', 'whiteAlpha.200');
   const mutedText = useColorModeValue('gray.600', 'whiteAlpha.700');
-  const helperText = useColorModeValue('gray.600', 'whiteAlpha.700');
   const highlightBorder = useColorModeValue('teal.500', 'teal.300');
   const highlightBg = useColorModeValue('teal.50', 'teal.900');
   const badgeBorder = useColorModeValue('gray.200', 'whiteAlpha.200');

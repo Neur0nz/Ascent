@@ -302,7 +302,7 @@ function ActiveMatchContent({
   const [leaveBusy, setLeaveBusy] = useBoolean();
   const [requestingUndo, setRequestingUndo] = useBoolean(false);
   const lobbyMatch = match ?? null;
-  const { cardBg, cardBorder, mutedText, helperText, strongText, accentHeading, panelBg } = useSurfaceTokens();
+  const { cardBg, cardBorder, mutedText, strongText, accentHeading, panelBg } = useSurfaceTokens();
   const googleHoverBg = useColorModeValue('gray.100', 'whiteAlpha.300');
   const googleActiveBg = useColorModeValue('gray.200', 'whiteAlpha.200');
   const typedMoves = useMemo(
@@ -713,7 +713,7 @@ function ActiveMatchContent({
                       {greenClock}
                     </Heading>
                     <HStack spacing={1} justify={{ base: 'center', sm: 'flex-start' }}>
-                      <Text fontSize="xs" color={helperText}>
+                      <Text fontSize="xs" color={mutedText}>
                         {greenPlayerName}
                       </Text>
                       {greenConnection && (
@@ -735,7 +735,7 @@ function ActiveMatchContent({
                       {redClock}
                     </Heading>
                     <HStack spacing={1} justify={{ base: 'center', sm: 'flex-end' }}>
-                      <Text fontSize="xs" color={helperText}>
+                      <Text fontSize="xs" color={mutedText}>
                         {redPlayerName}
                       </Text>
                       {redConnection && (
@@ -765,7 +765,7 @@ function ActiveMatchContent({
                         ? 'You control the red workers'
                         : 'Spectating this match'}
                   </Text>
-                  <Text fontSize="sm" color={helperText}>
+                  <Text fontSize="sm" color={mutedText}>
                     {typedMoves.length} moves played
                     {startingSummary ? ` · First move: ${startingSummary}` : ' · First move: syncing...'}
                     {' · '}

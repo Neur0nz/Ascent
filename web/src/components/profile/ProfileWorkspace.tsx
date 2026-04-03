@@ -167,7 +167,7 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
   const googleHoverBg = useColorModeValue('gray.100', 'whiteAlpha.300');
   const googleActiveBg = useColorModeValue('gray.200', 'whiteAlpha.200');
   const cropModalBg = useColorModeValue('gray.100', 'gray.900');
-  const { cardBg, cardBorder, mutedText, helperText } = useSurfaceTokens();
+  const { cardBg, cardBorder, mutedText } = useSurfaceTokens();
 
   const resetPendingSettings = useCallback(() => {
     if (profile) {
@@ -808,7 +808,7 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
               {nameError ? (
                 <FormErrorMessage>{nameError}</FormErrorMessage>
               ) : (
-                <FormHelperText color={helperText}>Your public username. Shareable across matches.</FormHelperText>
+                <FormHelperText color={mutedText}>Your public username. Shareable across matches.</FormHelperText>
               )}
             </FormControl>
             <FormControl>
@@ -841,7 +841,7 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
                   </Radio>
                 </Stack>
               </RadioGroup>
-              <FormHelperText color={helperText}>
+              <FormHelperText color={mutedText}>
                 Applies the next time you load Practice or Analysis mode.
               </FormHelperText>
             </FormControl>
@@ -863,7 +863,7 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
                 <FormLabel htmlFor="last-move-indicator-toggle" mb="0">
                   Highlight last move
                 </FormLabel>
-                <FormHelperText color={helperText} mt={1}>
+                <FormHelperText color={mutedText} mt={1}>
                   Show subtle outlines on cells from the most recent move.
                 </FormHelperText>
               </Box>
@@ -886,7 +886,7 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
                 >
                   <Box>
                     <FormLabel mb={1}>Auto analyze games after completion</FormLabel>
-                    <FormHelperText color={helperText}>
+                    <FormHelperText color={mutedText}>
                       Kick off an AI analysis graph as soon as one of your online games ends.
                     </FormHelperText>
                   </Box>
@@ -922,7 +922,7 @@ function ProfileWorkspace({ auth }: ProfileWorkspaceProps) {
                       <NumberDecrementStepper />
                     </NumberInputStepper>
                   </NumberInput>
-                  <FormHelperText color={helperText}>
+                  <FormHelperText color={mutedText}>
                     Used when auto analysis runs automatically. Higher depths take longer but produce stronger lines.
                   </FormHelperText>
                 </Box>

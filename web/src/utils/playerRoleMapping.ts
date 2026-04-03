@@ -10,14 +10,5 @@ export const mapPlayerIndexToRole = (
   playerZeroRole: MatchRole,
 ): MatchRole => {
   const startingPlayerIndex = getStartingPlayerIndex(playerZeroRole);
-  if (playerIndex === startingPlayerIndex) {
-    return playerZeroRole;
-  }
-  
-  if (playerIndex === 0 || playerIndex === 1) {
-    return getOppositeRole(playerZeroRole);
-  }
-
-  // Fallback: default to starting player role when index is unexpected
-  return playerZeroRole;
+  return playerIndex === startingPlayerIndex ? playerZeroRole : getOppositeRole(playerZeroRole);
 };
