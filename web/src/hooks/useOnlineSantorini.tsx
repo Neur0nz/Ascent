@@ -1253,40 +1253,46 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
   const undo = useCallback(async () => {}, []);
   const redo = useCallback(async () => {}, []);
 
+  // Memoize sorted Santorini moves separately – this only changes when
+  // move records are actually added/removed, NOT on every clock tick.
+  const santoriniMoves = useMemo(
+    () =>
+      moves
+        .filter((move) => isSantoriniMoveAction(move.action))
+        .sort((a, b) => a.move_index - b.move_index),
+    [moves],
+  );
+
+  // Cache display names separately to avoid re-computing history when
+  // only the clock changes (moves reference stays the same).
+  const creatorName = match?.creator?.display_name ?? 'Creator';
+  const opponentName = match?.opponent?.display_name ?? (matchIsAi ? 'Santorini AI' : 'Opponent');
+  const initialBoard = match?.initial_state?.board ?? null;
+
   const moveHistory = useMemo(() => {
-    const creatorName = match?.creator?.display_name ?? 'Creator';
-    const opponentName = match?.opponent?.display_name ?? (matchIsAi ? 'Santorini AI' : 'Opponent');
     const greenRole = playerZeroRole;
-    const initialBoard = match?.initial_state?.board ?? null;
-    
-    const sortedMoves = moves
-      .filter((move) => isSantoriniMoveAction(move.action))
-      .sort((a, b) => a.move_index - b.move_index);
-    
-    return sortedMoves.map((move, index) => {
+    return santoriniMoves.map((move, index) => {
       const action = move.action as SantoriniMoveAction;
       const actorRole = action.by === 'creator' ? 'creator' : 'opponent';
       const actorName = actorRole === 'creator' ? creatorName : opponentName;
       const colorLabel = actorRole === greenRole ? 'Green' : 'Red';
       const player = actorRole === greenRole ? 0 : 1;
-      
-      // Get board state BEFORE this move for coordinate-based formatting
+
       const boardBefore = index > 0
-        ? sortedMoves[index - 1]?.state_snapshot?.board ?? null
+        ? santoriniMoves[index - 1]?.state_snapshot?.board ?? null
         : initialBoard;
-      
-      // Format the move using unified notation
+
       const moveValue = Array.isArray(action.move) ? action.move[0] : action.move;
       const moveLabel = typeof moveValue === 'number'
         ? formatMoveLabel(moveValue, player, boardBefore, move.move_index)
         : 'move';
-      
+
       return {
         action: action.move,
         description: `${index + 1}. ${actorName} (${colorLabel}): ${moveLabel}`,
       };
     });
-  }, [match?.creator?.display_name, match?.opponent?.display_name, match?.initial_state?.board, moves, playerZeroRole, matchIsAi]);
+  }, [santoriniMoves, creatorName, opponentName, initialBoard, playerZeroRole]);
 
   return {
     board,

@@ -13,8 +13,10 @@ export function EvaluationJobToasts({ onNavigateToAnalysis }: EvaluationJobToast
   const notifiedRef = useRef<Map<string, EvaluationJobStatus>>(new Map());
 
   useEffect(() => {
-    Object.values(jobs).forEach((job) => {
+    for (const job of Object.values(jobs)) {
       const lastStatus = notifiedRef.current.get(job.id);
+      if (lastStatus === job.status) continue;
+
       if (job.status === 'success' && lastStatus !== 'success') {
         notifiedRef.current.set(job.id, 'success');
         toast({
@@ -42,7 +44,11 @@ export function EvaluationJobToasts({ onNavigateToAnalysis }: EvaluationJobToast
                   size="sm"
                   colorScheme="teal"
                   onClick={() => {
-                    onNavigateToAnalysis(job.id);
+                    try {
+                      onNavigateToAnalysis(job.id);
+                    } catch (error) {
+                      console.warn('EvaluationJobToasts: navigation failed', error);
+                    }
                     onClose();
                   }}
                 >
@@ -61,8 +67,20 @@ export function EvaluationJobToasts({ onNavigateToAnalysis }: EvaluationJobToast
           duration: 7000,
           isClosable: true,
         });
+      } else if (job.status === 'cancelled' && lastStatus !== 'cancelled') {
+        notifiedRef.current.set(job.id, 'cancelled');
+        const hadProgress = job.evaluatedCount > 0;
+        if (hadProgress) {
+          toast({
+            status: 'info',
+            title: 'Evaluation cancelled',
+            description: `${job.matchLabel}: ${job.evaluatedCount}/${job.totalPositions} positions evaluated before cancellation.`,
+            duration: 4000,
+            isClosable: true,
+          });
+        }
       }
-    });
+    }
   }, [jobs, onNavigateToAnalysis, toast]);
 
   return null;

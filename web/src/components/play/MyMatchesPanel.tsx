@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import {
   Badge,
   Box,
@@ -13,13 +13,13 @@ import {
   Stack,
   Text,
   Tooltip,
-  useColorModeValue,
   useToast,
 } from '@chakra-ui/react';
 import { ArrowForwardIcon, CloseIcon } from '@chakra-ui/icons';
 import type { LobbyMatch } from '@hooks/useMatchLobby';
 import type { PlayerProfile } from '@/types/match';
 import { describeMatch } from '@/utils/matchDescription';
+import { useSurfaceTokens } from '@/theme/useSurfaceTokens';
 
 type MyMatchesPanelProps = {
   matches: LobbyMatch[];
@@ -40,18 +40,45 @@ function formatStatus(match: LobbyMatch) {
   }
 }
 
-function MyMatchesPanel({ matches, activeMatchId, profile, onSelect, onLeave }: MyMatchesPanelProps) {
-  const cardBg = useColorModeValue('white', 'whiteAlpha.100');
-  const cardBorder = useColorModeValue('gray.200', 'whiteAlpha.200');
-  const mutedText = useColorModeValue('gray.600', 'whiteAlpha.700');
-  const activeBg = useColorModeValue('teal.50', 'whiteAlpha.200');
-  const toast = useToast();
-  const [busyMatchId, setBusyMatchId] = useState<string | null>(null);
+function formatClockLabel(match: LobbyMatch): string {
+  if (match.clock_initial_seconds <= 0) return '';
+  return ` · ${Math.round(match.clock_initial_seconds / 60)}+${match.clock_increment_seconds}`;
+}
 
-  const handleLeave = async (matchId: string) => {
-    setBusyMatchId(matchId);
+// ── Individual match card (memoized) ───────────────────────────────────
+interface MatchCardProps {
+  match: LobbyMatch;
+  isActive: boolean;
+  profile: PlayerProfile | null;
+  onSelect: (matchId: string) => void;
+  onLeave: (matchId: string) => Promise<void>;
+  busyMatchId: string | null;
+  onBusyChange: (matchId: string | null) => void;
+}
+
+const MatchCard = memo(function MatchCard({
+  match,
+  isActive,
+  profile,
+  onSelect,
+  onLeave,
+  busyMatchId,
+  onBusyChange,
+}: MatchCardProps) {
+  const { cardBorder, mutedText } = useSurfaceTokens();
+  const activeBg = 'whiteAlpha.200';
+  const toast = useToast();
+
+  const { label: statusLabel, colorScheme } = formatStatus(match);
+  const primaryLabel = isActive ? 'Active' : match.status === 'in_progress' ? 'Resume' : 'View';
+  const leaveLabel = match.status === 'waiting_for_opponent' ? 'Cancel match' : 'Leave match';
+  const isCreator = profile ? match.creator_id === profile.id : false;
+  const clockLabel = formatClockLabel(match);
+
+  const handleLeave = useCallback(async () => {
+    onBusyChange(match.id);
     try {
-      await onLeave(matchId);
+      await onLeave(match.id);
       toast({ title: 'Match updated', status: 'info', description: 'The match was closed.' });
     } catch (error) {
       toast({
@@ -60,9 +87,77 @@ function MyMatchesPanel({ matches, activeMatchId, profile, onSelect, onLeave }: 
         description: error instanceof Error ? error.message : 'Unknown error',
       });
     } finally {
-      setBusyMatchId((current) => (current === matchId ? null : current));
+      onBusyChange(null);
     }
-  };
+  }, [match.id, onLeave, onBusyChange, toast]);
+
+  const handleSelect = useCallback(() => onSelect(match.id), [onSelect, match.id]);
+
+  return (
+    <Box
+      borderWidth="1px"
+      borderColor={isActive ? 'teal.400' : cardBorder}
+      borderRadius="lg"
+      p={4}
+      bg={isActive ? activeBg : 'transparent'}
+      transition="border-color 0.2s ease"
+    >
+      <Stack spacing={3}>
+        <Flex justify="space-between" align={{ base: 'flex-start', sm: 'center' }} direction={{ base: 'column', sm: 'row' }} gap={2}>
+          <Stack spacing={1}>
+            <Heading size="sm">{describeMatch(match, profile)}</Heading>
+            <Text fontSize="sm" color={mutedText}>
+              {isCreator ? 'You created this game' : 'Joined game'} ·{' '}
+              {match.rated ? 'Rated' : 'Casual'}
+              {clockLabel}
+            </Text>
+          </Stack>
+          <HStack spacing={2}>
+            <Badge colorScheme={colorScheme}>{statusLabel}</Badge>
+            {match.visibility === 'private' && <Badge colorScheme="orange">Private</Badge>}
+          </HStack>
+        </Flex>
+        <HStack spacing={3} justify="flex-end">
+          <Tooltip label={isActive ? 'This match is currently active' : 'Switch to this match'}>
+            <Button
+              size="sm"
+              colorScheme="teal"
+              variant={isActive ? 'solid' : 'outline'}
+              leftIcon={!isActive ? <ArrowForwardIcon /> : undefined}
+              onClick={handleSelect}
+              isDisabled={isActive}
+            >
+              {primaryLabel}
+            </Button>
+          </Tooltip>
+          <Tooltip label={leaveLabel}>
+            <IconButton
+              aria-label={leaveLabel}
+              icon={<CloseIcon boxSize={3} />}
+              size="sm"
+              variant="ghost"
+              colorScheme="red"
+              onClick={handleLeave}
+              isLoading={busyMatchId === match.id}
+            />
+          </Tooltip>
+        </HStack>
+      </Stack>
+    </Box>
+  );
+});
+
+// ── Panel component (memoized) ─────────────────────────────────────────
+function MyMatchesPanel({ matches, activeMatchId, profile, onSelect, onLeave }: MyMatchesPanelProps) {
+  const { cardBg, cardBorder, mutedText } = useSurfaceTokens();
+  const [busyMatchId, setBusyMatchId] = useState<string | null>(null);
+
+  const handleBusyChange = useCallback((matchId: string | null) => {
+    setBusyMatchId((current) => {
+      if (matchId === null) return current === matchId ? null : current;
+      return matchId;
+    });
+  }, []);
 
   return (
     <Card bg={cardBg} borderWidth="1px" borderColor={cardBorder}>
@@ -76,68 +171,18 @@ function MyMatchesPanel({ matches, activeMatchId, profile, onSelect, onLeave }: 
           </Text>
         ) : (
           <Stack spacing={4}>
-            {matches.map((match) => {
-              const isActive = match.id === activeMatchId;
-              const { label: statusLabel, colorScheme } = formatStatus(match);
-              const primaryLabel = isActive ? 'Active' : match.status === 'in_progress' ? 'Resume' : 'View';
-              const leaveLabel = match.status === 'waiting_for_opponent' ? 'Cancel match' : 'Leave match';
-              const isCreator = profile ? match.creator_id === profile.id : false;
-              return (
-                <Box
-                  key={match.id}
-                  borderWidth="1px"
-                  borderColor={isActive ? 'teal.400' : cardBorder}
-                  borderRadius="lg"
-                  p={4}
-                  bg={isActive ? activeBg : 'transparent'}
-                  transition="border-color 0.2s ease"
-                >
-                  <Stack spacing={3}>
-                    <Flex justify="space-between" align={{ base: 'flex-start', sm: 'center' }} direction={{ base: 'column', sm: 'row' }} gap={2}>
-                      <Stack spacing={1}>
-                        <Heading size="sm">{describeMatch(match, profile)}</Heading>
-                        <Text fontSize="sm" color={mutedText}>
-                          {isCreator ? 'You created this game' : 'Joined game'} ·{' '}
-                          {match.rated ? 'Rated' : 'Casual'}
-                          {match.clock_initial_seconds > 0
-                            ? ` · ${Math.round(match.clock_initial_seconds / 60)}+${match.clock_increment_seconds}`
-                            : ''}
-                        </Text>
-                      </Stack>
-                      <HStack spacing={2}>
-                        <Badge colorScheme={colorScheme}>{statusLabel}</Badge>
-                        {match.visibility === 'private' && <Badge colorScheme="orange">Private</Badge>}
-                      </HStack>
-                    </Flex>
-                    <HStack spacing={3} justify="flex-end">
-                      <Tooltip label={isActive ? 'This match is currently active' : 'Switch to this match'}>
-                        <Button
-                          size="sm"
-                          colorScheme="teal"
-                          variant={isActive ? 'solid' : 'outline'}
-                          leftIcon={!isActive ? <ArrowForwardIcon /> : undefined}
-                          onClick={() => onSelect(match.id)}
-                          isDisabled={isActive}
-                        >
-                          {primaryLabel}
-                        </Button>
-                      </Tooltip>
-                      <Tooltip label={leaveLabel}>
-                        <IconButton
-                          aria-label={leaveLabel}
-                          icon={<CloseIcon boxSize={3} />}
-                          size="sm"
-                          variant="ghost"
-                          colorScheme="red"
-                          onClick={() => handleLeave(match.id)}
-                          isLoading={busyMatchId === match.id}
-                        />
-                      </Tooltip>
-                    </HStack>
-                  </Stack>
-                </Box>
-              );
-            })}
+            {matches.map((match) => (
+              <MatchCard
+                key={match.id}
+                match={match}
+                isActive={match.id === activeMatchId}
+                profile={profile}
+                onSelect={onSelect}
+                onLeave={onLeave}
+                busyMatchId={busyMatchId}
+                onBusyChange={handleBusyChange}
+              />
+            ))}
           </Stack>
         )}
       </CardBody>
@@ -145,4 +190,4 @@ function MyMatchesPanel({ matches, activeMatchId, profile, onSelect, onLeave }: 
   );
 }
 
-export default MyMatchesPanel;
+export default memo(MyMatchesPanel);

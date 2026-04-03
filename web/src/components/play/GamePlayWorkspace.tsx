@@ -2139,11 +2139,12 @@ function GamePlayWorkspace({
     });
   }, [lobby.activeMatch, lobby.emojiReactions]);
 
+  const sendEmojiRef = lobby.sendEmojiReaction;
   const handleSendEmoji = useCallback(
     (emoji: string) => {
-      void lobby.sendEmojiReaction(emoji);
+      void sendEmojiRef(emoji);
     },
-    [lobby],
+    [sendEmojiRef],
   );
 
   const autoAnalyzeEnabled = auth.profile?.auto_analyze_games ?? false;
