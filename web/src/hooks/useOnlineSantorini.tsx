@@ -561,6 +561,10 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       lastTickRef.current = null;
       return;
     }
+    // Don't sync clocks until placement is done — no one is "on the clock" yet.
+    if (!placementComplete) {
+      return;
+    }
     const lastMove = moves.length > 0 ? moves[moves.length - 1] : null;
     const awaitingServerConfirmation =
       typeof lastMove?.id === 'string' && lastMove.id.startsWith('optimistic-');
@@ -572,7 +576,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
     const synced = computeSynchronizedClock(match, moves, currentTurn, Date.now());
     setClock(synced);
     lastTickRef.current = Date.now();
-  }, [clockEnabled, currentTurn, match, match?.clock_initial_seconds, match?.clock_updated_at, match?.updated_at, moves]);
+  }, [clockEnabled, currentTurn, match, match?.clock_initial_seconds, match?.clock_updated_at, match?.updated_at, moves, placementComplete]);
 
   useEffect(() => {
     if (!match || !role || !isMyTurn) {
@@ -831,8 +835,6 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       ? {
           creatorMs: clock.creatorMs,
           opponentMs: clock.opponentMs,
-          creatorEndsAt: Date.now() + clock.creatorMs,
-          opponentEndsAt: Date.now() + clock.opponentMs,
         }
       : undefined;
 
