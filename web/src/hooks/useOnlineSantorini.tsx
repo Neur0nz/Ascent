@@ -623,14 +623,11 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       placementComplete &&
       Boolean(currentTurn);
 
-    // Guard: clocks stay paused while the starting player is still placing workers.
+    // Guard: clocks stay paused while ANY player is still placing workers.
     if (shouldRunClock) {
       const placementContext = engineRef.current.getPlacementContext();
       if (placementContext) {
-        const placementRole = mapPlayerIndexToRole(placementContext.player, playerZeroRole);
-        if (placementRole === playerZeroRole) {
-          return;
-        }
+        return;
       }
     }
 
@@ -906,7 +903,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
 
   const formatClock = useCallback((ms: number) => {
     if (!clockEnabled) return '--:--';
-    const totalSeconds = Math.floor(ms / 1000);
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;

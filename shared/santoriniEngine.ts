@@ -565,7 +565,7 @@ export class SantoriniEngine {
 
   private canMove(oldPosition: [number, number], newPosition: [number, number], player?: number): boolean {
     if (oldPosition[0] === newPosition[0] && oldPosition[1] === newPosition[1]) {
-      return true;
+      return false;
     }
     if (!inBounds(newPosition[0], newPosition[1])) {
       return false;
