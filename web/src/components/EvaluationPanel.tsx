@@ -254,7 +254,6 @@ function EvaluationPanel({
   const panelGradient = useColorModeValue('linear(to-br, gray.50, white)', 'linear(to-br, blackAlpha.500, blackAlpha.400)');
   const panelBorder = useColorModeValue('gray.200', 'whiteAlpha.200');
   const mutedText = useColorModeValue('gray.600', 'whiteAlpha.700');
-  const subtleText = useColorModeValue('gray.600', 'whiteAlpha.700');
   const strongText = useColorModeValue('gray.800', 'whiteAlpha.800');
   const moveBg = useColorModeValue('gray.50', 'whiteAlpha.100');
 
@@ -360,7 +359,7 @@ function EvaluationPanel({
           <Collapse in={disclosure.isOpen} animateOpacity>
             <Stack spacing={5}>
               <Box>
-                <Text fontSize="xs" color={subtleText}>
+                <Text fontSize="xs" color={mutedText}>
                   {statusLabel}
                   {isRunning && statusSims ? ` • ~${statusSims} sims` : ''}
                 </Text>
@@ -418,7 +417,7 @@ function EvaluationPanel({
                         topMoves={topMoves}
                         panelBorder={panelBorder}
                         moveBg={moveBg}
-                        mutedText={subtleText}
+                        mutedText={mutedText}
                         strongText={strongText}
                       />
                     </Stack>
@@ -434,7 +433,7 @@ function EvaluationPanel({
             <Heading size="sm" color={strongText}>
               AI Evaluation
             </Heading>
-            <Text fontSize="xs" color={subtleText} mt={0.5}>
+            <Text fontSize="xs" color={mutedText} mt={0.5}>
               by {creditLink}
             </Text>
           </Box>

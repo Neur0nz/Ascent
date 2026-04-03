@@ -11,8 +11,6 @@ import {
   Wrap,
   WrapItem,
 } from '@chakra-ui/react';
-import { useMemo } from 'react';
-
 export const EMOJIS = [
   '😀',
   '👍',
@@ -40,13 +38,10 @@ interface EmojiPickerProps {
 function EmojiPicker({ onSelect, isDisabled }: EmojiPickerProps) {
   const popoverBg = useColorModeValue('white', 'gray.700');
   const popoverBorder = useColorModeValue('gray.200', 'whiteAlpha.200');
-  const triggerLabel = useMemo(
-    () => (
-      <Box as="span" role="img" aria-hidden="true" fontSize="2xl">
-        🙂
-      </Box>
-    ),
-    [],
+  const triggerLabel = (
+    <Box as="span" role="img" aria-hidden="true" fontSize="2xl">
+      🙂
+    </Box>
   );
 
   return (

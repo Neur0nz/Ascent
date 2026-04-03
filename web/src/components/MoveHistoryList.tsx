@@ -16,8 +16,6 @@ import {
 import { renderCellSvg } from '@game/svg';
 import { formatCoordinate } from '@/lib/moveNotation';
 
-// Re-export formatCoordinate as coordinateLabel for backwards compatibility
-const coordinateLabel = formatCoordinate;
 
 // SVG cache for mini board cells - shared across all instances
 const miniSvgCache = new Map<string, string>();
@@ -282,9 +280,9 @@ const MoveHistoryListItem = memo(function MoveHistoryListItem({
             />
             {item.to && (
               <HStack spacing={2} justify="center" fontSize="2xs" color={mutedText} flexWrap="wrap">
-                {item.from && <Text>From: {coordinateLabel(item.from)}</Text>}
-                <Text>To: {coordinateLabel(item.to)}</Text>
-                {item.build && <Text>Build: {coordinateLabel(item.build)}</Text>}
+                {item.from && <Text>From: {formatCoordinate(item.from)}</Text>}
+                <Text>To: {formatCoordinate(item.to)}</Text>
+                {item.build && <Text>Build: {formatCoordinate(item.build)}</Text>}
               </HStack>
             )}
           </Stack>
@@ -373,5 +371,5 @@ function MoveHistoryList({
 export default memo(MoveHistoryList);
 
 // Export the mini board preview for use in other components
-export { MiniBoardPreview, coordinateLabel };
+export { MiniBoardPreview };
 
