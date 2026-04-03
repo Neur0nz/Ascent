@@ -17,11 +17,12 @@ import {
   useToast,
 } from '@chakra-ui/react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { SearchIcon, TimeIcon } from '@chakra-ui/icons';
 import { SantoriniProvider, useSantorini } from '@hooks/useSantorini';
 import { useSupabaseAuth } from '@hooks/useSupabaseAuth';
-import HeaderBar, { type AppTab, NAV_TABS } from '@components/HeaderBar';
+import HeaderBar from '@components/HeaderBar';
+import { useNavigationStore } from '@/stores/useNavigationStore';
 import GameBoard from '@components/GameBoard';
 import EvaluationPanel from '@components/EvaluationPanel';
 import HistoryModal from '@components/HistoryModal';
@@ -36,76 +37,7 @@ import { BoardPreferencesProvider } from '@hooks/useBoardPreferences';
 import { AuthLoadingScreen } from '@components/auth/AuthLoadingScreen';
 import EvaluationJobToasts from '@components/analyze/EvaluationJobToasts';
 
-const TAB_STORAGE_KEY = 'santorini:lastTab';
-
-/**
- * Normalizes a tab key by resolving aliases.
- * This allows for flexible URLs, e.g., mapping 'analyze' to 'analysis'.
- * @param value The raw tab key from a URL hash or storage.
- * @returns The normalized AppTab or the original value if no alias is found.
- */
-const TAB_ALIASES: Record<string, AppTab> = {
-  analyze: 'analysis',
-  // Future aliases can be added here, e.g., 'board': 'practice'
-};
-
-function normalizeTabKey(value: string | null): AppTab | null {
-  if (!value) return null;
-  return TAB_ALIASES[value] || (value as AppTab);
-}
-
-/**
- * Determines the initial tab for the application, updating the URL hash as a side effect.
- * The priority for determining the tab is:
- * 1. A valid tab name from the URL hash (`#tabname`).
- * 2. A valid tab name from localStorage (`santorini:lastTab`).
- * 3. The default tab, 'lobby'.
- *
- * The function ensures the URL hash is synchronized with the resolved tab.
- * @param tabOrder A read-only array of available tab keys.
- * @returns The resolved application tab.
- */
-function resolveInitialTab(tabOrder: readonly AppTab[]): AppTab {
-  if (typeof window === 'undefined') {
-    return 'lobby'; // Default for server-side rendering
-  }
-
-  const { hash, pathname, search } = window.location;
-  const defaultTab: AppTab = 'lobby';
-
-  // Helper to update the URL hash without triggering a page reload.
-  const updateHash = (newTab: AppTab) => {
-    try {
-      const newHash = `#${newTab}`;
-      if (window.location.hash !== newHash) {
-        window.history.replaceState(null, '', `${pathname}${search}${newHash}`);
-      }
-    } catch (error) {
-      console.error(`Failed to update URL hash to #${newTab}`, error);
-    }
-  };
-
-  // 1. Check URL hash for a valid tab. This is the highest priority.
-  const hashTab = normalizeTabKey(hash.slice(1));
-  if (hashTab && tabOrder.includes(hashTab)) {
-    return hashTab;
-  }
-
-  // 2. If hash is invalid or missing, check localStorage for the last used tab.
-  try {
-    const storedTab = normalizeTabKey(window.localStorage.getItem(TAB_STORAGE_KEY));
-    if (storedTab && tabOrder.includes(storedTab)) {
-      updateHash(storedTab); // Sync URL hash with the stored tab
-      return storedTab;
-    }
-  } catch (error) {
-    console.error('Failed to restore last active tab', error);
-  }
-
-  // 3. As a fallback, use the default tab and update the URL.
-  updateHash(defaultTab);
-  return defaultTab;
-}
+// Navigation state is managed by useNavigationStore (Zustand)
 
 const MotionPanel = motion.div;
 
@@ -387,41 +319,9 @@ function MatchLobbySideEffects({
 
 function App() {
   const { isOpen: isHistoryOpen, onOpen: openHistory, onClose: closeHistory } = useDisclosure();
-  const tabOrder = useMemo<AppTab[]>(() => NAV_TABS.map((tab) => tab.key), []);
-  const [activeTab, setActiveTab] = useState<AppTab>(() => resolveInitialTab(tabOrder));
-  const [pendingJobId, setPendingJobId] = useState<string | null>(null);
-  const activeIndex = Math.max(0, tabOrder.indexOf(activeTab));
+  const { activeTab, setActiveTab, pendingJobId, setPendingJobId, navigateToAnalysis, handleTabChange, getActiveIndex } = useNavigationStore();
+  const activeIndex = getActiveIndex();
   const auth = useSupabaseAuth();
-
-  // Update URL hash and localStorage when tab changes
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-    try {
-      const { pathname, search, hash } = window.location;
-      const nextHash = `#${activeTab}`;
-      if (hash !== nextHash) {
-        window.history.replaceState(null, '', `${pathname}${search}${nextHash}`);
-      }
-      window.localStorage.setItem(TAB_STORAGE_KEY, activeTab);
-    } catch (error) {
-      console.error('Failed to persist last active tab', error);
-    }
-  }, [activeTab]);
-
-  // Listen for browser back/forward navigation
-  useEffect(() => {
-    const handleHashChange = () => {
-      const hash = normalizeTabKey(window.location.hash.slice(1));
-      if (hash && tabOrder.includes(hash)) {
-        setActiveTab(hash);
-      }
-    };
-
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [tabOrder]);
 
   const tabActions = useMemo(() => {
     switch (activeTab) {
@@ -440,22 +340,7 @@ function App() {
       default:
         return null;
     }
-  }, [activeTab, openHistory]);
-
-  const navigateToAnalysis = useCallback((jobId?: string) => {
-    if (jobId) {
-      setPendingJobId(jobId);
-    }
-    setActiveTab('analysis');
-  }, []);
-
-  const handleTabChange = (index: number) => {
-    const nextTab = tabOrder[index];
-    if (!nextTab) {
-      return;
-    }
-    setActiveTab(nextTab);
-  };
+  }, [activeTab]);
 
   const appBg = useColorModeValue('linear(to-br, gray.50, gray.100)', 'linear(to-br, gray.900, gray.800)');
   const appColor = useColorModeValue('gray.900', 'whiteAlpha.900');

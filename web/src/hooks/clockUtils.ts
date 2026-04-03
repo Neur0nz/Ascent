@@ -49,39 +49,29 @@ export const getIncrementMs = (match: LobbyMatch | null): number => {
   return Math.max(0, Math.round(incrementSeconds * 1000));
 };
 
+/**
+ * Extracts server-authoritative clock values from the most recent move that
+ * carries clock data.  Returns `null` when no move has clock data yet (i.e.
+ * the game is still in placement or no moves have been made).
+ */
 const extractLatestServerClock = (
   match: LobbyMatch | null,
   moves: MatchMoveRecord<MatchAction>[],
-): ClockState => {
+): { clocks: ClockState; found: boolean } => {
   const fallback = deriveInitialClocks(match);
   for (let i = moves.length - 1; i >= 0; i -= 1) {
     const action = moves[i]?.action;
     if (isSantoriniMoveAction(action) && action.clocks) {
       return {
-        creatorMs: sanitizeClockValue(action.clocks.creatorMs, fallback.creatorMs),
-        opponentMs: sanitizeClockValue(action.clocks.opponentMs, fallback.opponentMs),
+        clocks: {
+          creatorMs: sanitizeClockValue(action.clocks.creatorMs, fallback.creatorMs),
+          opponentMs: sanitizeClockValue(action.clocks.opponentMs, fallback.opponentMs),
+        },
+        found: true,
       };
     }
   }
-  return fallback;
-};
-
-const extractLatestEndsAt = (
-  moves: MatchMoveRecord<MatchAction>[],
-): { creatorEndsAt?: number; opponentEndsAt?: number } => {
-  for (let i = moves.length - 1; i >= 0; i -= 1) {
-    const action = moves[i]?.action;
-    if (isSantoriniMoveAction(action) && action.clocks) {
-      const { creatorEndsAt, opponentEndsAt } = action.clocks;
-      if (creatorEndsAt || opponentEndsAt) {
-        return {
-          creatorEndsAt: toTimestampMs(creatorEndsAt) ?? undefined,
-          opponentEndsAt: toTimestampMs(opponentEndsAt) ?? undefined,
-        };
-      }
-    }
-  }
-  return {};
+  return { clocks: fallback, found: false };
 };
 
 const getReferenceTimestamp = (
@@ -108,13 +98,26 @@ const getReferenceTimestamp = (
   return null;
 };
 
+/**
+ * Computes the best-estimate clock state for both players at the given instant.
+ *
+ * The approach is intentionally simple and predictable:
+ *   1.  Pull the last server-authoritative clock values from the move history.
+ *   2.  Calculate how much time has elapsed since that reference point.
+ *   3.  Subtract elapsed time from **only** the active player's clock.
+ *
+ * If no move carries clock data yet (placement phase / game just started)
+ * the initial clocks are returned as-is — the local tick worker handles
+ * countdown once the game phase begins.
+ */
 export const computeSynchronizedClock = (
   match: LobbyMatch | null,
   moves: MatchMoveRecord<MatchAction>[],
   activeRole: 'creator' | 'opponent' | null,
   now: number = Date.now(),
 ): ClockState => {
-  const base = extractLatestServerClock(match, moves);
+  const { clocks: base, found: hasServerClocks } = extractLatestServerClock(match, moves);
+
   if (!match || match.clock_initial_seconds <= 0 || !activeRole) {
     return base;
   }
@@ -122,13 +125,10 @@ export const computeSynchronizedClock = (
     return base;
   }
 
-  const endsAt = extractLatestEndsAt(moves);
-  // Only use endsAt approach if BOTH timestamps are valid to avoid zeroing out the other clock
-  if (endsAt.creatorEndsAt && endsAt.opponentEndsAt) {
-    return {
-      creatorMs: Math.max(0, endsAt.creatorEndsAt - now),
-      opponentMs: Math.max(0, endsAt.opponentEndsAt - now),
-    };
+  // Before any moves carry clock data (placement / very start of game),
+  // return initial values and let the tick worker handle local countdown.
+  if (!hasServerClocks) {
+    return base;
   }
 
   const referenceTimestamp = getReferenceTimestamp(match, moves);
@@ -139,6 +139,8 @@ export const computeSynchronizedClock = (
   if (elapsedMs > MAX_ELAPSED_SAMPLE_MS) {
     elapsedMs = MAX_ELAPSED_SAMPLE_MS;
   }
+
+  // Only the active player's clock ticks down.
   const adjusted: ClockState = { ...base };
   if (activeRole === 'creator') {
     adjusted.creatorMs = Math.max(0, adjusted.creatorMs - elapsedMs);

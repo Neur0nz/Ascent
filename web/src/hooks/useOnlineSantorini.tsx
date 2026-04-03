@@ -561,6 +561,10 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       lastTickRef.current = null;
       return;
     }
+    // Don't sync clocks until placement is done — no one is "on the clock" yet.
+    if (!placementComplete) {
+      return;
+    }
     const lastMove = moves.length > 0 ? moves[moves.length - 1] : null;
     const awaitingServerConfirmation =
       typeof lastMove?.id === 'string' && lastMove.id.startsWith('optimistic-');
@@ -572,7 +576,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
     const synced = computeSynchronizedClock(match, moves, currentTurn, Date.now());
     setClock(synced);
     lastTickRef.current = Date.now();
-  }, [clockEnabled, currentTurn, match, match?.clock_initial_seconds, match?.clock_updated_at, match?.updated_at, moves]);
+  }, [clockEnabled, currentTurn, match, match?.clock_initial_seconds, match?.clock_updated_at, match?.updated_at, moves, placementComplete]);
 
   useEffect(() => {
     if (!match || !role || !isMyTurn) {
@@ -623,14 +627,11 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       placementComplete &&
       Boolean(currentTurn);
 
-    // Guard: clocks stay paused while the starting player is still placing workers.
+    // Guard: clocks stay paused while ANY player is still placing workers.
     if (shouldRunClock) {
       const placementContext = engineRef.current.getPlacementContext();
       if (placementContext) {
-        const placementRole = mapPlayerIndexToRole(placementContext.player, playerZeroRole);
-        if (placementRole === playerZeroRole) {
-          return;
-        }
+        return;
       }
     }
 
@@ -834,8 +835,6 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
       ? {
           creatorMs: clock.creatorMs,
           opponentMs: clock.opponentMs,
-          creatorEndsAt: Date.now() + clock.creatorMs,
-          opponentEndsAt: Date.now() + clock.opponentMs,
         }
       : undefined;
 
@@ -906,7 +905,7 @@ export function useOnlineSantorini(options: UseOnlineSantoriniOptions) {
 
   const formatClock = useCallback((ms: number) => {
     if (!clockEnabled) return '--:--';
-    const totalSeconds = Math.floor(ms / 1000);
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
