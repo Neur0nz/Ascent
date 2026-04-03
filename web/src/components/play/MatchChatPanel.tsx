@@ -20,6 +20,7 @@ import {
   ChangeEvent,
   FormEvent,
   KeyboardEvent,
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -47,14 +48,116 @@ interface MatchChatPanelProps {
   onTypingStatusChange?: (isTyping: boolean) => Promise<void> | void;
 }
 
+const TYPING_TIMEOUT_MS = 1200;
+const DUPLICATE_WINDOW_MS = 1500;
+
 const formatTimestamp = (value: number): string => {
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return '';
-  }
+  if (Number.isNaN(date.getTime())) return '';
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
+// ── Memoized message bubble ────────────────────────────────────────────
+interface MessageBubbleProps {
+  message: MatchChatMessage;
+  isSelf: boolean;
+  reaction: { emoji: string; authors: MatchChatAuthor[] } | undefined;
+  canReact: boolean;
+  onReact: (messageId: string) => void;
+  bgSelf: string;
+  bgOther: string;
+  helperColor: string;
+  bubbleShadow: string;
+  reactionBg: string;
+  reactionBorder: string;
+  reactionTextColor: string;
+}
+
+const MessageBubble = memo(function MessageBubble({
+  message,
+  isSelf,
+  reaction,
+  canReact,
+  onReact,
+  bgSelf,
+  bgOther,
+  helperColor,
+  bubbleShadow,
+  reactionBg,
+  reactionBorder,
+  reactionTextColor,
+}: MessageBubbleProps) {
+  const tooltipLabel =
+    reaction && reaction.authors.length > 0
+      ? `Reacted by ${reaction.authors.map((a) => a.name).join(', ')}`
+      : undefined;
+
+  return (
+    <Flex justify={isSelf ? 'flex-end' : 'flex-start'}>
+      <Box
+        maxW="80%"
+        bg={isSelf ? bgSelf : bgOther}
+        borderRadius="lg"
+        px={3}
+        py={2}
+        boxShadow={bubbleShadow}
+        onDoubleClick={() => canReact && onReact(message.id)}
+        cursor={canReact ? 'pointer' : undefined}
+        role={canReact ? 'button' : undefined}
+      >
+        <HStack spacing={2} justify="space-between" align="baseline">
+          <Text fontSize="xs" fontWeight="semibold">
+            {isSelf ? 'You' : message.author.name}
+          </Text>
+          <Text fontSize="xs" color={helperColor}>
+            {formatTimestamp(message.createdAt)}
+          </Text>
+        </HStack>
+        <Text fontSize="sm" whiteSpace="pre-wrap">
+          {message.text}
+        </Text>
+        {reaction ? (
+          <Tooltip label={tooltipLabel} placement="top" hasArrow>
+            <MotionBox
+              initial={{ scale: 0.5, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ duration: 0.2 }}
+            >
+              <HStack
+                spacing={1}
+                mt={2}
+                px={2}
+                py={1}
+                borderRadius="full"
+                bg={reactionBg}
+                borderWidth="1px"
+                borderColor={reactionBorder}
+                align="center"
+                justify="center"
+                maxW="120px"
+              >
+                <Icon as={FaThumbsUp} boxSize="4" color={reactionTextColor} />
+                <Text fontSize="xs" fontWeight="semibold" color={reactionTextColor}>
+                  {reaction.authors.length}
+                </Text>
+              </HStack>
+            </MotionBox>
+          </Tooltip>
+        ) : null}
+        {message.pending ? (
+          <HStack spacing={1} mt={1}>
+            <Spinner size="xs" />
+            <Text fontSize="xs" color={helperColor}>
+              Sending…
+            </Text>
+          </HStack>
+        ) : null}
+      </Box>
+    </Flex>
+  );
+});
+
+// ── Main component ─────────────────────────────────────────────────────
 export function MatchChatPanel({
   matchId,
   messages,
@@ -77,6 +180,7 @@ export function MatchChatPanel({
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [isVisible, setIsVisible] = useState(true);
   const lastMessageIdRef = useRef<string | null>(null);
+  const userScrolledUpRef = useRef(false);
   const toast = useToast();
   const toastIdRef = useRef<string | number | undefined>();
   const bgSelf = useColorModeValue('teal.50', 'teal.900');
@@ -91,41 +195,30 @@ export function MatchChatPanel({
   const reactionTextColor = useColorModeValue('gray.800', 'gray.100');
 
   const disableInput = !canSend || isReadOnly || status === 'idle';
+
   const placeholder = useMemo(() => {
-    if (isReadOnly) {
-      return 'Chat is locked for this match.';
-    }
-    if (!matchId) {
-      return 'Join a match to start chatting.';
-    }
-    if (!canSend) {
-      return 'Sign in or rejoin the match to chat.';
-    }
+    if (isReadOnly) return 'Chat is locked for this match.';
+    if (!matchId) return 'Join a match to start chatting.';
+    if (!canSend) return 'Sign in or rejoin the match to chat.';
     return 'Be kind! Coordinate rematches or say hello.';
   }, [canSend, isReadOnly, matchId]);
 
   const emitTypingStatus = useCallback(
     (isTyping: boolean) => {
-      if (!onTypingStatusChange) {
-        return;
-      }
+      if (!onTypingStatusChange) return;
       void onTypingStatusChange(isTyping);
     },
     [onTypingStatusChange],
   );
 
   const scheduleTypingNotification = useCallback(() => {
-    if (disableInput) {
-      return;
-    }
+    if (disableInput) return;
     emitTypingStatus(true);
-    if (typingTimerRef.current) {
-      clearTimeout(typingTimerRef.current);
-    }
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     typingTimerRef.current = setTimeout(() => {
       typingTimerRef.current = null;
       emitTypingStatus(false);
-    }, 1200);
+    }, TYPING_TIMEOUT_MS);
   }, [disableInput, emitTypingStatus]);
 
   const stopTypingNotification = useCallback(() => {
@@ -136,12 +229,31 @@ export function MatchChatPanel({
     emitTypingStatus(false);
   }, [emitTypingStatus]);
 
+  // Auto-scroll: only if user hasn't scrolled up manually
   useEffect(() => {
-    if (!listRef.current) {
-      return;
+    const list = listRef.current;
+    if (!list) return;
+
+    // Check if user is near bottom (within 60px)
+    const isNearBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 60;
+    if (isNearBottom || !userScrolledUpRef.current) {
+      requestAnimationFrame(() => {
+        list.scrollTop = list.scrollHeight;
+      });
     }
-    listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [messages]);
+
+  // Track manual scroll
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const handleScroll = () => {
+      const isNearBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 60;
+      userScrolledUpRef.current = !isNearBottom;
+    };
+    list.addEventListener('scroll', handleScroll, { passive: true });
+    return () => list.removeEventListener('scroll', handleScroll);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -150,9 +262,7 @@ export function MatchChatPanel({
   }, [stopTypingNotification]);
 
   useEffect(() => {
-    if (typeof IntersectionObserver === 'undefined' || !cardRef.current) {
-      return undefined;
-    }
+    if (typeof IntersectionObserver === 'undefined' || !cardRef.current) return undefined;
     const observer = new IntersectionObserver(
       ([entry]) => {
         setIsVisible(Boolean(entry.isIntersecting && entry.intersectionRatio > 0));
@@ -160,73 +270,57 @@ export function MatchChatPanel({
       { threshold: 0.1 },
     );
     observer.observe(cardRef.current);
-    return () => {
-      observer.disconnect();
-    };
+    return () => observer.disconnect();
   }, []);
 
+  // Aggregate reactions with indexed lookup by messageId
   const aggregatedReactions = useMemo(() => {
-    const entries: Record<
-      string,
-      {
-        emoji: string;
-        authorsMap: Map<string, MatchChatAuthor>;
-        authors(): MatchChatAuthor[];
-      }
-    > = {};
+    const result: Record<string, { emoji: string; authors: MatchChatAuthor[] }> = {};
+    const authorMaps = new Map<string, Map<string, MatchChatAuthor>>();
+
     for (const reaction of reactions) {
       const key = reaction.messageId;
-      if (!entries[key]) {
-        entries[key] = {
-          emoji: reaction.emoji,
-          authorsMap: new Map(),
-          authors() {
-            return Array.from(this.authorsMap.values());
-          },
-        };
+      if (!authorMaps.has(key)) {
+        authorMaps.set(key, new Map());
       }
+      const map = authorMaps.get(key)!;
       const authorKey =
         (reaction.author.id && `id:${reaction.author.id}`) ||
         (reaction.author.name && `name:${reaction.author.name}`) ||
-        `idx:${entries[key].authorsMap.size}`;
+        `idx:${map.size}`;
+
       if (reaction.removed) {
-        entries[key].authorsMap.delete(authorKey);
+        map.delete(authorKey);
       } else {
-        entries[key].authorsMap.set(authorKey, reaction.author);
+        map.set(authorKey, reaction.author);
       }
     }
-    const normalized: Record<string, { emoji: string; authors: MatchChatAuthor[] }> = {};
-    for (const messageId of Object.keys(entries)) {
-      normalized[messageId] = {
-        emoji: entries[messageId].emoji,
-        authors: entries[messageId].authors(),
+
+    for (const [messageId, map] of authorMaps) {
+      const firstReaction = reactions.find((r) => r.messageId === messageId);
+      result[messageId] = {
+        emoji: firstReaction?.emoji ?? '👍',
+        authors: Array.from(map.values()),
       };
     }
-    return normalized;
+    return result;
   }, [reactions]);
 
+  // Off-screen message notification (debounced to prevent duplicates)
   useEffect(() => {
     const latest = messages[messages.length - 1];
     if (!latest) {
       lastMessageIdRef.current = null;
       return;
     }
-    if (lastMessageIdRef.current === latest.id) {
-      return;
-    }
+    if (lastMessageIdRef.current === latest.id) return;
     lastMessageIdRef.current = latest.id;
-
-    if (isVisible) {
-      return;
-    }
-    if (currentUserId && latest.author.id && currentUserId === latest.author.id) {
-      return;
-    }
+    if (isVisible) return;
+    if (currentUserId && latest.author.id && currentUserId === latest.author.id) return;
 
     if (toastIdRef.current) {
       toast.close(toastIdRef.current);
     }
-
     toastIdRef.current = toast({
       title: latest.author.name ?? 'New message',
       description: latest.text,
@@ -237,67 +331,72 @@ export function MatchChatPanel({
     });
   }, [currentUserId, isVisible, messages, toast]);
 
-  const otherTypers = typingUsers.filter((user) => {
-    if (currentUserId && user.id) {
-      return user.id !== currentUserId;
-    }
-    return true;
-  });
+  const otherTypers = useMemo(
+    () =>
+      typingUsers.filter((user) => {
+        if (currentUserId && user.id) return user.id !== currentUserId;
+        return true;
+      }),
+    [typingUsers, currentUserId],
+  );
 
-  const typingLabel =
-    otherTypers.length === 0
-      ? null
-      : otherTypers.length === 1
-      ? `${otherTypers[0].name} is typing…`
-      : `${otherTypers.length} players are typing…`;
+  const typingLabel = useMemo(() => {
+    if (otherTypers.length === 0) return null;
+    if (otherTypers.length === 1) return `${otherTypers[0].name} is typing…`;
+    return `${otherTypers.length} players are typing…`;
+  }, [otherTypers]);
 
-  const trySendDraft = async () => {
-    if (disableInput || !draft.trim()) {
-      return;
-    }
+  const trySendDraft = useCallback(async () => {
+    if (disableInput || !draft.trim()) return;
+    // Stop typing indicator BEFORE sending for better UX
+    stopTypingNotification();
     setSending(true);
     setError(null);
     try {
       await onSend(draft);
       setDraft('');
-      stopTypingNotification();
     } catch (err) {
       console.error('MatchChatPanel: failed to send', err);
       setError('Unable to send message. Please try again.');
     } finally {
       setSending(false);
     }
-  };
+  }, [disableInput, draft, onSend, stopTypingNotification]);
 
-  const handleSubmit = (event: FormEvent) => {
-    event.preventDefault();
-    void trySendDraft();
-  };
-
-  const handleTextareaKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Enter' && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) {
+  const handleSubmit = useCallback(
+    (event: FormEvent) => {
       event.preventDefault();
       void trySendDraft();
-    }
-  };
+    },
+    [trySendDraft],
+  );
 
-  const handleDraftChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
-    setDraft(event.target.value);
-    scheduleTypingNotification();
-  };
+  const handleTextareaKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (event.key === 'Enter' && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) {
+        event.preventDefault();
+        void trySendDraft();
+      }
+    },
+    [trySendDraft],
+  );
 
-  const handleClear = async () => {
-    if (!onClearHistory || !matchId) {
-      return;
-    }
+  const handleDraftChange = useCallback(
+    (event: ChangeEvent<HTMLTextAreaElement>) => {
+      setDraft(event.target.value);
+      scheduleTypingNotification();
+    },
+    [scheduleTypingNotification],
+  );
+
+  const handleClear = useCallback(async () => {
+    if (!onClearHistory || !matchId) return;
     await onClearHistory();
-  };
+  }, [onClearHistory, matchId]);
 
   const handleReactToMessage = useCallback(
     (messageId: string) => {
-      if (!currentUserId || isReadOnly) {
-        return;
-      }
+      if (!currentUserId || isReadOnly) return;
       const reaction = aggregatedReactions[messageId];
       const hasReacted = Boolean(
         reaction &&
@@ -312,6 +411,8 @@ export function MatchChatPanel({
     },
     [aggregatedReactions, currentUserId, isReadOnly, onReact],
   );
+
+  const canReact = Boolean(currentUserId && !isReadOnly);
 
   return (
     <Card ref={cardRef} w="100%">
@@ -340,74 +441,23 @@ export function MatchChatPanel({
             ) : (
               <Stack spacing={3}>
                 {messages.map((message) => {
-                  const isSelf = currentUserId && message.author.id && currentUserId === message.author.id;
-                  const reaction = aggregatedReactions[message.id];
-                  const tooltipLabel =
-                    reaction && reaction.authors.length > 0
-                      ? `Reacted by ${reaction.authors.map((a) => a.name).join(', ')}`
-                      : undefined;
+                  const isSelf = Boolean(currentUserId && message.author.id && currentUserId === message.author.id);
                   return (
-                    <Flex key={message.id} justify={isSelf ? 'flex-end' : 'flex-start'}>
-                      <Box
-                        maxW="80%"
-                        bg={isSelf ? bgSelf : bgOther}
-                        borderRadius="lg"
-                        px={3}
-                        py={2}
-                        boxShadow={bubbleShadow}
-                        onDoubleClick={() => handleReactToMessage(message.id)}
-                        cursor={currentUserId && !isReadOnly ? 'pointer' : undefined}
-                        role={currentUserId && !isReadOnly ? 'button' : undefined}
-                      >
-                        <HStack spacing={2} justify="space-between" align="baseline">
-                          <Text fontSize="xs" fontWeight="semibold">
-                            {isSelf ? 'You' : message.author.name}
-                          </Text>
-                          <Text fontSize="xs" color={helperColor}>
-                            {formatTimestamp(message.createdAt)}
-                          </Text>
-                        </HStack>
-                        <Text fontSize="sm" whiteSpace="pre-wrap">
-                          {message.text}
-                        </Text>
-                        {reaction ? (
-                          <Tooltip label={tooltipLabel} placement="top" hasArrow>
-                            <MotionBox
-                              initial={{ scale: 0.5, opacity: 0 }}
-                              animate={{ scale: 1, opacity: 1 }}
-                              transition={{ duration: 0.2 }}
-                            >
-                              <HStack
-                                spacing={1}
-                                mt={2}
-                                px={2}
-                                py={1}
-                                borderRadius="full"
-                                bg={reactionBg}
-                                borderWidth="1px"
-                                borderColor={reactionBorder}
-                                align="center"
-                                justify="center"
-                                maxW="120px"
-                              >
-                                <Icon as={FaThumbsUp} boxSize="4" color={reactionTextColor} />
-                                <Text fontSize="xs" fontWeight="semibold" color={reactionTextColor}>
-                                  {reaction.authors.length}
-                                </Text>
-                              </HStack>
-                            </MotionBox>
-                          </Tooltip>
-                        ) : null}
-                        {message.pending ? (
-                          <HStack spacing={1} mt={1}>
-                            <Spinner size="xs" />
-                            <Text fontSize="xs" color={helperColor}>
-                              Sending…
-                            </Text>
-                          </HStack>
-                        ) : null}
-                      </Box>
-                    </Flex>
+                    <MessageBubble
+                      key={message.id}
+                      message={message}
+                      isSelf={isSelf}
+                      reaction={aggregatedReactions[message.id]}
+                      canReact={canReact}
+                      onReact={handleReactToMessage}
+                      bgSelf={bgSelf}
+                      bgOther={bgOther}
+                      helperColor={helperColor}
+                      bubbleShadow={bubbleShadow}
+                      reactionBg={reactionBg}
+                      reactionBorder={reactionBorder}
+                      reactionTextColor={reactionTextColor}
+                    />
                   );
                 })}
               </Stack>
