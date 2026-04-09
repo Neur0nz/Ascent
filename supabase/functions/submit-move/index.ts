@@ -93,7 +93,10 @@ function errorResponse(
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 const APP_BASE_URL = Deno.env.get('APP_BASE_URL') ?? null;
-const AI_PLAYER_ID = Deno.env.get('AI_PLAYER_ID') ?? '00000000-0000-0000-0000-00000000a11a';
+const AI_PLAYER_ID = Deno.env.get('AI_PLAYER_ID') ?? (() => {
+  console.warn('AI_PLAYER_ID env var not set, using hardcoded fallback');
+  return '00000000-0000-0000-0000-00000000a11a';
+})();
 
 if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
   throw new Error('Missing Supabase configuration environment variables');
@@ -849,6 +852,21 @@ serve(async (req) => {
   if (payload.action.kind === 'undo.accept') {
     if (!lastMove) {
       return errorResponse(ErrorCode.UNDO_NO_MOVES, 'No moves available to undo', 409);
+    }
+
+    // Validate undo ownership: the acceptor must not be the one who requested the undo
+    if (!isAiMatch) {
+      const { data: pendingUndo } = await supabase
+        .from('undo_requests')
+        .select('requested_by')
+        .eq('match_id', match.id)
+        .eq('status', 'pending')
+        .order('requested_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (pendingUndo && pendingUndo.requested_by === playerId) {
+        return errorResponse(ErrorCode.MATCH_NOT_YOUR_TURN, 'You cannot accept your own undo request', 403);
+      }
     }
     const targetIndex =
       typeof payload.action.moveIndex === 'number'

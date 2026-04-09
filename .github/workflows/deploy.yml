@@ -46,8 +46,8 @@ jobs:
       VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
       VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
       VITE_PUBLIC_BASE_PATH: ${{ vars.PUBLIC_BASE_PATH || '/Ascent/' }}
-      VITE_PYODIDE_URL: https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js
-      VITE_ONNX_URL: https://cdn.jsdelivr.net/npm/onnxruntime-web@1.16.3/dist/ort.min.js
+      VITE_PYODIDE_URL: https://cdn.jsdelivr.net/pyodide/v0.26.1/full/pyodide.mjs
+      VITE_ONNX_URL: https://cdn.jsdelivr.net/npm/onnxruntime-web@1.16.0/dist/ort.min.js
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -82,8 +82,8 @@ jobs:
       - name: Build static site
         run: |
           echo "Environment variables check:"
-          echo "VITE_SUPABASE_URL: '$VITE_SUPABASE_URL'"
-          echo "VITE_SUPABASE_ANON_KEY: '$VITE_SUPABASE_ANON_KEY'"
+          echo "VITE_SUPABASE_URL is set: $( [ -n "$VITE_SUPABASE_URL" ] && echo 'yes' || echo 'no' )"
+          echo "VITE_SUPABASE_ANON_KEY is set: $( [ -n "$VITE_SUPABASE_ANON_KEY" ] && echo 'yes' || echo 'no' )"
           echo "VITE_PUBLIC_BASE_PATH: '$VITE_PUBLIC_BASE_PATH'"
           npm run build
         working-directory: web

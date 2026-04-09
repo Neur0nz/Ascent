@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabaseClient';
 import type { FunctionInvokeOptions } from '@supabase/supabase-js';
 import { getMatchAiDepth, getPlayerZeroRole, getRoleForMoveIndex, isAiMatch } from '@/utils/matchAiDepth';
 import { isSantoriniMoveAction } from '@/utils/matchActions';
+import { getFunctionErrorBody, CodedError } from '@/types/supabaseErrors';
 
 type SupabaseClientType = NonNullable<typeof supabase>;
 
@@ -1971,12 +1972,9 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
       if (error) {
         console.error('Failed to create match', error);
         // Check if it's an active game conflict
-        const errorData = (error as any).context?.body;
+        const errorData = getFunctionErrorBody(error);
         if (errorData?.code === 'ACTIVE_GAME_EXISTS') {
-          const err = new Error(errorData.error);
-          (err as any).code = 'ACTIVE_GAME_EXISTS';
-          (err as any).activeMatchId = errorData.activeMatchId;
-          throw err;
+          throw new CodedError(errorData.error ?? 'Active game exists', 'ACTIVE_GAME_EXISTS', { activeMatchId: errorData.activeMatchId });
         }
         throw new Error(error.message || 'Failed to create match');
       }
@@ -2009,10 +2007,11 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
       if (state.activeMatchId && state.activeMatch) {
         const activeStatus = state.activeMatch.status;
         if (activeStatus === 'waiting_for_opponent' || activeStatus === 'in_progress') {
-          const error = new Error('You already have an active game. Please finish or cancel your current game before joining a new one.');
-          (error as any).code = 'ACTIVE_GAME_EXISTS';
-          (error as any).activeMatchId = state.activeMatchId;
-          throw error;
+          throw new CodedError(
+            'You already have an active game. Please finish or cancel your current game before joining a new one.',
+            'ACTIVE_GAME_EXISTS',
+            { activeMatchId: state.activeMatchId },
+          );
         }
       }
 
@@ -2027,7 +2026,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
       if (error) {
         console.error('Failed to join match via function', error);
         // Surface known errors
-        const message = (error as any)?.context?.body?.error ?? error.message ?? 'Unable to join match';
+        const message = getFunctionErrorBody(error)?.error ?? error.message ?? 'Unable to join match';
         throw new Error(message);
       }
 
@@ -2277,7 +2276,7 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
 
         if (error) {
           console.error(`❌ Move rejected by server after ${validationElapsed.toFixed(0)}ms!`, error);
-          const errorContext = (error as any)?.context?.body;
+          const errorContext = getFunctionErrorBody(error);
           const rejectionMessage = errorContext?.error ?? error.message ?? 'Move validation failed';
           rejectionBroadcasted = true;
           sendRejectionBroadcast(rejectionMessage, 'Failed to broadcast rejection');
@@ -2966,13 +2965,13 @@ const mergePlayers = useCallback((records: PlayerProfile[]): void => {
       },
     });
     if (error) {
-      const contextBody = (error as any)?.context?.body;
+      const contextBody = getFunctionErrorBody(error);
       if (contextBody?.code === 'PING_RATE_LIMIT') {
-        const err = new Error(contextBody.error ?? 'Please wait before pinging again.');
-        (err as any).code = 'PING_RATE_LIMIT';
-        (err as any).retryAfterMs = contextBody.retryAfterMs ?? MATCH_PING_COOLDOWN_MS;
-        (err as any).lastPingAt = contextBody.lastPingAt ?? null;
-        throw err;
+        throw new CodedError(
+          contextBody.error ?? 'Please wait before pinging again.',
+          'PING_RATE_LIMIT',
+          { retryAfterMs: contextBody.retryAfterMs ?? MATCH_PING_COOLDOWN_MS, lastPingAt: contextBody.lastPingAt ?? null },
+        );
       }
       throw new Error(error.message || 'Failed to ping opponent');
     }

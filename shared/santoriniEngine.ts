@@ -581,6 +581,7 @@ export class SantoriniEngine {
 
     if (typeof player === 'number') {
       const workerId = this.workers[oldPosition[0]][oldPosition[1]];
+      if (workerId === 0) return false;
       const expectedSign = player === 0 ? 1 : -1;
       if (Math.sign(workerId) !== expectedSign) {
         return false;

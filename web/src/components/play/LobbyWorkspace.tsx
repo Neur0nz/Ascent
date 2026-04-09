@@ -74,6 +74,7 @@ import GoogleIcon from '@components/auth/GoogleIcon';
 import { useSurfaceTokens } from '@/theme/useSurfaceTokens';
 import { buildMatchJoinLink } from '@/utils/joinLinks';
 import { PENDING_JOIN_STORAGE_KEY, consumeAutoOpenCreateFlag } from '@/utils/lobbyStorage';
+import { CodedError } from '@/types/supabaseErrors';
 import { useBrowserNotifications } from '@hooks/useBrowserNotifications';
 import { usePushSubscription } from '@hooks/usePushSubscription';
 import { shareMatchInvite } from '@/utils/shareInvite';
@@ -1160,20 +1161,21 @@ function LobbyWorkspace({
         clearPendingJoinKey();
         setJoiningCode('');
         onNavigateToPlay();
-      } catch (error: any) {
+      } catch (error: unknown) {
         if (!isActive) {
           return;
         }
+        const coded = error instanceof CodedError ? error : null;
 
-        if (error?.code === 'ACTIVE_GAME_EXISTS') {
+        if (coded?.code === 'ACTIVE_GAME_EXISTS') {
           toast({
             title: 'Active game exists',
-            description: error.message,
+            description: coded.message,
             status: 'warning',
             duration: 5000,
           });
-          if (error.activeMatchId) {
-            setActiveMatch(error.activeMatchId);
+          if (coded.activeMatchId) {
+            setActiveMatch(coded.activeMatchId);
             onNavigateToPlay();
           }
         } else {
@@ -1282,19 +1284,20 @@ function LobbyWorkspace({
       // Navigate to Play tab after creating match
       onNavigateToPlay();
       promptNotificationPermission();
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Re-throw to be caught by the modal's error handling
-      if (error.code === 'ACTIVE_GAME_EXISTS') {
+      const coded = error instanceof CodedError ? error : null;
+      if (coded?.code === 'ACTIVE_GAME_EXISTS') {
         toast({
           title: 'Active game exists',
-          description: error.message,
+          description: coded.message,
           status: 'warning',
           duration: 5000,
         });
         onCreateClose();
         // Navigate to the active game
-        if (error.activeMatchId) {
-          lobby.setActiveMatch(error.activeMatchId);
+        if (coded.activeMatchId) {
+          lobby.setActiveMatch(coded.activeMatchId);
           onNavigateToPlay();
         }
       }
@@ -1311,18 +1314,19 @@ function LobbyWorkspace({
       onJoinClose();
       // Navigate to Play tab after joining match
       onNavigateToPlay();
-    } catch (error: any) {
-      if (error.code === 'ACTIVE_GAME_EXISTS') {
+    } catch (error: unknown) {
+      const coded = error instanceof CodedError ? error : null;
+      if (coded?.code === 'ACTIVE_GAME_EXISTS') {
         toast({
           title: 'Active game exists',
-          description: error.message,
+          description: coded.message,
           status: 'warning',
           duration: 5000,
         });
         onJoinClose();
         // Navigate to the active game
-        if (error.activeMatchId) {
-          lobby.setActiveMatch(error.activeMatchId);
+        if (coded.activeMatchId) {
+          lobby.setActiveMatch(coded.activeMatchId);
           onNavigateToPlay();
         }
       } else {
@@ -1348,8 +1352,8 @@ function LobbyWorkspace({
         startingPlayer: 'random',
       });
       setInlineNotice({ status: 'success', message: 'Casual game posted to the lobby. Waiting for an opponent to join…' });
-    } catch (error: any) {
-      if (error?.code === 'ACTIVE_GAME_EXISTS') {
+    } catch (error: unknown) {
+      if (error instanceof CodedError && error.code === 'ACTIVE_GAME_EXISTS') {
         return;
       }
       setInlineNotice({

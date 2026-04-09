@@ -43,6 +43,13 @@ export class SantoriniWorkerClient {
         callbacks.reject(new Error(error ?? 'Santorini worker request failed'));
       }
     });
+    this.worker.addEventListener('error', (event: ErrorEvent) => {
+      console.error('Santorini worker error:', event.message);
+      for (const [, callbacks] of this.pending) {
+        callbacks.reject(new Error(`Worker error: ${event.message}`));
+      }
+      this.pending.clear();
+    });
   }
 
   private call<T>(type: WorkerRequestType, payload: Record<string, unknown> = {}): Promise<T> {
