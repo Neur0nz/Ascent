@@ -74,6 +74,7 @@ import { SANTORINI_CONSTANTS } from '@/lib/santoriniEngine';
 import { findWorkerPosition } from '@/lib/practice/practiceEngine';
 import type { LastMoveInfo } from '@components/GameBoard';
 import { deriveStartingRole } from '@/utils/matchStartingRole';
+import { CodedError } from '@/types/supabaseErrors';
 import { getOppositeRole, getPlayerZeroRole, isAiMatch } from '@/utils/matchAiDepth';
 import { isSantoriniMoveAction } from '@/utils/matchActions';
 
@@ -1053,11 +1054,12 @@ function PlayWorkspace({ auth }: { auth: SupabaseAuthState }) {
       toast({ title: 'Match joined successfully!', status: 'success' });
       setJoiningCode('');
       onJoinClose();
-    } catch (error: any) {
-      if (error.code === 'ACTIVE_GAME_EXISTS') {
+    } catch (error: unknown) {
+      const coded = error instanceof CodedError ? error : null;
+      if (coded?.code === 'ACTIVE_GAME_EXISTS') {
         toast({
           title: 'Active game exists',
-          description: error.message,
+          description: coded.message,
           status: 'warning',
           duration: 5000,
         });

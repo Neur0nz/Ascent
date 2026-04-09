@@ -24,7 +24,10 @@ interface CreateMatchRequest {
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-const AI_PLAYER_ID = Deno.env.get('AI_PLAYER_ID') ?? '00000000-0000-0000-0000-00000000a11a';
+const AI_PLAYER_ID = Deno.env.get('AI_PLAYER_ID') ?? (() => {
+  console.warn('AI_PLAYER_ID env var not set, using hardcoded fallback');
+  return '00000000-0000-0000-0000-00000000a11a';
+})();
 const DEFAULT_AI_DEPTH = 200;
 
 function jsonResponse(body: Record<string, unknown>, init: ResponseInit = {}): Response {
@@ -345,13 +348,11 @@ async function ensureAiProfile(client: ReturnType<typeof createClient>) {
         { status: 409 },
       );
     }
-    console.error('Failed to create match', insertError);
+    console.error('Failed to create match', insertError, postgresError);
     return jsonResponse(
       {
         error: 'Failed to create match',
-        code: postgresError?.code ?? 'CREATE_MATCH_FAILED',
-        hint: postgresError?.message ?? undefined,
-        details: postgresError?.details ?? undefined,
+        code: 'CREATE_MATCH_FAILED',
       },
       { status: 500 },
     );

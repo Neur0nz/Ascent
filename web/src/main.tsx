@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { ChakraProvider, ColorModeScript } from '@chakra-ui/react';
 import App from './App';
+import { ErrorBoundary } from '@components/ErrorBoundary';
 import { EvaluationJobsProvider } from '@hooks/useEvaluationJobs';
 import theme from '@theme';
 
@@ -30,9 +31,11 @@ ReactDOM.createRoot(container).render(
       }}
     >
       <ColorModeScript initialColorMode={theme.config.initialColorMode} />
-      <EvaluationJobsProvider>
-        <App />
-      </EvaluationJobsProvider>
+      <ErrorBoundary>
+        <EvaluationJobsProvider>
+          <App />
+        </EvaluationJobsProvider>
+      </ErrorBoundary>
     </ChakraProvider>
   </React.StrictMode>,
 );

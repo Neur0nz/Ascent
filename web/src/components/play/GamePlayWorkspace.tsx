@@ -85,6 +85,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { shareMatchInvite } from '@/utils/shareInvite';
 import { showEvaluationStartedToast } from '@/utils/analysisNotifications';
 import { rememberLastAnalyzedMatch } from '@/utils/analysisStorage';
+import { CodedError } from '@/types/supabaseErrors';
 
 const K_FACTOR = 32;
 const NOTIFICATION_PROMPT_STORAGE_KEY = 'santorini:notificationsPrompted';
@@ -1130,13 +1131,12 @@ function ActiveMatchContent({
         duration: 4000,
       });
     } catch (error) {
-      const code =
-        (error as { code?: string } | null)?.code ??
-        ((error as { context?: { body?: { code?: string } } })?.context?.body?.code ?? null);
+      const coded = error instanceof CodedError ? error : null;
+      const code = coded?.code ?? null;
       if (code === 'PING_RATE_LIMIT') {
         const retryAfterMs =
-          typeof (error as any)?.retryAfterMs === 'number'
-            ? Math.max(0, (error as any).retryAfterMs)
+          typeof coded?.retryAfterMs === 'number'
+            ? Math.max(0, coded.retryAfterMs)
             : MATCH_PING_COOLDOWN_MS;
         setPingCooldownUntil(Date.now() + retryAfterMs);
         toast({

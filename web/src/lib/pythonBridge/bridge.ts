@@ -56,6 +56,10 @@ export class SantoriniPythonBridge {
       return null;
     }
     const [nextPlayer, endedRaw, validRaw] = result;
+    if (typeof nextPlayer !== 'number' && typeof nextPlayer !== 'bigint') {
+      console.warn('Unexpected nextPlayer type from Python bridge:', typeof nextPlayer);
+      return null;
+    }
     const gameEnded: [number, number] = [
       Number(Array.from(endedRaw ?? [])[0] ?? 0),
       Number(Array.from(endedRaw ?? [])[1] ?? 0),

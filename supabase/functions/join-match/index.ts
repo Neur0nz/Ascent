@@ -19,6 +19,22 @@ if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
   throw new Error('Missing Supabase configuration environment variables');
 }
 
+// ── Rate limiting for join attempts (brute-force protection for private join codes) ──
+const joinAttemptTracker = new Map<string, { count: number; windowStart: number }>();
+const JOIN_WINDOW_MS = 60_000;
+const JOIN_MAX_ATTEMPTS = 10;
+
+function isRateLimited(userId: string): boolean {
+  const now = Date.now();
+  const entry = joinAttemptTracker.get(userId);
+  if (!entry || now - entry.windowStart > JOIN_WINDOW_MS) {
+    joinAttemptTracker.set(userId, { count: 1, windowStart: now });
+    return false;
+  }
+  entry.count++;
+  return entry.count > JOIN_MAX_ATTEMPTS;
+}
+
 function jsonResponse(body: Record<string, unknown>, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {
     headers: {
@@ -64,17 +80,22 @@ serve(async (req) => {
   const isCode = rawIdentifier.length <= 8;
   const normalizedIdentifier = isCode ? rawIdentifier.toUpperCase() : rawIdentifier;
 
-  const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+  // Use service role only for operations that require bypassing RLS
+  const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
     auth: { persistSession: false },
   });
 
-  const { data: authData, error: authError } = await supabase.auth.getUser(token);
+  const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(token);
   if (authError || !authData?.user) {
     console.error('join-match: auth failed', authError);
     return jsonResponse({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { data: profile, error: profileError } = await supabase
+  if (isRateLimited(authData.user.id)) {
+    return jsonResponse({ error: 'Too many join attempts. Please try again later.' }, { status: 429 });
+  }
+
+  const { data: profile, error: profileError } = await supabaseAdmin
     .from('players')
     .select('*')
     .eq('auth_user_id', authData.user.id)
@@ -91,8 +112,8 @@ serve(async (req) => {
   let opponentId: string | null = null;
   let creatorId: string | null = null;
 
-  // Look up the match by code or id using service role (bypasses RLS safely)
-  const { data: matchRecord, error: matchError } = await supabase
+  // Look up the match by code or id using admin client (bypasses RLS for match lookup)
+  const { data: matchRecord, error: matchError } = await supabaseAdmin
     .from('matches')
     .select('id, visibility, status, private_join_code, creator_id, opponent_id')
     .eq(isCode ? 'private_join_code' : 'id', normalizedIdentifier)
@@ -131,7 +152,7 @@ serve(async (req) => {
 
   const nowIso = new Date().toISOString();
 
-  const { data: updated, error: updateError } = await supabase
+  const { data: updated, error: updateError } = await supabaseAdmin
     .from('matches')
     .update({
       opponent_id: profile.id,

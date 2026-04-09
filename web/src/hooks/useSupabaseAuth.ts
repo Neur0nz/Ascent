@@ -256,8 +256,8 @@ const getCachedAuthState = (): { session: Session; profile: PlayerProfile } | nu
         // Clear old cache
         localStorage.removeItem(CACHE_KEY);
       }
-    } catch (error) {
-      localStorage.removeItem(CACHE_KEY);
+    } catch (_error) {
+      try { localStorage.removeItem(CACHE_KEY); } catch { /* localStorage may be unavailable */ }
     }
   }
   return null;
